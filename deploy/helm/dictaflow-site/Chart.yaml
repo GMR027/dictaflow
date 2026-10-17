@@ -1,0 +1,7 @@
+apiVersion: v2
+name: dictaflow-site
+description: Web estática de presentación y descargas de DictaFlow (nginx sin privilegios)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/GMR027/dictaflow

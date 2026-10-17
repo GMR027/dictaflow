@@ -1,0 +1,5 @@
+DictaFlow site desplegada en el namespace {{ .Release.Namespace }}.
+{{- if .Values.ingress.enabled }}
+URL: {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}
+{{- end }}
+Imagen: {{ .Values.image.repository }}:{{ .Values.image.tag }}

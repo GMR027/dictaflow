@@ -1,0 +1,41 @@
+# Maintainer: GMR027 <GMR027@users.noreply.github.com>
+# Paquete binario para el AUR. Antes de publicar: actualiza pkgver y sha256sums (ver SHA256SUMS.txt de la release).
+pkgname=dictaflow-bin
+_name=dictaflow
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Voice dictation with local AI: rewriting, TTS, reader, meetings (dictado por voz con IA local)'
+arch=('x86_64')
+url='https://github.com/GMR027/dictaflow'
+license=('MIT')
+depends=('gtk3' 'nss' 'libnotify' 'libxss' 'libxtst' 'xdg-utils' 'at-spi2-core' 'libsecret')
+optdepends=('pipewire: capture system audio in Meetings and Translation'
+            'ollama: local AI models for rewriting'
+            'gnome-keyring: encrypted storage for API keys')
+provides=("$_name")
+conflicts=("$_name")
+options=('!strip')
+source=("$_name-$pkgver.tar.gz::$url/releases/download/v$pkgver/dictaflow-linux-x64.tar.gz"
+        "LICENSE::https://raw.githubusercontent.com/GMR027/dictaflow/v$pkgver/LICENSE"
+        "dictaflow.png::https://raw.githubusercontent.com/GMR027/dictaflow/v$pkgver/build/icon.png")
+sha256sums=('SKIP' 'SKIP' 'SKIP')   # REEMPLAZAR por los hashes reales antes de publicar
+
+package() {
+  install -d "$pkgdir/opt/$_name" "$pkgdir/usr/bin"
+  cp -r "$srcdir/dictaflow-linux-x64/." "$pkgdir/opt/$_name/"
+  ln -s "/opt/$_name/dictaflow" "$pkgdir/usr/bin/dictaflow"
+  chmod 4755 "$pkgdir/opt/$_name/chrome-sandbox"
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/dictaflow.desktop" <<DESKTOP
+[Desktop Entry]
+Name=DictaFlow
+Comment=Voice dictation with local AI
+Exec=/usr/bin/dictaflow %U
+Terminal=false
+Type=Application
+Icon=dictaflow
+Categories=Utility;
+StartupWMClass=dictaflow
+DESKTOP
+  install -Dm644 "$srcdir/dictaflow.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/dictaflow.png"
+}

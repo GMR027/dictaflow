@@ -1,0 +1,59 @@
+{
+  "name": "dictaflow",
+  "version": "0.1.0",
+  "description": "Voice dictation with AI rewriting, text-to-speech, reader and meeting transcription. Local-first. / Dictado por voz con redacción por IA, lector y reuniones. Local primero.",
+  "main": "out/main/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --linux",
+    "dist:dir": "electron-vite build && electron-builder --linux --dir",
+    "site": "node site/build.mjs"
+  },
+  "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "jszip": "^3.10.2",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "zustand": "^5.0.15"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.1"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "GMR027",
+    "email": "GMR027@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/GMR027/dictaflow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GMR027/dictaflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GMR027/dictaflow/issues"
+  },
+  "keywords": [
+    "dictation",
+    "whisper",
+    "speech-to-text",
+    "tts",
+    "electron",
+    "ollama",
+    "local-first"
+  ],
+  "desktopName": "dictaflow.desktop"
+}

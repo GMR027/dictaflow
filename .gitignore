@@ -1,0 +1,12 @@
+node_modules/
+out/
+release/
+SHA256SUMS.txt
+dist/
+site/dist/
+*.log
+.env
+.env.*
+.DS_Store
+# datos locales (modelos, voces, ajustes) nunca van al repositorio
+.local/

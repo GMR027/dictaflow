@@ -1,0 +1,30 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "dictaflow-site.labels" . | nindent 4 }}
+  {{- $ann := .Values.ingress.annotations | default dict }}
+  {{- if and .Values.ingress.tls.enabled .Values.ingress.tls.clusterIssuer }}
+  {{- $ann = merge (dict "cert-manager.io/cluster-issuer" .Values.ingress.tls.clusterIssuer) $ann }}
+  {{- end }}
+  {{- if $ann }}
+  annotations: {{ toYaml $ann | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ .Release.Name }}, port: { name: http } } }
+{{- end }}

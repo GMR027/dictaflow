@@ -1,0 +1,58 @@
+appId: io.github.gmr027.dictaflow
+productName: DictaFlow
+executableName: dictaflow
+copyright: Copyright © 2026 GMR027
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+  # onnxruntime-node trae binarios de todas las plataformas y GPU (CUDA ~270 MB). DictaFlow usa solo CPU en Linux x64.
+  - "!node_modules/onnxruntime-node/bin/napi-v6/{darwin,win32}/**"
+  - "!node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**"
+  - "!node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime_providers_{cuda,tensorrt}.so"
+
+asar: true
+# Los módulos nativos y el worker de voz (proceso Node aparte) no pueden vivir dentro del asar
+asarUnpack:
+  - node_modules/onnxruntime-node/**
+  - node_modules/sharp/**
+  - node_modules/@img/**
+
+linux:
+  target:
+    - { target: AppImage, arch: x64 }
+    - { target: deb, arch: x64 }
+    - { target: rpm, arch: x64 }
+    - { target: pacman, arch: x64 }
+    - { target: tar.gz, arch: x64 }
+  category: Utility
+  syncDesktopName: true
+  icon: build/icon.png
+  maintainer: GMR027 <GMR027@users.noreply.github.com>
+  vendor: GMR027
+  synopsis: Voice dictation with local AI
+  description: >-
+    Dictado por voz con redacción asistida por IA, texto a voz, lector de PDF/EPUB,
+    transcripción de reuniones y traducción en vivo. Funciona en local o con tus suscripciones.
+  artifactName: dictaflow-linux-x64.${ext}
+  desktop:
+    entry:
+      Name: DictaFlow
+      Comment: Voice dictation with local AI / Dictado por voz con IA local
+      Keywords: dictation;voice;speech;whisper;tts;transcription;dictado;voz;
+      StartupWMClass: dictaflow
+
+# Nombres fijos (sin versión) para que https://github.com/GMR027/dictaflow/releases/latest/download/<archivo> funcione siempre
+appImage:
+  artifactName: dictaflow-linux-x86_64.AppImage
+deb:
+  artifactName: dictaflow-linux-amd64.deb
+  recommends:
+    - pipewire-bin
+rpm:
+  artifactName: dictaflow-linux-x86_64.rpm
+pacman:
+  artifactName: dictaflow-linux-x86_64.pacman
