@@ -9,8 +9,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "dist": "electron-vite build && electron-builder --linux",
-    "dist:dir": "electron-vite build && electron-builder --linux --dir",
+    "dist": "electron-vite build && electron-builder --linux --publish never",
+    "dist:dir": "electron-vite build && electron-builder --linux --dir --publish never",
     "site": "node site/build.mjs"
   },
   "devDependencies": {
