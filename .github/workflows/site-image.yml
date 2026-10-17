@@ -3,14 +3,18 @@ name: Site image
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'deploy/Dockerfile', 'package.json']
-  release: { types: [published] }
+    paths: ['site/**', 'deploy/Dockerfile', 'package.json', '.github/workflows/site-image.yml']
+  # Las releases creadas con GITHUB_TOKEN no disparan otros flujos; por eso se encadena con workflow_run.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
 permissions:
   contents: read
   packages: write
 jobs:
   image:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
