@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import type { ChatMsg, LLMConfig, Lang, RewriteRequest, Tone } from '@shared/types'
+import { TRANS_LANGS, type ChatMsg, type LLMConfig, type Lang, type RewriteRequest, type Tone, type TransLang } from '@shared/types'
 import { netFetch } from './netlog'
 import { getSecret, getSettings } from './store'
 
@@ -35,6 +35,18 @@ function systemPrompt(req: RewriteRequest): string {
       'Estructura con estas secciones en Markdown, omitiendo las que no apliquen: Objetivo, Contexto, Requisitos, Restricciones, Criterios de aceptación.',
       req.projectContext ? 'Usa el contexto del proyecto para mencionar rutas y tecnologías reales, pero SOLO las que aparezcan en él.' : '',
       'No inventes detalles que el usuario no dijo. Conserva nombres técnicos tal cual. Responde SOLO con el prompt, sin explicaciones.',
+      termsLine()
+    ].filter(Boolean).join('\n')
+  }
+  if (req.mode === 'changes') {
+    return [
+      `Convierte el texto dictado en instrucciones de cambio para un asistente de IA que trabaja sobre un proyecto existente, escritas en ${lang}.`,
+      `El asistente es: ${TARGETS[req.target ?? 'generic']}.`,
+      'Es una petición de modificación, no un encargo nuevo: no incluyas Objetivo, Contexto ni Criterios de aceptación.',
+      'Redacta una lista numerada de cambios concretos y accionables, cada uno en imperativo, indicando dónde aplicarlo (archivo, componente, pantalla o ajuste) solo si el usuario lo mencionó o aparece en el contexto.',
+      'Si algo debe quedar igual, añade al final una línea «No cambiar:» con ello.',
+      req.projectContext ? 'Usa el contexto del proyecto para nombrar rutas y tecnologías reales, pero SOLO las que aparezcan en él.' : '',
+      'No inventes cambios que el usuario no pidió. Conserva nombres técnicos tal cual. Responde SOLO con las instrucciones, sin explicaciones.',
       termsLine()
     ].filter(Boolean).join('\n')
   }
@@ -128,9 +140,9 @@ export function rewrite(req: RewriteRequest): Promise<string> {
 
 const LANG_NAME = { es: 'español', en: 'inglés' } as const
 
-export function translate(text: string, to: Lang): Promise<string> {
+export function translate(text: string, to: TransLang): Promise<string> {
   return complete(
-    `Traduce al ${LANG_NAME[to]}. Responde SOLO con la traducción, sin comentarios. ${termsLine()}`,
+    `Traduce al ${TRANS_LANGS[to].llm}. Responde SOLO con la traducción, sin comentarios. ${termsLine()}`,
     [{ role: 'user', content: text }], 0.2
   )
 }

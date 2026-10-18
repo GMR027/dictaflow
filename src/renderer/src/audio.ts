@@ -77,6 +77,19 @@ export class Segmenter {
     if (pcm.length / SAMPLE_RATE > 0.5 && rms(pcm) > MIN_RMS) this.onSegment(pcm, this.startAt)
   }
 
+  /** Audio de la frase en curso (sin consumirlo), para el texto provisional. Null si aún no hay habla. */
+  snapshot(): Float32Array | null {
+    const speaking = this.mode === 'controlled' ? this.buf.length > 0 : this.speaking
+    return speaking ? concat(this.buf).slice(-25 * SAMPLE_RATE) : null
+  }
+
+  /** Descarta lo pendiente sin transcribirlo (al interrumpir). */
+  discard(): void {
+    this.buf = []
+    this.preRoll = []
+    this.speaking = false
+  }
+
   /** Emite lo pendiente (al detener). */
   flush(): void {
     if (this.buf.length) this.emit()
@@ -115,11 +128,16 @@ export class Mic {
     this.ctx.createMediaStreamSource(this.stream).connect(this.node)
   }
 
-  async stop(): Promise<void> {
+  snapshot(): Float32Array | null {
+    return this.seg.snapshot()
+  }
+
+  async stop(discard = false): Promise<void> {
     this.node?.disconnect()
     this.stream?.getTracks().forEach((t) => t.stop())
     await this.ctx?.close()
-    this.seg.flush()
+    if (discard) this.seg.discard()
+    else this.seg.flush()
     this.ctx = null
     this.stream = null
     this.node = null

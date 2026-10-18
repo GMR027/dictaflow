@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ChatMsg, HardwareInfo, Lang, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, TtsStatus, Voice } from '@shared/types'
+import type { UpdateInfo } from '@shared/update'
+import type { ChatMsg, HardwareInfo, Lang, TransLang, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, TtsStatus, Voice } from '@shared/types'
 
 const on = <T>(channel: string, cb: (payload: T) => void): (() => void) => {
   const h = (_e: unknown, payload: T): void => cb(payload)
@@ -23,13 +24,13 @@ const api = {
 
   loadStt: (): Promise<void> => ipcRenderer.invoke('stt:load'),
   onSttProgress: (cb: (p: { file?: string; progress?: number; status: string }) => void) => on('stt:progress', cb),
-  transcribe: (pcm: Float32Array, lang: 'es' | 'en' | 'auto'): Promise<string> => ipcRenderer.invoke('stt:transcribe', pcm, lang),
+  transcribe: (pcm: Float32Array, lang: TransLang | 'auto'): Promise<string> => ipcRenderer.invoke('stt:transcribe', pcm, lang),
 
-  transcribeDetailed: (pcm: Float32Array, lang: Lang | 'auto', timestamps = false): Promise<{ text: string; segments: Segment[] }> =>
+  transcribeDetailed: (pcm: Float32Array, lang: TransLang | 'auto', timestamps = false): Promise<{ text: string; segments: Segment[] }> =>
     ipcRenderer.invoke('stt:detailed', pcm, lang, timestamps),
   applyDictionary: (text: string): Promise<string> => ipcRenderer.invoke('dict:apply', text),
   chat: (system: string, msgs: ChatMsg[]): Promise<string> => ipcRenderer.invoke('llm:chat', system, msgs),
-  translate: (text: string, to: Lang): Promise<string> => ipcRenderer.invoke('llm:translate', text, to),
+  translate: (text: string, to: TransLang): Promise<string> => ipcRenderer.invoke('llm:translate', text, to),
   generate: (action: string, text: string, lang: Lang): Promise<string> => ipcRenderer.invoke('llm:generate', action, text, lang),
 
   getCollection: <T>(name: 'prompts' | 'meetings' | 'library'): Promise<T[]> => ipcRenderer.invoke('col:get', name),
@@ -61,6 +62,10 @@ const api = {
   getNetEvents: (): Promise<{ events: NetEvent[]; dataDir: string }> => ipcRenderer.invoke('net:events'),
   clearNetEvents: (): Promise<void> => ipcRenderer.invoke('net:clear'),
   launchCmd: (): Promise<string> => ipcRenderer.invoke('app:launch-cmd'),
+  checkUpdate: (): Promise<UpdateInfo> => ipcRenderer.invoke('update:check'),
+  applyUpdate: (): Promise<'relaunching' | 'downloaded' | 'opened' | 'cancelled'> => ipcRenderer.invoke('update:apply'),
+  onUpdateProgress: (cb: (pct: number) => void) => on('update:progress', cb),
+  appVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
   uninstallInfo: (): Promise<{ kind: string; command: string; runnable: boolean; dataPaths: string[]; dataSizeMB: number }> => ipcRenderer.invoke('uninstall:info'),
   uninstall: (removeData: boolean): Promise<'done' | 'cancelled'> => ipcRenderer.invoke('uninstall:run', removeData),
   openDataDir: (): Promise<string> => ipcRenderer.invoke('app:open-data-dir'),

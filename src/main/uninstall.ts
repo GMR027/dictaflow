@@ -7,7 +7,7 @@ import { dataDir } from './store'
 const run = promisify(execFile)
 const PKG = 'dictaflow'
 
-export type InstallKind = 'appimage' | 'deb' | 'rpm' | 'pacman' | 'portable' | 'dev'
+import type { InstallKind } from '@shared/update'
 
 export interface UninstallInfo {
   kind: InstallKind
@@ -28,7 +28,7 @@ async function owns(cmd: string, args: string[]): Promise<boolean> {
   }
 }
 
-async function detectKind(): Promise<InstallKind> {
+export async function detectKind(): Promise<InstallKind> {
   if (!app.isPackaged) return 'dev'
   if (process.env.APPIMAGE) return 'appimage'
   const exe = process.execPath

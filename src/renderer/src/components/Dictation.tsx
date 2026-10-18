@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { DictationMode, PromptTarget, Tone } from '@shared/types'
+import type { DictationMode, Lang, PromptTarget, Tone } from '@shared/types'
 import { listMics } from '../audio'
 import { modeLabel, useApp } from '../store'
 
 const TARGETS: Record<PromptTarget, string> = {
   generic: 'Genérico', 'claude-code': 'Claude Code', opencode: 'opencode', cursor: 'Cursor', chatgpt: 'ChatGPT'
 }
+const LANGS: Record<Lang, string> = { es: 'Español', en: 'English' }
 const TONES: Record<Tone, string> = { neutral: 'Neutro', formal: 'Formal', casual: 'Cercano', concise: 'Conciso' }
 
 export function Dictation(): JSX.Element {
@@ -70,6 +71,19 @@ export function Dictation(): JSX.Element {
       <section className="card grow">
         <header>
           <h2>1 · Transcripción</h2>
+          <div className="row tight">
+            <label className="inline">Idioma
+              <select value={s.settings.primaryLang} aria-label="Idioma de la transcripción"
+                onChange={(e) => void s.patchSettings({ primaryLang: e.target.value as Lang })}>
+                {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
+            <label className="inline switch">
+              <input type="checkbox" role="switch" checked={s.settings.stopEnabled}
+                onChange={(e) => void s.patchSettings({ stopEnabled: e.target.checked })} />
+              <span className="slider" aria-hidden="true" /> Botón detener
+            </label>
+          </div>
           <span className="muted">
             {s.sttLoading ? `Descargando modelo… ${s.sttLoading}` : busy ? 'Transcribiendo…' : s.recording ? 'Escuchando…' : ''}
           </span>
@@ -78,11 +92,17 @@ export function Dictation(): JSX.Element {
           placeholder={s.settings.mode === 'controlled'
             ? 'Pulsa el botón, habla y vuelve a pulsar para transcribir.'
             : 'Activa el parlante: se transcribe cada frase cuando haces una pausa.'} />
+        {s.draft && <p className="muted draft" aria-live="polite">{s.draft}</p>}
         <div className="row">
           <button className={`mic ${s.recording ? 'rec' : ''}`} onClick={() => void s.toggleRecording()}>
             {s.recording
               ? (s.settings.mode === 'controlled' ? '■ Detener y transcribir' : '■ Desactivar parlante')
               : (s.settings.mode === 'controlled' ? '🎤 Pulsar para hablar' : '🎤 Activar parlante')}
+          </button>
+          <button className="danger" onClick={() => void s.cancel()}
+            disabled={!s.settings.stopEnabled || (!s.recording && !busy)}
+            title={s.settings.stopEnabled ? 'Interrumpe la grabación y descarta el audio' : 'Actívalo con el interruptor «Botón detener»'}>
+            ⏹ Detener transcripción
           </button>
           <button onClick={() => void s.rewrite('rewrite')} disabled={!s.raw.trim() || s.rewriting}>Redactar con IA</button>
         </div>
@@ -108,6 +128,8 @@ export function Dictation(): JSX.Element {
         <div className="row">
           <button onClick={() => void s.rewrite('rewrite', true)} disabled={!s.raw.trim() || s.rewriting}>🔄 Rehacer</button>
           <button onClick={() => void s.rewrite('prompt')} disabled={!s.raw.trim() || s.rewriting}>💻 Convertir en prompt</button>
+          <button onClick={() => void s.rewrite('changes')} disabled={!s.raw.trim() || s.rewriting}
+            title="Lista de cambios concretos para pedirle modificaciones a una IA sobre un proyecto ya existente">🛠 Instrucciones de cambio</button>
           <button onClick={() => void copy()} disabled={!s.polished && !s.raw}>{copied ? '✓ Copiado' : '📋 Copiar'}</button>
           <button className="danger" onClick={remove} disabled={!s.polished && !s.raw}>🗑 Eliminar</button>
           <button onClick={() => void s.savePrompt()} disabled={!s.polished}>💾 Guardar prompt</button>
@@ -124,7 +146,7 @@ export function Dictation(): JSX.Element {
         </header>
         {dev && (
           <>
-            <p className="muted">«Convertir en prompt» usa el destino y el contexto del proyecto (estructura, README, CLAUDE.md, dependencias). Solo se leen archivos de texto básicos, nada se envía salvo al modelo que elegiste.</p>
+            <p className="muted">«Convertir en prompt» y «Instrucciones de cambio» usan el destino y el contexto del proyecto (estructura, README, CLAUDE.md, dependencias). Solo se leen archivos de texto básicos, nada se envía salvo al modelo que elegiste.</p>
             <div className="row">
               <label>Destino del prompt
                 <select value={st.promptTarget} onChange={(e) => void s.patchSettings({ promptTarget: e.target.value as PromptTarget })}>

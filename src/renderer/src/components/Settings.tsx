@@ -1,28 +1,15 @@
 import { useEffect, useState } from 'react'
-import type { DictEntry, Lang, LLMKind, SecretName } from '@shared/types'
+import type { DictEntry, Lang } from '@shared/types'
 import { useApp } from '../store'
-import { OllamaSetup } from './OllamaSetup'
+import { AIServices } from './AIServices'
+import { Updates } from './Updates'
 import { useTtsStatus } from './TtsSetup'
 
-const PROVIDERS: Record<LLMKind, { label: string; hint: string; secret?: SecretName; defaultModel: string; defaultUrl?: string }> = {
-  ollama: { label: 'Ollama (local)', hint: 'Modelo local, sin enviar datos fuera.', defaultModel: 'qwen2.5:7b', defaultUrl: 'http://127.0.0.1:11434' },
-  anthropic: { label: 'Claude (API key)', hint: 'Usa tu API key de Anthropic. El texto se envía a Anthropic.', secret: 'anthropic', defaultModel: 'claude-sonnet-5-5' },
-  'claude-cli': { label: 'Claude (CLI con tu suscripción)', hint: 'Ejecuta el comando `claude` ya iniciado en tu equipo, sin herramientas ni acceso a archivos.', defaultModel: '' },
-  opencode: { label: 'opencode (CLI)', hint: 'Usa el modelo configurado en tu opencode. Formato: proveedor/modelo (opcional).', defaultModel: '' },
-  'openai-compat': { label: 'Compatible con OpenAI', hint: 'LM Studio, OpenRouter, etc. Indica la URL base y la clave.', secret: 'openai-compat', defaultModel: '', defaultUrl: 'http://127.0.0.1:1234/v1' }
-}
-
-export function Settings(): JSX.Element {
+function General(): JSX.Element {
   const { settings, patchSettings } = useApp()
   const [keys, setKeys] = useState<Record<string, boolean>>({})
-  const [keyInput, setKeyInput] = useState('')
-  const [ollama, setOllama] = useState<string[]>([])
-  const [ollamaState, setOllamaState] = useState({ installed: true, running: true })
-  const [test, setTest] = useState<string>('')
-  const [testing, setTesting] = useState(false)
   const [cmd, setCmd] = useState('')
 
-  const p = PROVIDERS[settings.llm.kind]
   const [tts, refreshTts] = useTtsStatus()
   const [audioKey, setAudioKey] = useState('')
   const [newFrom, setNewFrom] = useState('')
@@ -67,37 +54,10 @@ export function Settings(): JSX.Element {
     } catch (e) { setDlMsg((e as Error).message) } finally { off(); setDlBusy('') }
   }
 
-  const refreshOllama = (): void => {
-    void window.api.detectHardware().then(({ hw }) => {
-      setOllama(hw.ollama.models)
-      setOllamaState({ installed: hw.ollama.installed, running: hw.ollama.running })
-    })
-  }
-
   useEffect(() => {
-    refreshOllama()
     void window.api.launchCmd().then(setCmd)
-    for (const n of ['anthropic', 'openai-compat', 'openai-audio'] as SecretName[]) void window.api.hasSecret(n).then((v) => setKeys((k) => ({ ...k, [n]: v })))
+    void window.api.hasSecret('openai-audio').then((v) => setKeys((k) => ({ ...k, 'openai-audio': v })))
   }, [])
-
-  const setKind = (kind: LLMKind): void => {
-    const d = PROVIDERS[kind]
-    const enabled = Array.from(new Set([...settings.enabledProviders, kind]))
-    void patchSettings({ enabledProviders: enabled, llm: { kind, model: d.defaultModel, baseUrl: d.defaultUrl } })
-    setTest('')
-  }
-  const saveKey = async (): Promise<void> => {
-    if (!p.secret) return
-    await window.api.setSecret(p.secret, keyInput)
-    setKeys((k) => ({ ...k, [p.secret!]: !!keyInput }))
-    setKeyInput('')
-  }
-  const runTest = async (): Promise<void> => {
-    setTesting(true)
-    setTest('')
-    try { setTest('✓ ' + (await window.api.testLLM())) } catch (e) { setTest('✗ ' + (e as Error).message) }
-    setTesting(false)
-  }
 
   return (
     <div className="view">
@@ -117,46 +77,6 @@ export function Settings(): JSX.Element {
         </div>
       </section>
 
-      <section className="card">
-        <h2>Cuentas y servicios (redacción con IA)</h2>
-        <label>Proveedor activo
-          <select value={settings.llm.kind} onChange={(e) => setKind(e.target.value as LLMKind)}>
-            {Object.entries(PROVIDERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-        </label>
-        <p className="muted">{p.hint}</p>
-        {settings.llm.kind === 'ollama' && (
-          <OllamaSetup installed={ollamaState.installed} running={ollamaState.running} onChanged={refreshOllama} />
-        )}
-        <label>Modelo
-          {settings.llm.kind === 'ollama' && ollama.length > 0 ? (
-            <select value={settings.llm.model} onChange={(e) => void patchSettings({ llm: { ...settings.llm, model: e.target.value } })}>
-              {!ollama.includes(settings.llm.model) && <option value={settings.llm.model}>{settings.llm.model} (no instalado)</option>}
-              {ollama.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          ) : (
-            <input value={settings.llm.model} onChange={(e) => void patchSettings({ llm: { ...settings.llm, model: e.target.value } })} />
-          )}
-        </label>
-        {(settings.llm.kind === 'ollama' || settings.llm.kind === 'openai-compat') && (
-          <label>URL base
-            <input value={settings.llm.baseUrl ?? ''} onChange={(e) => void patchSettings({ llm: { ...settings.llm, baseUrl: e.target.value } })} />
-          </label>
-        )}
-        {p.secret && (
-          <div className="row">
-            <label className="grow">API key {keys[p.secret] && <span className="ok">· guardada cifrada</span>}
-              <input type="password" value={keyInput} placeholder={keys[p.secret] ? '••••••••  (escribe para reemplazar)' : 'Pega tu clave'}
-                onChange={(e) => setKeyInput(e.target.value)} autoComplete="off" />
-            </label>
-            <button onClick={() => void saveKey()} disabled={!keyInput && !keys[p.secret]}>{keyInput ? 'Guardar' : 'Borrar clave'}</button>
-          </div>
-        )}
-        <div className="row">
-          <button onClick={() => void runTest()} disabled={testing}>{testing ? 'Probando…' : 'Probar conexión'}</button>
-          <span className={test.startsWith('✓') ? 'ok' : 'warn'}>{test}</span>
-        </div>
-      </section>
 
 
       <section className="card">
@@ -252,6 +172,8 @@ export function Settings(): JSX.Element {
         <p className="muted">Pulsa el atajo para empezar a grabar, púlsalo otra vez para terminar: el texto redactado queda en el portapapeles y lo pegas con Ctrl+V. En Wayland ninguna app puede escribir en otra sin permisos elevados, por eso se pega manualmente.</p>
       </section>
 
+      <Updates />
+
       <section className="card">
         <h2>Desinstalar</h2>
         {un && (
@@ -276,6 +198,19 @@ export function Settings(): JSX.Element {
           </>
         )}
       </section>
+    </div>
+  )
+}
+
+export function Settings(): JSX.Element {
+  const [tab, setTab] = useState<'general' | 'ai'>('general')
+  return (
+    <div className="view">
+      <div className="seg tabs" role="tablist">
+        <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}>General</button>
+        <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>🤖 Servicios de IA</button>
+      </div>
+      {tab === 'general' ? <General /> : <AIServices />}
     </div>
   )
 }

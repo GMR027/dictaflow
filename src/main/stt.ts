@@ -1,13 +1,11 @@
 import { fork, type ChildProcess } from 'child_process'
 import { join } from 'path'
-import type { Lang, Segment } from '@shared/types'
+import { TRANS_LANGS, type Segment, type TransLang } from '@shared/types'
 import { netFetch } from './netlog'
 import { getSecret, getSettings, modelsDir } from './store'
 import { encodeWav } from './wav'
 
 type Progress = { file?: string; progress?: number; status: string }
-
-const LANG_NAME: Record<Lang, string> = { es: 'spanish', en: 'english' }
 
 let worker: ChildProcess | null = null
 let seq = 0
@@ -66,7 +64,7 @@ export function applyDictionary(text: string): string {
   return out
 }
 
-async function cloudTranscribe(pcm: Float32Array, lang: Lang | 'auto'): Promise<{ text: string; segments: Segment[] }> {
+async function cloudTranscribe(pcm: Float32Array, lang: TransLang | 'auto'): Promise<{ text: string; segments: Segment[] }> {
   const s = getSettings()
   const key = getSecret('openai-audio')
   if (!key) throw new Error('Falta la API key de audio en la nube (Ajustes → Audio).')
@@ -82,20 +80,20 @@ async function cloudTranscribe(pcm: Float32Array, lang: Lang | 'auto'): Promise<
 }
 
 /** Transcribe audio 16 kHz mono. `timestamps` devuelve segmentos con tiempos (subtítulos, reuniones). */
-export async function transcribeDetailed(pcm: Float32Array, lang: Lang | 'auto', timestamps = false): Promise<{ text: string; segments: Segment[] }> {
+export async function transcribeDetailed(pcm: Float32Array, lang: TransLang | 'auto', timestamps = false): Promise<{ text: string; segments: Segment[] }> {
   if (getSettings().sttProvider === 'openai') {
     const r = await cloudTranscribe(pcm, lang)
     return { text: applyDictionary(r.text), segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text) })) }
   }
   await loadStt()
   const res = await call<{ text: string; chunks?: { timestamp: [number, number | null]; text: string }[] }>({
-    type: 'transcribe', pcm, timestamps, language: lang === 'auto' ? undefined : LANG_NAME[lang]
+    type: 'transcribe', pcm, timestamps, language: lang === 'auto' ? undefined : TRANS_LANGS[lang].whisper
   })
   const segments = (res.chunks ?? []).map((c) => ({ start: c.timestamp[0], end: c.timestamp[1] ?? c.timestamp[0], text: applyDictionary(c.text.trim()) }))
   return { text: applyDictionary(res.text), segments }
 }
 
-export async function transcribe(pcm: Float32Array, lang: Lang | 'auto'): Promise<string> {
+export async function transcribe(pcm: Float32Array, lang: TransLang | 'auto'): Promise<string> {
   return (await transcribeDetailed(pcm, lang)).text
 }
 

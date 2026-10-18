@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, Menu, Notification, screen, she
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import appIcon from '../../build/icon.png?asset'
-import type { ChatMsg, HardwareInfo, Lang, PillState, RewriteRequest, SecretName, Settings } from '@shared/types'
+import type { ChatMsg, HardwareInfo, Lang, TransLang, PillState, RewriteRequest, SecretName, Settings } from '@shared/types'
 import { detectHardware, listOllamaModels, recommend } from './hardware'
 import { installOllama, startOllama } from './ollama-setup'
 import { complete, generate, pullOllamaModel, rewrite, testLLM, translate, type ContentAction } from './llm'
@@ -11,6 +11,7 @@ import { exportNote, launchAgent, openFileDialog, pickDir, readProjectContext, s
 import { installPiper, installVoice, synthesize, ttsStatus, VOICES } from './tts'
 import { startSystemAudio, stopSystemAudio } from './sysaudio'
 import { runUninstall, uninstallInfo } from './uninstall'
+import { applyUpdate, checkUpdate } from './updater'
 import { type Collection, dataDir, getCollection, getHistory, saveCollection, getSettings, hasSecret, saveHistory, saveSettings, setSecret } from './store'
 import { applyDictionary, loadStt, stopStt, transcribe, transcribeDetailed } from './stt'
 
@@ -113,19 +114,19 @@ function registerIpc(): void {
   ipcMain.handle('stt:load', async (e) => {
     await loadStt((p) => e.sender.send('stt:progress', p))
   })
-  ipcMain.handle('stt:transcribe', (_e, pcm: Float32Array, lang: 'es' | 'en' | 'auto') => transcribe(pcm, lang))
+  ipcMain.handle('stt:transcribe', (_e, pcm: Float32Array, lang: TransLang | 'auto') => transcribe(pcm, lang))
 
-  ipcMain.handle('stt:detailed', (_e, pcm: Float32Array, lang: Lang | 'auto', timestamps: boolean) => transcribeDetailed(pcm, lang, timestamps))
+  ipcMain.handle('stt:detailed', (_e, pcm: Float32Array, lang: TransLang | 'auto', timestamps: boolean) => transcribeDetailed(pcm, lang, timestamps))
   ipcMain.handle('dict:apply', (_e, text: string) => applyDictionary(text))
 
   ipcMain.handle('llm:rewrite', (_e, req: RewriteRequest) => {
     const st = getSettings()
     // Modo programador: el contexto del repo y el destino los resuelve el proceso principal
-    if (req.mode === 'prompt') req = { ...req, target: st.promptTarget, projectContext: readProjectContext(st.projectDir) || undefined }
+    if (req.mode !== 'rewrite') req = { ...req, target: st.promptTarget, projectContext: readProjectContext(st.projectDir) || undefined }
     return rewrite(req)
   })
   ipcMain.handle('llm:chat', (_e, system: string, msgs: ChatMsg[]) => complete(system, msgs, 0.6))
-  ipcMain.handle('llm:translate', (_e, text: string, to: Lang) => translate(text, to))
+  ipcMain.handle('llm:translate', (_e, text: string, to: TransLang) => translate(text, to))
   ipcMain.handle('llm:generate', (_e, action: ContentAction, text: string, lang: Lang) => generate(action, text, lang))
 
   ipcMain.handle('col:get', (_e, name: Collection) => getCollection(name))
@@ -168,6 +169,9 @@ function registerIpc(): void {
     if (!app.isPackaged) return `"${process.execPath}" "${app.getAppPath()}" --toggle`
     return existsSync('/usr/bin/dictaflow') ? 'dictaflow --toggle' : `"${process.execPath}" --toggle`
   })
+  ipcMain.handle('update:check', () => checkUpdate())
+  ipcMain.handle('update:apply', (e) => applyUpdate(e.sender))
+  ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('uninstall:info', () => uninstallInfo())
   ipcMain.handle('uninstall:run', (_e, removeData: boolean) => runUninstall(removeData))
   ipcMain.handle('app:open-data-dir', () => shell.openPath(dataDir))

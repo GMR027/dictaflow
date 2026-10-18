@@ -33,6 +33,7 @@ const TOPICS: Topic[] = [
         <li><b>Automático:</b> redacta solo tras unos segundos sin dictar. Si lo apagas, usa «Redactar con IA».</li>
         <li><b>🔄 Rehacer:</b> pide otra versión distinta de la actual.</li>
         <li><b>💻 Convertir en prompt:</b> lo transforma en un prompt de programación (Objetivo, Contexto, Requisitos…). No inventa datos que no dijiste.</li>
+        <li><b>🛠 Instrucciones de cambio:</b> para pedirle modificaciones a una IA sobre un proyecto que ya existe. Genera una lista numerada de cambios concretos (y qué no tocar), sin Objetivo ni Criterios.</li>
         <li><b>📋 Copiar:</b> copia la redacción (o la transcripción si aún no hay).</li>
         <li><b>🗑 Eliminar:</b> borra ambas secciones; puedes pulsar «Deshacer» unos segundos.</li>
       </ul>
@@ -78,7 +79,7 @@ const TOPICS: Topic[] = [
   {
     id: 'voz', title: 'Comandos de voz y diccionario',
     body: (<>
-      <p>Con los comandos activos, una frase que sea exactamente un comando se ejecuta en vez de escribirse: «borra eso», «nuevo párrafo», «nueva línea», «copia», «rehaz», «redacta», «hazlo más formal / corto / casual», «conviértelo en prompt», «guarda este prompt», «pausa». Puedes anteponer «Flow».</p>
+      <p>Con los comandos activos, una frase que sea exactamente un comando se ejecuta en vez de escribirse: «borra eso», «nuevo párrafo», «nueva línea», «copia», «rehaz», «redacta», «hazlo más formal / corto / casual», «conviértelo en prompt», «instrucciones de cambio», «guarda este prompt», «pausa». Puedes anteponer «Flow».</p>
       <p>El <b>diccionario personal</b> (Ajustes) corrige términos que Whisper escribe mal y se los indica a la IA. Importa listas desde .txt o .csv («transcribe,escribir»).</p>
     </>)
   },

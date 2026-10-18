@@ -106,6 +106,13 @@ button.on { background: var(--accent-soft); border-color: var(--accent); }
 label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); margin-bottom: .6rem; font-weight: 500; }
 label.inline { flex-direction: row; align-items: center; gap: 8px; margin: 0; }
 label.check { color: var(--text); font-weight: 400; font-size: .95rem; }
+label.switch { cursor: pointer; color: var(--text); font-weight: 400; font-size: .9rem; position: relative; }
+label.switch input { position: absolute; opacity: 0; width: 36px; height: 20px; margin: 0; cursor: pointer; }
+.slider { width: 36px; height: 20px; border-radius: 10px; background: var(--line-strong); position: relative; transition: background .15s; flex: none; }
+.slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: var(--shadow); }
+label.switch input:checked + .slider { background: var(--accent); }
+label.switch input:checked + .slider::after { transform: translateX(16px); }
+label.switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
 label.grow { flex: 1; }
 .btn { display: inline-block; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 7px 14px; color: var(--text); font-size: 1rem; margin: 0; }
 
@@ -221,3 +228,8 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
 @keyframes breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.78); } }
 @keyframes wave { 0%, 100% { transform: scaleY(.45); } 50% { transform: scaleY(1.12); } }
 @media (prefers-reduced-motion: reduce) { .logo .bar-anim, .logo.live .bar-anim { animation: none; } }
+.services { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 8px; }
+.service { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 10px 12px; height: auto; }
+.service.on { border-color: var(--accent); background: var(--btn-hover); }
+.draft { margin: -4px 0 8px; font-style: italic; }
+.notes { white-space: pre-wrap; max-height: 160px; overflow: auto; background: var(--field); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; font: inherit; font-size: 0.9em; }

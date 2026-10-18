@@ -1,6 +1,6 @@
 {
   "name": "dictaflow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Voice dictation with AI rewriting, text-to-speech, reader and meeting transcription. Local-first. / Dictado por voz con redacción por IA, lector y reuniones. Local primero.",
   "main": "out/main/index.js",
   "type": "commonjs",
@@ -9,6 +9,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
     "dist": "electron-vite build && electron-builder --linux --publish never",
     "dist:dir": "electron-vite build && electron-builder --linux --dir --publish never",
     "site": "node site/build.mjs"
@@ -28,6 +29,7 @@
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
+    "vitest": "^5.0.5",
     "zustand": "^5.0.15"
   },
   "dependencies": {

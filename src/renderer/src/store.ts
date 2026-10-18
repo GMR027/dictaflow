@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { DictationMode, SavedPrompt, Settings, Tone } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { Mic } from './audio'
+import { PartialTranscriber } from './partial'
 
 export type View = 'dictado' | 'prompts' | 'audio' | 'lector' | 'reuniones' | 'traduccion' | 'ajustes' | 'privacidad' | 'manual'
 
@@ -12,6 +13,8 @@ interface State {
   recording: boolean
   level: number
   raw: string
+  /** texto provisional de la frase en curso (aún no confirmado) */
+  draft: string
   polished: string
   versions: string[]
   transcribing: number
@@ -26,8 +29,9 @@ interface State {
   setPolished: (t: string) => void
   start: (anywhere?: boolean) => Promise<void>
   stop: () => Promise<void>
+  cancel: () => Promise<void>
   toggleRecording: () => Promise<void>
-  rewrite: (mode: 'rewrite' | 'prompt', redo?: boolean) => Promise<void>
+  rewrite: (mode: 'rewrite' | 'prompt' | 'changes', redo?: boolean) => Promise<void>
   copyPolished: () => Promise<void>
   clearAll: () => void
   undoClear: () => void
@@ -54,14 +58,17 @@ const COMMANDS: Cmd[] = [
   { re: /^(hazlo mas corto|mas corto|mas conciso|hazlo mas conciso)$/, label: 'Tono conciso', run: (g) => tone('concise')(g) },
   { re: /^(hazlo mas casual|mas casual|mas cercano|hazlo mas cercano)$/, label: 'Tono cercano', run: (g) => tone('casual')(g) },
   { re: /^(convierte(lo)? en prompt|hazlo prompt|a prompt)$/, label: 'Convirtiendo en prompt', run: (g) => g().rewrite('prompt') },
+  { re: /^(instrucciones de cambio|convierte(lo)? en cambios|hazlo cambios|a cambios)$/, label: 'Instrucciones de cambio', run: (g) => g().rewrite('changes') },
   { re: /^(guarda (este|el) prompt|guardar prompt)$/, label: 'Prompt guardado', run: (g) => g().savePrompt() },
   { re: /^(pausa|deja de escuchar|detener|para de escuchar)$/, label: 'Micrófono detenido', run: (g) => g().stop() }
 ]
 
 let mic: Mic | null = null
+let partial: PartialTranscriber | null = null
 let queue: Promise<void> = Promise.resolve()
 let debounce: ReturnType<typeof setTimeout> | undefined
 let anywhereSession = false
+let epoch = 0
 let trash: { raw: string; polished: string; versions: string[] } | null = null
 
 export const useApp = create<State>((set, get) => ({
@@ -73,6 +80,7 @@ export const useApp = create<State>((set, get) => ({
   raw: '',
   polished: '',
   versions: [],
+  draft: '',
   transcribing: 0,
   rewriting: false,
   sttLoading: null,
@@ -104,10 +112,14 @@ export const useApp = create<State>((set, get) => ({
         mode: anywhere ? 'controlled' : settings.mode,
         onLevel: (level) => set({ level }),
         onSegment: (pcm) => {
+          partial?.reset()
           set((s) => ({ transcribing: s.transcribing + 1 }))
+          const mine = epoch
           queue = queue.then(async () => {
             try {
+              if (mine !== epoch) return
               const text = await window.api.transcribe(pcm, get().settings.primaryLang)
+              if (mine !== epoch) return
               const cmd = get().settings.voiceCommands && !anywhereSession ? COMMANDS.find((c) => c.re.test(norm(text))) : undefined
               if (cmd) {
                 get().flash(`🎙 Comando: ${cmd.label}`)
@@ -128,6 +140,16 @@ export const useApp = create<State>((set, get) => ({
         }
       })
       await mic.start()
+      if (settings.sttProvider === 'local' && !anywhere) {
+        const m = mic
+        partial = new PartialTranscriber({
+          snapshot: () => m.snapshot(),
+          transcribe: (pcm) => window.api.transcribe(pcm, get().settings.primaryLang),
+          onDraft: (draft) => set({ draft }),
+          busy: () => get().transcribing > 0
+        })
+        partial.start()
+      }
       set({ recording: true })
     } catch (e) {
       mic = null
@@ -138,8 +160,21 @@ export const useApp = create<State>((set, get) => ({
   stop: async () => {
     await mic?.stop()
     mic = null
+    partial?.stop(); partial = null
     set({ recording: false, level: 0 })
     await queue
+  },
+
+  /** Interrumpe la grabación y descarta el audio pendiente y las transcripciones en curso. */
+  cancel: async () => {
+    if (!get().recording && get().transcribing === 0) return
+    epoch++
+    await mic?.stop(true)
+    mic = null
+    partial?.stop(); partial = null
+    set({ recording: false, level: 0 })
+    await queue
+    get().flash('⏹ Transcripción detenida')
   },
 
   toggleRecording: async () => (get().recording ? get().stop() : get().start()),

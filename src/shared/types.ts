@@ -1,4 +1,21 @@
 export type Lang = 'es' | 'en'
+
+/** Idiomas de traducción (Whisper los transcribe todos; la voz Piper solo existe para Lang). */
+export const TRANS_LANGS = {
+  es: { name: 'Español', whisper: 'spanish', llm: 'español' },
+  en: { name: 'English', whisper: 'english', llm: 'inglés' },
+  zh: { name: '中文 (Chino)', whisper: 'chinese', llm: 'chino' },
+  hi: { name: 'हिन्दी (Hindi)', whisper: 'hindi', llm: 'hindi' },
+  ar: { name: 'العربية (Árabe)', whisper: 'arabic', llm: 'árabe' },
+  pt: { name: 'Português', whisper: 'portuguese', llm: 'portugués' },
+  fr: { name: 'Français', whisper: 'french', llm: 'francés' },
+  de: { name: 'Deutsch', whisper: 'german', llm: 'alemán' },
+  ru: { name: 'Русский', whisper: 'russian', llm: 'ruso' },
+  ja: { name: '日本語 (Japonés)', whisper: 'japanese', llm: 'japonés' },
+  ko: { name: '한국어 (Coreano)', whisper: 'korean', llm: 'coreano' },
+  it: { name: 'Italiano', whisper: 'italian', llm: 'italiano' }
+} as const
+export type TransLang = keyof typeof TRANS_LANGS
 export type DictationMode = 'continuous' | 'controlled'
 export type LLMKind = 'ollama' | 'anthropic' | 'claude-cli' | 'opencode' | 'openai-compat'
 export type Theme = 'system' | 'dark' | 'light'
@@ -29,6 +46,7 @@ export interface Settings {
   enabledProviders: LLMKind[]
   tone: Tone
   autoRewrite: boolean
+  stopEnabled: boolean
   micDeviceId: string
   mode: DictationMode
   strictOffline: boolean
@@ -54,6 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
   enabledProviders: ['ollama'],
   tone: 'neutral',
   autoRewrite: true,
+  stopEnabled: true,
   micDeviceId: 'default',
   mode: 'controlled',
   strictOffline: false,
@@ -94,7 +113,7 @@ export interface RewriteRequest {
   text: string
   lang: Lang
   tone: Tone
-  mode: 'rewrite' | 'prompt'
+  mode: 'rewrite' | 'prompt' | 'changes'
   /** versión previa, para pedir una alternativa distinta */
   previous?: string
   /** modo programador: destino y contexto del repositorio */
