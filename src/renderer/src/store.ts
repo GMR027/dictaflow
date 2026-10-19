@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { DictationMode, SavedPrompt, Settings, Tone } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { Mic } from './audio'
+import { record } from './metrics'
 import { PartialTranscriber } from './partial'
 
 export type View = 'dictado' | 'prompts' | 'audio' | 'lector' | 'reuniones' | 'traduccion' | 'ajustes' | 'privacidad' | 'manual'
@@ -31,7 +32,7 @@ interface State {
   stop: () => Promise<void>
   cancel: () => Promise<void>
   toggleRecording: () => Promise<void>
-  rewrite: (mode: 'rewrite' | 'prompt' | 'changes', redo?: boolean) => Promise<void>
+  rewrite: (mode: 'rewrite' | 'prompt' | 'changes', redo?: boolean, auto?: boolean) => Promise<void>
   copyPolished: () => Promise<void>
   clearAll: () => void
   undoClear: () => void
@@ -69,6 +70,9 @@ let queue: Promise<void> = Promise.resolve()
 let debounce: ReturnType<typeof setTimeout> | undefined
 let anywhereSession = false
 let epoch = 0
+/** Texto de `raw` ya cubierto por la redacción automática: solo se redacta lo nuevo (el coste del LLM no crece con el dictado). */
+let autoBase = ''
+let rewriteAgain = false
 let trash: { raw: string; polished: string; versions: string[] } | null = null
 
 export const useApp = create<State>((set, get) => ({
@@ -94,6 +98,7 @@ export const useApp = create<State>((set, get) => ({
       if (p.status === 'progress' && p.file) set({ sttLoading: `${p.file.split('/').pop()} ${Math.round(p.progress ?? 0)}%` })
       if (p.status === 'ready' || p.status === 'done') set({ sttLoading: null })
     })
+    window.api.onLlmNotice((m) => get().flash(m))
     window.api.onToggleDictation(() => void get().toggleAnywhere())
   },
 
@@ -110,6 +115,7 @@ export const useApp = create<State>((set, get) => ({
       mic = new Mic({
         deviceId: settings.micDeviceId,
         mode: anywhere ? 'controlled' : settings.mode,
+        pauseMs: settings.pauseMs,
         onLevel: (level) => set({ level }),
         onSegment: (pcm) => {
           partial?.reset()
@@ -118,7 +124,9 @@ export const useApp = create<State>((set, get) => ({
           queue = queue.then(async () => {
             try {
               if (mine !== epoch) return
+              const t0 = performance.now()
               const text = await window.api.transcribe(pcm, get().settings.primaryLang)
+              record('stt_ms', performance.now() - t0)
               if (mine !== epoch) return
               const cmd = get().settings.voiceCommands && !anywhereSession ? COMMANDS.find((c) => c.re.test(norm(text))) : undefined
               if (cmd) {
@@ -128,7 +136,7 @@ export const useApp = create<State>((set, get) => ({
                 set((s) => ({ raw: (s.raw ? s.raw + ' ' : '') + text }))
                 if (get().settings.autoRewrite && !anywhereSession) {
                   clearTimeout(debounce)
-                  debounce = setTimeout(() => void get().rewrite('rewrite'), 2500)
+                  debounce = setTimeout(() => void get().rewrite('rewrite', false, true), get().settings.rewriteDelayMs)
                 }
               }
             } catch (e) {
@@ -139,8 +147,11 @@ export const useApp = create<State>((set, get) => ({
           })
         }
       })
+      // Precarga en paralelo con el arranque del micrófono: la primera frase no paga la carga del modelo
+      if (settings.sttProvider === 'local') void window.api.loadStt().catch(() => undefined)
+      if (settings.autoRewrite && !anywhere) void window.api.warmLLM()
       await mic.start()
-      if (settings.sttProvider === 'local' && !anywhere) {
+      if (settings.sttProvider === 'local' && settings.draftsEnabled && !anywhere) {
         const m = mic
         partial = new PartialTranscriber({
           snapshot: () => m.snapshot(),
@@ -179,20 +190,39 @@ export const useApp = create<State>((set, get) => ({
 
   toggleRecording: async () => (get().recording ? get().stop() : get().start()),
 
-  rewrite: async (mode, redo = false) => {
+  rewrite: async (mode, redo = false, auto = false) => {
     const { raw, settings, polished } = get()
-    if (!raw.trim() || get().rewriting) return
+    if (!raw.trim()) return
+    if (get().rewriting) {
+      // Antes se descartaba: las frases dictadas durante una redacción se quedaban sin redactar
+      if (auto) rewriteAgain = true
+      return
+    }
+    // Automático: si lo anterior no cambió, solo se redacta el texto nuevo y se añade
+    const incremental = settings.rewriteIncremental && auto && mode === 'rewrite' && !redo && autoBase !== '' && raw.startsWith(autoBase) && polished.trim() !== ''
+    const text = incremental ? raw.slice(autoBase.length).trim() : raw
+    if (!text) return
     set({ rewriting: true, error: null })
+    const t0 = performance.now()
     try {
       const out = await window.api.rewrite({
-        text: raw, lang: settings.primaryLang, tone: settings.tone, mode,
+        text, lang: settings.primaryLang, tone: settings.tone, mode,
         previous: redo ? polished : undefined
       })
-      set((s) => ({ polished: out, versions: [...s.versions, out].slice(-10) }))
+      record('rewrite_ms', performance.now() - t0)
+      // Si el usuario limpió o editó el texto mientras tanto, esta respuesta ya no le corresponde
+      if (!get().raw.startsWith(raw)) return
+      const next = incremental ? `${get().polished.replace(/\s+$/, '')} ${out}` : out
+      autoBase = mode === 'rewrite' ? raw : ''
+      set((s) => ({ polished: next, versions: [...s.versions, next].slice(-10) }))
     } catch (e) {
       set({ error: `Redacción: ${(e as Error).message}` })
     } finally {
       set({ rewriting: false })
+      if (rewriteAgain) {
+        rewriteAgain = false
+        if (get().raw.trim() && get().raw !== raw) void get().rewrite('rewrite', false, true)
+      }
     }
   },
 
@@ -204,6 +234,7 @@ export const useApp = create<State>((set, get) => ({
   clearAll: () => {
     const { raw, polished, versions } = get()
     trash = { raw, polished, versions }
+    autoBase = ''
     set({ raw: '', polished: '', versions: [] })
   },
   undoClear: () => {
@@ -254,6 +285,7 @@ export const useApp = create<State>((set, get) => ({
     }
     if (get().recording) return
     anywhereSession = true
+    autoBase = ''
     set({ raw: '', polished: '', versions: [] })
     await get().start(true)
     if (get().recording) await api.setPill({ state: 'listening', message: 'Escuchando… pulsa el atajo de nuevo' })

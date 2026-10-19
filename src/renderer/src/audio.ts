@@ -1,5 +1,7 @@
 export const SAMPLE_RATE = 16000
 const MIN_RMS = 0.004
+/** Audio previo a la detección de voz que se conserva para no cortar el inicio de la frase */
+const PRE_ROLL_MS = 300
 
 export const rms = (a: Float32Array): number => {
   let s = 0
@@ -30,7 +32,7 @@ export class Segmenter {
   private fed = 0
   private startAt = 0
 
-  constructor(private mode: 'continuous' | 'controlled', private onSegment: SegmentHandler) {}
+  constructor(private mode: 'continuous' | 'controlled', private onSegment: SegmentHandler, private pauseMs = 900) {}
 
   feed(chunk: Float32Array): number {
     const level = rms(chunk)
@@ -49,7 +51,7 @@ export class Segmenter {
 
     if (!this.speaking) {
       this.preRoll.push(chunk)
-      if (this.preRoll.length > 4) this.preRoll.shift()
+      if (this.preRoll.length * ms > PRE_ROLL_MS) this.preRoll.shift()
       if (voiced) {
         this.speaking = true
         this.buf = [...this.preRoll]
@@ -64,7 +66,7 @@ export class Segmenter {
     this.buf.push(chunk)
     this.speechMs += ms
     this.silentMs = voiced ? 0 : this.silentMs + ms
-    if (this.silentMs >= 900 || this.speechMs >= 25000) this.emit()
+    if (this.silentMs >= this.pauseMs || this.speechMs >= 25000) this.emit()
     return level
   }
 
@@ -100,6 +102,8 @@ export interface MicOptions {
   deviceId: string
   mode: 'continuous' | 'controlled'
   onSegment: SegmentHandler
+  /** silencio (ms) que cierra una frase en modo continuo */
+  pauseMs?: number
   onLevel: (rms: number) => void
 }
 
@@ -110,7 +114,7 @@ export class Mic {
   private seg: Segmenter
 
   constructor(private opts: MicOptions) {
-    this.seg = new Segmenter(opts.mode, opts.onSegment)
+    this.seg = new Segmenter(opts.mode, opts.onSegment, opts.pauseMs)
   }
 
   async start(): Promise<void> {

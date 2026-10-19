@@ -61,7 +61,26 @@ export interface Settings {
   ttsVoice: Record<Lang, string>
   ttsSpeed: number
   cloudAudio: { baseUrl: string; sttModel: string; ttsModel: string; ttsVoice: string }
+  /** Motor de voz local: Whisper en Transformers.js (incluido) o whisper.cpp (binario externo `whisper-server`) */
+  sttEngine: SttEngine
+  whisperCpp: { bin: string; model: string }
+  /** Perfil de rendimiento: 'auto' lo decide DictaFlow según el equipo */
+  hwProfile: HwProfileSetting
+  /** Silencio (ms) que cierra una frase en el modo «Parlante activo» */
+  pauseMs: number
+  /** Texto provisional mientras hablas */
+  draftsEnabled: boolean
+  /** Espera (ms) tras la última frase antes de redactar automáticamente */
+  rewriteDelayMs: number
+  /** Redacción automática: solo se redacta lo nuevo y se añade, en vez de rehacer todo el texto */
+  rewriteIncremental: boolean
+  /** Descarta la redacción si cambia cifras, horas o cantidades */
+  guardNumbers: boolean
 }
+
+export type SttEngine = 'transformers' | 'whispercpp'
+export type HwProfile = 'light' | 'balanced' | 'accelerated'
+export type HwProfileSetting = 'auto' | HwProfile
 
 export const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
@@ -86,12 +105,22 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsProvider: 'piper',
   ttsVoice: { es: 'es_ES-davefx-medium', en: 'en_US-lessac-medium' },
   ttsSpeed: 1,
-  cloudAudio: { baseUrl: 'https://api.openai.com/v1', sttModel: 'whisper-1', ttsModel: 'tts-1', ttsVoice: 'alloy' }
+  cloudAudio: { baseUrl: 'https://api.openai.com/v1', sttModel: 'whisper-1', ttsModel: 'tts-1', ttsVoice: 'alloy' },
+  sttEngine: 'transformers',
+  whisperCpp: { bin: '', model: '' },
+  hwProfile: 'auto',
+  pauseMs: 900,
+  draftsEnabled: true,
+  rewriteDelayMs: 2500,
+  rewriteIncremental: true,
+  guardNumbers: true
 }
 
 export interface HardwareInfo {
   cpu: string
   cores: number
+  cpuFlags: { avx: boolean; avx2: boolean; avx512: boolean }
+  arch: string
   ramGB: number
   gpu: string
   gpuVendor: 'nvidia' | 'amd' | 'intel' | 'none'

@@ -23,6 +23,10 @@ const api = {
   onPullProgress: (cb: (p: { name: string; pct: number; status: string }) => void) => on('ollama:pull-progress', cb),
 
   loadStt: (): Promise<void> => ipcRenderer.invoke('stt:load'),
+  sttStatus: (): Promise<{ engine: string; active: 'transformers' | 'whispercpp'; fallbackReason: string | null; cpp: { bin: string; model: string; ggml: { id: string; label: string; sizeMB: number; installed: boolean }[] } }> => ipcRenderer.invoke('stt:status'),
+  benchStt: (): Promise<{ engine: string; model: string; loadMs: number; ms: number }> => ipcRenderer.invoke('stt:bench'),
+  downloadGgml: (id: string): Promise<void> => ipcRenderer.invoke('stt:download-ggml', id),
+  onLlmNotice: (cb: (msg: string) => void) => on('llm:notice', cb),
   onSttProgress: (cb: (p: { file?: string; progress?: number; status: string }) => void) => on('stt:progress', cb),
   transcribe: (pcm: Float32Array, lang: TransLang | 'auto'): Promise<string> => ipcRenderer.invoke('stt:transcribe', pcm, lang),
 
@@ -54,6 +58,7 @@ const api = {
   onSystemAudio: (cb: (pcm: Float32Array) => void) => on('sysaudio:chunk', cb),
 
   rewrite: (req: RewriteRequest): Promise<string> => ipcRenderer.invoke('llm:rewrite', req),
+  warmLLM: (): Promise<void> => ipcRenderer.invoke('llm:warm'),
   testLLM: (): Promise<string> => ipcRenderer.invoke('llm:test'),
 
   getHistory: () => ipcRenderer.invoke('history:get'),

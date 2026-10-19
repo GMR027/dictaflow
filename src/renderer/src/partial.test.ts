@@ -54,6 +54,16 @@ describe('PartialTranscriber', () => {
     void p.tick(); set(audio(3)); void p.tick()
     expect(n).toBe(1)
   })
+  it('deja libre el motor tanto como lo ocupó el borrador anterior', async () => {
+    let n = 0
+    const { p, set } = setup({ transcribe: async () => { ++n; await new Promise((r) => setTimeout(r, 30)); return 'x' } })
+    await p.tick()
+    set(audio(3)); await p.tick()
+    expect(n).toBe(1)
+    await new Promise((r) => setTimeout(r, 40))
+    await p.tick()
+    expect(n).toBe(2)
+  })
   it('un fallo no rompe ni publica nada', async () => {
     const { p, drafts } = setup({ transcribe: async () => { throw new Error('x') } })
     await p.tick()
@@ -70,5 +80,20 @@ describe('Segmenter.snapshot', () => {
     expect(s.snapshot()?.length).toBe(16000)
     s.flush()
     expect(got).toEqual([16000])
+  })
+})
+
+describe('Segmenter.preRoll', () => {
+  it('conserva ~300 ms previos a la voz para no cortar la primera palabra', () => {
+    const got: number[] = []
+    const s = new Segmenter('continuous', (p) => got.push(p.length))
+    const block = (v: number): Float32Array => new Float32Array(128).fill(v) // 8 ms, como el worklet
+    for (let i = 0; i < 200; i++) s.feed(block(0.0005))
+    for (let i = 0; i < 125; i++) s.feed(block(0.2)) // 1 s de voz
+    for (let i = 0; i < 125; i++) s.feed(block(0.0005)) // >900 ms de silencio
+    expect(got).toHaveLength(1)
+    const sec = got[0] / 16000
+    expect(sec).toBeGreaterThan(2.0) // 1 s voz + 0,9 s de cola + ~0,3 s previos
+    expect(sec).toBeLessThan(2.4)
   })
 })

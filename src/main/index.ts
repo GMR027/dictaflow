@@ -5,7 +5,7 @@ import appIcon from '../../build/icon.png?asset'
 import type { ChatMsg, HardwareInfo, Lang, TransLang, PillState, RewriteRequest, SecretName, Settings } from '@shared/types'
 import { detectHardware, listOllamaModels, recommend } from './hardware'
 import { installOllama, startOllama } from './ollama-setup'
-import { complete, generate, pullOllamaModel, rewrite, testLLM, translate, type ContentAction } from './llm'
+import { complete, generate, pullOllamaModel, rewriteGuarded, testLLM, translate, warmLLM, type ContentAction } from './llm'
 import { clearNetEvents, getNetEvents } from './netlog'
 import { exportNote, launchAgent, openFileDialog, pickDir, readProjectContext, saveFileDialog } from './tools'
 import { installPiper, installVoice, synthesize, ttsStatus, VOICES } from './tts'
@@ -13,7 +13,7 @@ import { startSystemAudio, stopSystemAudio } from './sysaudio'
 import { runUninstall, uninstallInfo } from './uninstall'
 import { applyUpdate, checkUpdate } from './updater'
 import { type Collection, dataDir, getCollection, getHistory, saveCollection, getSettings, hasSecret, saveHistory, saveSettings, setSecret } from './store'
-import { applyDictionary, loadStt, stopStt, transcribe, transcribeDetailed } from './stt'
+import { applyDictionary, benchStt, downloadGgml, loadStt, sttStatus, stopStt, transcribe, transcribeDetailed } from './stt'
 
 // AppImage no puede instalar chrome-sandbox con setuid. Si el sistema restringe los user namespaces
 // (Ubuntu 24.04+, Debian) Chromium abortaría al arrancar, así que solo en ese caso se desactiva su sandbox.
@@ -114,17 +114,24 @@ function registerIpc(): void {
   ipcMain.handle('stt:load', async (e) => {
     await loadStt((p) => e.sender.send('stt:progress', p))
   })
+  ipcMain.handle('stt:status', () => sttStatus())
+  ipcMain.handle('stt:bench', () => benchStt())
+  ipcMain.handle('stt:download-ggml', (e, id: string) => downloadGgml(id, (p) => e.sender.send('stt:progress', p)))
   ipcMain.handle('stt:transcribe', (_e, pcm: Float32Array, lang: TransLang | 'auto') => transcribe(pcm, lang))
 
   ipcMain.handle('stt:detailed', (_e, pcm: Float32Array, lang: TransLang | 'auto', timestamps: boolean) => transcribeDetailed(pcm, lang, timestamps))
   ipcMain.handle('dict:apply', (_e, text: string) => applyDictionary(text))
 
-  ipcMain.handle('llm:rewrite', (_e, req: RewriteRequest) => {
+  ipcMain.handle('llm:rewrite', (e, req: RewriteRequest) => {
     const st = getSettings()
     // Modo programador: el contexto del repo y el destino los resuelve el proceso principal
     if (req.mode !== 'rewrite') req = { ...req, target: st.promptTarget, projectContext: readProjectContext(st.projectDir) || undefined }
-    return rewrite(req)
+    return rewriteGuarded(req).then((r) => {
+      if (r.reverted) e.sender.send('llm:notice', 'La redacción cambiaba cifras u horas: se conservó el texto dictado.')
+      return r.text
+    })
   })
+  ipcMain.handle('llm:warm', () => warmLLM().catch(() => undefined))
   ipcMain.handle('llm:chat', (_e, system: string, msgs: ChatMsg[]) => complete(system, msgs, 0.6))
   ipcMain.handle('llm:translate', (_e, text: string, to: TransLang) => translate(text, to))
   ipcMain.handle('llm:generate', (_e, action: ContentAction, text: string, lang: Lang) => generate(action, text, lang))

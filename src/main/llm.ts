@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { TRANS_LANGS, type ChatMsg, type LLMConfig, type Lang, type RewriteRequest, type Tone, type TransLang } from '@shared/types'
 import { netFetch } from './netlog'
+import { numbersPreserved } from '@shared/guard'
 import { getSecret, getSettings } from './store'
 
 const TONES: Record<Tone, string> = {
@@ -53,6 +54,7 @@ function systemPrompt(req: RewriteRequest): string {
   return [
     `Reescribe el texto dictado en ${lang} con mejor redacción: ${TONES[req.tone]}.`,
     'Elimina muletillas y repeticiones, corrige puntuación y gramática, conserva el significado y no añadas información.',
+    'Conserva exactamente las cifras, horas, cantidades y nombres propios dichos; no los conviertas ni los cambies.',
     'Responde SOLO con el texto reescrito, sin comillas ni explicaciones.',
     termsLine()
   ].filter(Boolean).join('\n')
@@ -94,6 +96,18 @@ async function openAiStyle(cfg: LLMConfig, system: string, msgs: ChatMsg[], key:
   return json.choices[0].message.content.trim()
 }
 
+// Por defecto Ollama descarga el modelo a los 5 min: la siguiente frase paga 2-5 s de carga (medido)
+const KEEP_ALIVE = '30m'
+
+/** Carga el modelo de Ollama en memoria sin generar nada, para que la primera redacción no pague la carga. */
+export async function warmLLM(): Promise<void> {
+  const cfg = getSettings().llm
+  if (cfg.kind !== 'ollama') return
+  await netFetch('ollama:warm', `${cfg.baseUrl ?? 'http://127.0.0.1:11434'}/api/generate`, {
+    method: 'POST', body: JSON.stringify({ model: cfg.model, keep_alive: KEEP_ALIVE }), signal: AbortSignal.timeout(60_000)
+  })
+}
+
 /** Punto único de acceso al modelo configurado: todas las herramientas pasan por aquí. */
 export async function complete(system: string, msgs: ChatMsg[], temperature = 0.4): Promise<string> {
   const cfg = getSettings().llm
@@ -103,7 +117,7 @@ export async function complete(system: string, msgs: ChatMsg[], temperature = 0.
     case 'ollama': {
       const res = await netFetch('ollama:chat', `${cfg.baseUrl ?? 'http://127.0.0.1:11434'}/api/chat`, {
         method: 'POST',
-        body: JSON.stringify({ model: cfg.model, stream: false, options: { temperature, num_ctx: 8192 }, messages: [{ role: 'system', content: system }, ...msgs] })
+        body: JSON.stringify({ model: cfg.model, stream: false, keep_alive: KEEP_ALIVE, options: { temperature, num_ctx: 8192 }, messages: [{ role: 'system', content: system }, ...msgs] })
       })
       if (!res.ok) throw new Error(`Ollama respondió ${res.status}: ${await res.text()}`)
       return ((await res.json()) as { message: { content: string } }).message.content.trim()
@@ -136,6 +150,17 @@ export async function complete(system: string, msgs: ChatMsg[], temperature = 0.
 
 export function rewrite(req: RewriteRequest): Promise<string> {
   return complete(systemPrompt(req), [{ role: 'user', content: userPrompt(req) }], req.previous ? 0.9 : 0.4)
+}
+
+/**
+ * Redacción con protección de cifras: si el modelo cambia horas, cantidades o números, se reintenta una vez
+ * con temperatura baja y, si persiste, se conserva el texto dictado (`reverted`) en vez de entregar datos alterados.
+ */
+export async function rewriteGuarded(req: RewriteRequest): Promise<{ text: string; reverted: boolean }> {
+  const out = await rewrite(req)
+  if (req.mode !== 'rewrite' || !getSettings().guardNumbers || numbersPreserved(req.text, out)) return { text: out, reverted: false }
+  const retry = await complete(systemPrompt(req) + '\nIMPORTANTE: tu respuesta anterior alteró cifras. Copia las cifras y horas tal como las dijo el usuario.', [{ role: 'user', content: userPrompt(req) }], 0.1)
+  return numbersPreserved(req.text, retry) ? { text: retry, reverted: false } : { text: req.text.trim(), reverted: true }
 }
 
 const LANG_NAME = { es: 'español', en: 'inglés' } as const

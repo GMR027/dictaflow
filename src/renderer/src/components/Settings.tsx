@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { DictEntry, Lang } from '@shared/types'
 import { useApp } from '../store'
 import { AIServices } from './AIServices'
+import { Performance } from './Performance'
 import { Updates } from './Updates'
 import { useTtsStatus } from './TtsSetup'
 
@@ -203,14 +204,15 @@ function General(): JSX.Element {
 }
 
 export function Settings(): JSX.Element {
-  const [tab, setTab] = useState<'general' | 'ai'>('general')
+  const [tab, setTab] = useState<'general' | 'ai' | 'perf'>('general')
   return (
     <div className="view">
       <div className="seg tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}>General</button>
+        <button role="tab" aria-selected={tab === 'perf'} className={tab === 'perf' ? 'on' : ''} onClick={() => setTab('perf')}>⚡ Rendimiento</button>
         <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>🤖 Servicios de IA</button>
       </div>
-      {tab === 'general' ? <General /> : <AIServices />}
+      {tab === 'general' ? <General /> : tab === 'ai' ? <AIServices /> : <Performance />}
     </div>
   )
 }

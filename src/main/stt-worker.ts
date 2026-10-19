@@ -31,7 +31,7 @@ process.on('message', async (msg: Msg) => {
       reply({ id: msg.id, ok: true })
     } else {
       if (!asr) throw new Error('El modelo de voz no está cargado')
-      const opts: Record<string, unknown> = { task: 'transcribe', chunk_length_s: 30, stride_length_s: 5 }
+      const opts: Record<string, unknown> = { task: 'transcribe', chunk_length_s: 30, stride_length_s: 5, no_repeat_ngram_size: 3, max_new_tokens: 200 }
       if (msg.language) opts.language = msg.language
       if (msg.timestamps) opts.return_timestamps = true
       const out = await asr(msg.pcm, opts)

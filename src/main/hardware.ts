@@ -1,8 +1,9 @@
 import { execFile } from 'child_process'
-import { cpus, totalmem } from 'os'
-import { statfs } from 'fs/promises'
+import { arch, cpus, totalmem } from 'os'
+import { readFile, statfs } from 'fs/promises'
 import { promisify } from 'util'
 import type { HardwareInfo, ModelRec } from '@shared/types'
+import { parseCpuFlags } from '@shared/cpu'
 import { netFetch } from './netlog'
 
 const run = promisify(execFile)
@@ -53,6 +54,8 @@ export async function detectHardware(): Promise<HardwareInfo> {
   return {
     cpu: cpus()[0]?.model.trim() ?? 'CPU desconocida',
     cores: cpus().length,
+    cpuFlags: parseCpuFlags(await readFile('/proc/cpuinfo', 'utf8').catch(() => '')),
+    arch: arch(),
     ramGB: Math.round(totalmem() / 1e9),
     gpu,
     gpuVendor,
