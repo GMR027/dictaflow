@@ -8,6 +8,7 @@ import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta,
 import type { UpdateInfo } from './update'
 import type { Voice, VoiceStatus } from './voice'
 import type { Job } from './job'
+import type { BackupInfo, Diagnostics } from './diagnostics'
 
 /** Colecciones guardadas como documentos en la carpeta de datos. */
 export type Collection = 'prompts' | 'meetings' | 'library'
@@ -65,6 +66,10 @@ export interface IpcContract {
   'audio:export': { req: { text: string; lang: Lang; voice?: string; name: string }; res: string }
   'audio:audiobook': { req: { docId: string; lang: Lang; voice?: string }; res: Job }
   'audio:audiobooks': { req: void; res: { title: string; dir: string; files: number; sizeMB: number }[] }
+
+  'diagnostics:report': { req: void; res: Diagnostics }
+  'backup:create': { req: { dest?: string }; res: BackupInfo }
+  'backup:restore': { req: { data: Uint8Array }; res: { restored: string[]; skipped: string[] } }
 
   'tts:status': { req: void; res: TtsStatus & { catalog: VoiceStatus[] } }
   'tts:install-piper': { req: void; res: void }

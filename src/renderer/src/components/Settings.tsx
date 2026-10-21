@@ -3,6 +3,7 @@ import type { DictEntry, Lang } from '@shared/types'
 import { mb } from '@shared/voice'
 import { useApp } from '../store'
 import { AIServices } from './AIServices'
+import { DiagnosticsPanel } from './Diagnostics'
 import { Performance } from './Performance'
 import { Updates } from './Updates'
 import { useTtsStatus } from './TtsSetup'
@@ -189,6 +190,8 @@ function General(): JSX.Element {
       </section>
 
       <Updates />
+
+      <DiagnosticsPanel />
 
       <section className="card">
         <h2>Desinstalar</h2>

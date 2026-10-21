@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
 import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
 import type { Job } from '@shared/job'
+import type { BackupInfo, Diagnostics } from '@shared/diagnostics'
 import type { UpdateInfo } from '@shared/update'
 import type { VoiceStatus } from '@shared/voice'
 
@@ -62,6 +63,10 @@ const api = {
   exportAudio: (text: string, lang: Lang, voice: string | undefined, name: string): Promise<string> => invoke('audio:export', { text, lang, voice, name }),
   startAudiobook: (docId: string, lang: Lang, voice?: string): Promise<Job> => invoke('audio:audiobook', { docId, lang, voice }),
   listAudiobooks: (): Promise<{ title: string; dir: string; files: number; sizeMB: number }[]> => invoke('audio:audiobooks'),
+
+  diagnostics: (): Promise<Diagnostics> => invoke('diagnostics:report'),
+  createBackup: (dest?: string): Promise<BackupInfo> => invoke('backup:create', { dest }),
+  restoreBackup: (data: Uint8Array): Promise<{ restored: string[]; skipped: string[] }> => invoke('backup:restore', { data }),
 
   ttsStatus: (): Promise<TtsStatus & { catalog: VoiceStatus[] }> => invoke('tts:status'),
   installPiper: (): Promise<void> => invoke('tts:install-piper'),

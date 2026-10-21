@@ -20,6 +20,8 @@ import { applyDictionary, benchStt, downloadGgml, loadStt, sttStatus, stopStt, t
 import { JobQueue } from './jobs/queue'
 import { buildAudiobook, exportTextAsMp3, listAudiobooks, audiobooksDir } from './audio/export'
 import { ensureDataDirs } from './paths'
+import { diagnostics } from './diagnostics'
+import { createBackup, restoreFromBuffer } from './backup'
 
 // AppImage no puede instalar chrome-sandbox con setuid. Si el sistema restringe los user namespaces
 // (Ubuntu 24.04+, Debian) Chromium abortaría al arrancar, así que solo en ese caso se desactiva su sandbox.
@@ -197,6 +199,13 @@ function registerIpc(): void {
     })
   })
   handle('audio:audiobooks', () => listAudiobooks())
+
+  handle('diagnostics:report', () => diagnostics(sttStatus()))
+  handle('backup:create', async (_e, req) => {
+    const dest = req.dest ?? join(app.getPath('downloads'), `dictaflow-copia-${new Date().toISOString().slice(0, 10)}.zip`)
+    return createBackup(dest)
+  })
+  handle('backup:restore', (_e, req) => restoreFromBuffer(Buffer.from(req.data)))
 
   handle('tts:status', () => ({ ...ttsStatus(), catalog: voiceStatus() }))
   handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))
