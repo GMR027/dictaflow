@@ -26,8 +26,11 @@ export const T = {
       ['Prompt library', 'Save your best prompts and ask the Prompt Architect agent to write new ones in your style.'],
       ['Audio ↔ text', 'Transcribe audio files with subtitles (.srt/.vtt) or generate speech and download WAV or MP3.'],
       ['PDF & EPUB reader', 'Listen to books and documents with highlighted reading, or export an audiobook.'],
-      ['Meetings & classes', 'Transcribe your mic and system audio, get minutes, action items and study notes.'],
+      ['Meetings & classes', 'Transcribe your mic and system audio, get minutes with tasks, owners and dates, and study notes.'],
       ['Live translation', 'Spanish ↔ English conversations and subtitles, with optional spoken output.'],
+      ['Calendar & reminders', 'Events you export to .ics (Google Calendar, Thunderbird, GNOME) and local alerts.'],
+      ['PDF & automations', 'Export to PDF and save step sequences you can replay whenever you need them.'],
+      ['Diagnostics & backups', 'A report on how everything is doing, and backups of everything you created.'],
       ['Private by design', 'Speech recognition runs on your machine. A network log shows every outgoing request.']
     ],
     shotsTitle: 'A calm, native-feeling interface',
@@ -55,7 +58,7 @@ export const T = {
     reqTitle: 'Requirements',
     req: ['Linux x86-64 with a graphical session (GNOME/Wayland tested on Zorin OS)', 'PipeWire for capturing system audio (installed by default on modern distributions)', '8 GB RAM recommended; a GPU is not required', 'Ollama is optional — the app can install it for you'],
     limitsTitle: 'Known limitations',
-    limits: ['Scanned PDFs (images only) need OCR, which is not available yet.', 'Meeting speakers are labelled only as “Me” and “System”.', 'The app copies dictated text to the clipboard instead of typing it into other apps — Wayland does not allow that without risky permissions.', 'Quality of rewriting depends on the AI model you choose.'],
+    limits: ['Scanned PDFs (images only) need OCR, which is not available yet.', 'No automatic speaker diarisation yet: meeting speakers are separated only by source (“Me” and “System”), though you can rename any of them by hand.', 'No voice-cloning engine is bundled: “My voices” talks to a local cloning service you run yourself.', 'The app copies dictated text to the clipboard instead of typing it into other apps — Wayland does not allow that without risky permissions.', 'Quality of rewriting depends on the AI model you choose.'],
     faqTitle: 'Questions',
     faq: [
       ['Is it really free?', 'Yes. DictaFlow is MIT-licensed. If you use a paid AI service you pay that provider; local models cost nothing.'],
@@ -79,8 +82,11 @@ export const T = {
       ['Biblioteca de prompts', 'Guarda tus mejores prompts y pide al agente Prompt Architect que escriba nuevos con tu estilo.'],
       ['Audio ↔ texto', 'Transcribe archivos de audio con subtítulos (.srt/.vtt) o genera voz y descarga WAV o MP3.'],
       ['Lector de PDF y EPUB', 'Escucha libros y documentos con lectura resaltada, o exporta un audiolibro.'],
-      ['Reuniones y clases', 'Transcribe tu micrófono y el audio del sistema; obtén actas, tareas y apuntes de estudio.'],
+      ['Reuniones y clases', 'Transcribe tu micrófono y el audio del sistema; obtén actas con tareas, responsables y fechas, y apuntes de estudio.'],
       ['Traducción en vivo', 'Conversaciones y subtítulos español ↔ inglés, con salida hablada opcional.'],
+      ['Agenda y recordatorios', 'Eventos que exportas a .ics (Google Calendar, Thunderbird, GNOME) y avisos locales.'],
+      ['PDF y automatizaciones', 'Exporta a PDF y guarda secuencias de pasos que repites cuando quieras.'],
+      ['Diagnóstico y copias', 'Un informe con el estado de todo, y copias de seguridad de lo que has creado.'],
       ['Privado por diseño', 'El reconocimiento de voz se ejecuta en tu equipo. Un registro de red muestra cada petición saliente.']
     ],
     shotsTitle: 'Una interfaz tranquila y nativa',
@@ -108,7 +114,7 @@ export const T = {
     reqTitle: 'Requisitos',
     req: ['Linux x86-64 con sesión gráfica (probado en GNOME/Wayland sobre Zorin OS)', 'PipeWire para capturar el audio del sistema (viene en las distribuciones modernas)', '8 GB de RAM recomendados; no hace falta GPU', 'Ollama es opcional — la app puede instalarlo por ti'],
     limitsTitle: 'Limitaciones conocidas',
-    limits: ['Los PDF escaneados (solo imágenes) necesitan OCR, que aún no está disponible.', 'En las reuniones los hablantes se etiquetan solo como «Yo» y «Sistema».', 'La app copia el texto dictado al portapapeles en lugar de escribirlo en otras apps: Wayland no lo permite sin permisos arriesgados.', 'La calidad de la redacción depende del modelo de IA que elijas.'],
+    limits: ['Los PDF escaneados (solo imágenes) necesitan OCR, que aún no está disponible.', 'Todavía no hay diarización automática: en las reuniones los hablantes solo se separan por origen («Yo» y «Sistema»), aunque puedes renombrar a cualquiera a mano.', 'No se incluye motor de clonación de voz: «Mis voces» se conecta a un servicio local que pones tú en marcha.', 'La app copia el texto dictado al portapapeles en lugar de escribirlo en otras apps: Wayland no lo permite sin permisos arriesgados.', 'La calidad de la redacción depende del modelo de IA que elijas.'],
     faqTitle: 'Preguntas',
     faq: [
       ['¿De verdad es gratis?', 'Sí. DictaFlow tiene licencia MIT. Si usas un servicio de IA de pago, pagas a ese proveedor; los modelos locales no cuestan nada.'],

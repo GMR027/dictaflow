@@ -4,6 +4,15 @@ import { PartialTranscriber } from './partial'
 
 const audio = (sec: number): Float32Array => new Float32Array(16000 * sec).fill(0.1)
 
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/** Espera a que se cumpla una condición, en vez de dormir un tiempo fijo. */
+async function until(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const t0 = Date.now()
+  while (!check() && Date.now() - t0 < timeoutMs) await wait(5)
+  if (!check()) throw new Error('La condición no se cumplió a tiempo.')
+}
+
 function setup(over: { busy?: () => boolean; transcribe?: (p: Float32Array) => Promise<string>; closing?: () => boolean } = {}) {
   const drafts: string[] = []
   let pcm: Float32Array | null = audio(2)
@@ -62,11 +71,12 @@ describe('PartialTranscriber', () => {
     set(audio(3)); await p.tick()
     expect(n).toBe(1)
     // 30 ms de inferencia → 45 ms de espera: todavía no se relanza.
-    await new Promise((r) => setTimeout(r, 40))
+    await wait(40)
     await p.tick()
     expect(n).toBe(1)
-    await new Promise((r) => setTimeout(r, 20))
-    await p.tick()
+    // El borrador se relanza cuando pasa la espera: se prueba hasta que ocurra.
+    const t0 = Date.now()
+    while (n < 2 && Date.now() - t0 < 3000) { await p.tick(); await wait(5) }
     expect(n).toBe(2)
   })
   it('no lanza borradores mientras la frase está en el silencio que la cierra', async () => {

@@ -14,12 +14,19 @@ afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
+/** Espera a que se cumpla una condición, en vez de dormir un tiempo fijo. */
+async function until(check: () => boolean, timeoutMs = 3000): Promise<void> {
+  const t0 = Date.now()
+  while (!check() && Date.now() - t0 < timeoutMs) await wait(5)
+  if (!check()) throw new Error('La condición no se cumplió a tiempo.')
+}
+
 describe('JobQueue', () => {
   it('encola y ejecuta un trabajo', async () => {
     const q = new JobQueue(file)
     q.register('prueba', async (job) => ({ result: `hecho:${job.title}` }))
     const job = q.enqueue('prueba', 'Probar')
-    await wait(50)
+    await until(() => q.get(job.id)?.state === 'done')
     const done = q.get(job.id)
     expect(done?.state).toBe('done')
     expect(done?.result).toBe('hecho:Probar')
@@ -35,7 +42,7 @@ describe('JobQueue', () => {
       return {}
     })
     const job = q.enqueue('prueba', 'Probar')
-    await wait(50)
+    await until(() => q.get(job.id)?.state === 'done')
     expect(detalles).toContain('A mitad')
     expect(q.get(job.id)?.state).toBe('done')
   })
@@ -46,7 +53,7 @@ describe('JobQueue', () => {
     q.register('bueno', async () => ({ result: 'ok' }))
     const malo = q.enqueue('malo', 'Malo')
     const bueno = q.enqueue('bueno', 'Bueno')
-    await wait(80)
+    await until(() => q.get(bueno.id)?.state === 'done')
     expect(q.get(malo.id)?.state).toBe('failed')
     expect(q.get(malo.id)?.error).toBe('se rompió')
     expect(q.get(bueno.id)?.state).toBe('done')
@@ -58,7 +65,7 @@ describe('JobQueue', () => {
     q.register('lento', async () => { await wait(200); ejecutado = true; return {} })
     const job = q.enqueue('lento', 'Lento')
     expect(q.cancel(job.id)).toBe(true)
-    await wait(50)
+    await until(() => q.get(job.id)?.state === 'cancelled')
     expect(q.get(job.id)?.state).toBe('cancelled')
     expect(ejecutado).toBe(false)
   })
@@ -75,9 +82,9 @@ describe('JobQueue', () => {
       return {}
     })
     const job = q.enqueue('lento', 'Lento')
-    await wait(30)
+    await until(() => q.get(job.id)?.state === 'running')
     q.cancel(job.id)
-    await wait(120)
+    await until(() => seCancelo)
     expect(seCancelo).toBe(true)
     expect(q.get(job.id)?.state).toBe('cancelled')
   })
@@ -86,7 +93,7 @@ describe('JobQueue', () => {
     const q = new JobQueue(file)
     q.register('prueba', async () => ({ result: 'ok' }))
     const job = q.enqueue('prueba', 'Guardado')
-    await wait(50)
+    await until(() => q.get(job.id)?.state === 'done')
     // Una cola nueva lee lo que había en disco.
     const otra = new JobQueue(file)
     expect(otra.get(job.id)?.title).toBe('Guardado')
@@ -110,7 +117,7 @@ describe('JobQueue', () => {
     const vistos: number[] = []
     q.onChange((jobs) => vistos.push(jobs.length))
     q.enqueue('prueba', 'Uno')
-    await wait(50)
+    await until(() => vistos.length > 0)
     expect(vistos.length).toBeGreaterThan(0)
   })
 })
