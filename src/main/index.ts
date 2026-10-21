@@ -6,7 +6,7 @@ import type { HardwareInfo } from '@shared/types'
 import type { IpcChannel, IpcReq, IpcRes } from '@shared/ipc'
 import { detectHardware, listOllamaModels, recommend } from './hardware'
 import { installOllama, startOllama } from './ollama-setup'
-import { complete, generate, pullOllamaModel, rewriteGuarded, testLLM, translate, warmLLM, type ContentAction } from './llm'
+import { complete, generate, generateMinutes, pullOllamaModel, rewriteGuarded, testLLM, translate, warmLLM, type ContentAction } from './llm'
 import { clearNetEvents, getNetEvents } from './netlog'
 import { exportNote, launchAgent, openFileDialog, pickDir, readProjectContext, saveFileDialog } from './tools'
 import { fetchVoiceSample, installPiper, installVoice, removeVoice, synthesize, ttsStatus } from './tts'
@@ -24,6 +24,7 @@ import { diagnostics } from './diagnostics'
 import { createBackup, restoreFromBuffer } from './backup'
 import { generatePdf } from './pdf'
 import { dueEventReminders, dueReminders, fromIcs, listEvents, listReminders, removeEvent, removeReminder, saveEvent, saveReminder, toIcs } from './calendar'
+import { discardAudio, pushAudio, startAudio, stopAudio } from './meeting-audio'
 
 // AppImage no puede instalar chrome-sandbox con setuid. Si el sistema restringe los user namespaces
 // (Ubuntu 24.04+, Debian) Chromium abortaría al arrancar, así que solo en ese caso se desactiva su sandbox.
@@ -178,6 +179,7 @@ function registerIpc(): void {
   handle('llm:chat', (_e, req) => complete(req.system, req.msgs, 0.6))
   handle('llm:translate', (_e, req) => translate(req.text, req.to))
   handle('llm:generate', (_e, req) => generate(req.action as ContentAction, req.text, req.lang))
+  handle('llm:minutes', (_e, req) => generateMinutes(req.text, req.lang))
   handle('llm:test', () => testLLM())
 
   handle('col:get', (_e, req) => getCollection(req.name))
@@ -242,6 +244,11 @@ function registerIpc(): void {
   handle('rem:list', () => listReminders())
   handle('rem:save', (_e, req) => saveReminder(req.reminder))
   handle('rem:remove', (_e, req) => removeReminder(req.id))
+
+  handle('meeting:audio-start', (_e, req) => startAudio(req.sessionId))
+  handle('meeting:audio-chunk', (_e, req) => { pushAudio(req.sessionId, req.pcm) })
+  handle('meeting:audio-stop', (_e, req) => stopAudio(req.sessionId))
+  handle('meeting:audio-discard', (_e, req) => { discardAudio(req.sessionId) })
 
   handle('tts:status', () => ({ ...ttsStatus(), catalog: voiceStatus() }))
   handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))

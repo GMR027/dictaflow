@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
-import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, MeetingMinutes, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
 import type { Job } from '@shared/job'
 import type { BackupInfo, Diagnostics } from '@shared/diagnostics'
 import type { CalendarEvent, Reminder } from '@shared/calendar'
@@ -47,6 +47,7 @@ const api = {
   chat: (system: string, msgs: ChatMsg[]): Promise<string> => invoke('llm:chat', { system, msgs }),
   translate: (text: string, to: TransLang): Promise<string> => invoke('llm:translate', { text, to }),
   generate: (action: string, text: string, lang: Lang): Promise<string> => invoke('llm:generate', { action, text, lang }),
+  minutes: (text: string, lang: Lang): Promise<MeetingMinutes | null> => invoke('llm:minutes', { text, lang }),
 
   getCollection: <T>(name: 'prompts' | 'meetings' | 'library'): Promise<T[]> => invoke('col:get', { name }) as Promise<T[]>,
   saveCollection: (name: 'prompts' | 'meetings' | 'library', items: unknown[]): Promise<void> => invoke('col:save', { name, items }),
@@ -79,6 +80,11 @@ const api = {
   listReminders: (): Promise<Reminder[]> => invoke('rem:list'),
   saveReminder: (reminder: Reminder): Promise<void> => invoke('rem:save', { reminder }),
   removeReminder: (id: string): Promise<void> => invoke('rem:remove', { id }),
+
+  startMeetingAudio: (sessionId: string): Promise<{ sessionId: string; path: string }> => invoke('meeting:audio-start', { sessionId }),
+  pushMeetingAudio: (sessionId: string, pcm: Float32Array): Promise<void> => invoke('meeting:audio-chunk', { sessionId, pcm }),
+  stopMeetingAudio: (sessionId: string): Promise<{ path: string; durationSec: number } | null> => invoke('meeting:audio-stop', { sessionId }),
+  discardMeetingAudio: (sessionId: string): Promise<void> => invoke('meeting:audio-discard', { sessionId }),
 
   ttsStatus: (): Promise<TtsStatus & { catalog: VoiceStatus[] }> => invoke('tts:status'),
   installPiper: (): Promise<void> => invoke('tts:install-piper'),

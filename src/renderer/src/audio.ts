@@ -123,6 +123,11 @@ export interface MicOptions {
   pauseMs?: number
   onLevel: (rms: number) => void
   /**
+   * Recibe el audio tal cual, en tiempo real. Sirve para grabar la reunión
+   * mientras se transcribe.
+   */
+  onAudio?: (chunk: Float32Array) => void
+  /**
    * Se avisa en cuanto empieza el silencio que va a cerrar la frase. Sirve para
    * no arrancar nada nuevo mientras se espera: el motor queda libre justo
    * cuando va a llegar la transcripción definitiva.
@@ -161,7 +166,10 @@ export class Mic {
     // Archivo propio (no blob:) para cumplir la CSP `script-src 'self'`
     await this.ctx.audioWorklet.addModule(new URL('./tap-worklet.js', document.baseURI).href)
     this.node = new AudioWorkletNode(this.ctx, 'tap')
-    this.node.port.onmessage = (e: MessageEvent<Float32Array>) => this.opts.onLevel(this.seg.feed(e.data))
+    this.node.port.onmessage = (e: MessageEvent<Float32Array>) => {
+      this.opts.onAudio?.(e.data)
+      this.opts.onLevel(this.seg.feed(e.data))
+    }
     this.ctx.createMediaStreamSource(this.stream).connect(this.node)
   }
 

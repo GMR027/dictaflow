@@ -178,8 +178,36 @@ export interface Segment {
   start: number
   end: number
   text: string
-  /** Quién habla cuando se graba mic + sistema ('Yo' / 'Sistema') */
+  /**
+   * Quién habla. Hay tres niveles y no se mezclan:
+   *  - «Hablante 1», «Yo», «Sistema»: atribución técnica, sin identidad.
+   *  - Un nombre puesto por el usuario: atribución manual.
+   *  - `speakerId`: identidad técnica estable dentro de la reunión.
+   */
   speaker?: string
+  /** Identidad técnica del hablante dentro de esta reunión. */
+  speakerId?: number
+  /** true si el usuario confirmó que ese hablante es quien dice ese nombre. */
+  speakerConfirmed?: boolean
+}
+
+/** Una tarea con su responsable y su fecha límite, tal como se extrae del acta. */
+export interface MeetingTask {
+  text: string
+  /** Responsable, si la transcripción lo menciona. */
+  owner: string
+  /** Fecha límite, si la transcripción la menciona. */
+  due: string
+  done: boolean
+}
+
+/** El acta de una reunión, con las partes separadas. */
+export interface MeetingMinutes {
+  summary: string
+  topics: string[]
+  decisions: string[]
+  agreements: string[]
+  tasks: MeetingTask[]
 }
 
 export interface Meeting {
@@ -190,6 +218,10 @@ export interface Meeting {
   source: 'mic' | 'system' | 'both' | 'file'
   segments: Segment[]
   summary: string
+  /** Acta estructurada, si se generó. */
+  minutes?: MeetingMinutes
+  /** Ruta del audio grabado, para volver a transcribirlo. */
+  audioPath?: string
 }
 
 export interface TtsStatus {

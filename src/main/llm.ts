@@ -2,9 +2,10 @@ import { spawn } from 'child_process'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { TRANS_LANGS, type ChatMsg, type LLMConfig, type Lang, type RewriteRequest, type Tone, type TransLang } from '@shared/types'
+import { TRANS_LANGS, type ChatMsg, type LLMConfig, type Lang, type MeetingMinutes, type RewriteRequest, type Tone, type TransLang } from '@shared/types'
 import { netFetch } from './netlog'
 import { numbersPreserved } from '@shared/guard'
+import { extractJson } from '@shared/json'
 import { getSecret, getSettings } from './store'
 
 const TONES: Record<Tone, string> = {
@@ -236,6 +237,45 @@ export async function generate(action: ContentAction, text: string, lang: Lang):
   } catch {
     // Si la unión falla, al menos se entrega todo el material.
     return partes.join('\n\n')
+  }
+}
+
+
+const MINUTOS_PROMPT = `Analiza esta transcripción de una reunión y devuelve SOLO un objeto JSON con estas claves:
+{
+  "summary": "resumen ejecutivo en un párrafo",
+  "topics": ["tema tratado", ...],
+  "decisions": ["decisión tomada", ...],
+  "agreements": ["acuerdo al que se llegó", ...],
+  "tasks": [{ "text": "tarea pendiente", "owner": "responsable si se menciona, si no cadena vacía", "due": "fecha límite si se menciona, si no cadena vacía" }]
+}
+No inventes nada: si no se habla de decisiones, deja el array vacío. Usa el idioma del texto.`
+
+/**
+ * Genera el acta estructurada de una reunión. Devuelve null si el modelo no
+ * responde con un JSON válido, para que la interfaz pueda avisar en vez de
+ * inventar un acta.
+ */
+export async function generateMinutes(text: string, lang: Lang): Promise<MeetingMinutes | null> {
+  const out = await complete(
+    `${MINUTOS_PROMPT}\n${termsLine()}`,
+    [{ role: 'user', content: `Transcripción:\n${text.slice(0, 40000)}` }],
+    0.2
+  )
+  const j = extractJson<Partial<MeetingMinutes>>(out)
+  if (!j) return null
+  const lista = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : [])
+  return {
+    summary: String(j.summary ?? '').trim(),
+    topics: lista(j.topics),
+    decisions: lista(j.decisions),
+    agreements: lista(j.agreements),
+    tasks: (Array.isArray(j.tasks) ? j.tasks : []).map((t) => ({
+      text: String((t as { text?: unknown })?.text ?? '').trim(),
+      owner: String((t as { owner?: unknown })?.owner ?? '').trim(),
+      due: String((t as { due?: unknown })?.due ?? '').trim(),
+      done: false
+    })).filter((t) => t.text)
   }
 }
 

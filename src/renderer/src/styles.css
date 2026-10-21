@@ -240,3 +240,11 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
 .job.small { padding: 2px 10px; }
 .job .bar { display: block; height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 6px 0 2px; }
 .job .bar > div { height: 100%; background: var(--accent); transition: width 200ms linear; }
+
+/* Acta de reunión */
+.minutes { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 14px; margin: 10px 0; background: var(--field); }
+.minutes h3 { margin: 10px 0 4px; font-size: 0.95em; }
+.minutes ul { margin: 0 0 6px; padding-left: 20px; }
+.minutes .tasks { list-style: none; padding-left: 0; }
+.minutes .tasks li { margin-bottom: 6px; }
+.speaker-input { width: 120px; font: inherit; font-weight: 600; }
