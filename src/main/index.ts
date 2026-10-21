@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, Notification, screen, shell, Tray, nativeImage, type IpcMainInvokeEvent } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import appIcon from '../../build/icon.png?asset'
 import type { HardwareInfo } from '@shared/types'
@@ -25,6 +25,12 @@ import { createBackup, restoreFromBuffer } from './backup'
 import { generatePdf } from './pdf'
 import { dueEventReminders, dueReminders, fromIcs, listEvents, listReminders, removeEvent, removeReminder, saveEvent, saveReminder, toIcs } from './calendar'
 import { discardAudio, pushAudio, startAudio, stopAudio } from './meeting-audio'
+import { listAutomations, removeAutomation, runAutomation, saveAutomation, STEP_INFO, type StepType } from './automations'
+import {
+  checkEngine, cloneEngineUrl, listGenerated, listPersonalVoices, listRecordings,
+  removeGenerated, removePersonalVoice, removeRecording, saveGenerated, savePersonalVoice,
+  saveRecording, setCloneEngineUrl, synthesizePersonal
+} from './personal-voices'
 
 // AppImage no puede instalar chrome-sandbox con setuid. Si el sistema restringe los user namespaces
 // (Ubuntu 24.04+, Debian) Chromium abortaría al arrancar, así que solo en ese caso se desactiva su sandbox.
@@ -43,8 +49,7 @@ let quitting = false
 const jobs = new JobQueue()
 
 // El audiolibro: un capítulo por fichero, con progreso y sin cargarlo todo en memoria.
-jobs.register('audiobook', async (job, report) => {
-  const p = job.payload ?? {}
+jobs.register('audiobook', async (job, report) => {  const p = job.payload ?? {}
   const doc = getLibraryDoc(String(p.docId))
   if (!doc) throw new Error('El documento ya no está en la biblioteca.')
   const dir = join(audiobooksDir(), doc.title.replace(/[^\w\s-]/g, '').trim().slice(0, 60) || 'audiolibro')
@@ -60,6 +65,22 @@ jobs.register('audiobook', async (job, report) => {
     shouldStop: () => jobs.isCancelled(job.id)
   })
   return { result: r.file, resume: { chapter: doc.chapters.length } }
+})
+
+// Una automatización: una secuencia de pasos sobre un texto.
+jobs.register('automation', async (job, report) => {
+  const p = job.payload ?? {}
+  const a = listAutomations().find((x) => x.id === String(p.automationId))
+  if (!a) throw new Error('Esa automatización ya no existe.')
+  report(5, 'Empezando')
+  const r = await runAutomation(a, {
+    title: String(p.title ?? 'Automatización'),
+    text: String(p.text ?? ''),
+    lang: (p.lang as 'es' | 'en') ?? 'es',
+    dir: join(dataDir, 'automatizaciones')
+  })
+  report(100, r.steps.map((s) => s.detail).join(' · '))
+  return { result: r.files.join('\n') || r.text.slice(0, 200) }
 })
 
 // Una sola instancia: `dictaflow --toggle` (atajo de GNOME) alterna el dictado de la instancia viva.
@@ -249,6 +270,42 @@ function registerIpc(): void {
   handle('meeting:audio-chunk', (_e, req) => { pushAudio(req.sessionId, req.pcm) })
   handle('meeting:audio-stop', (_e, req) => stopAudio(req.sessionId))
   handle('meeting:audio-discard', (_e, req) => { discardAudio(req.sessionId) })
+
+  handle('pv:list', () => listPersonalVoices())
+  handle('pv:save', (_e, req) => savePersonalVoice(req.voice))
+  handle('pv:remove', (_e, req) => removePersonalVoice(req.id))
+  handle('pv:recordings', () => listRecordings())
+  handle('pv:add-recording', (_e, req) => saveRecording(req.name, req.data, req.speaker, req.durationSec))
+  handle('pv:remove-recording', (_e, req) => removeRecording(req.id))
+  handle('pv:generated', () => listGenerated())
+  handle('pv:remove-generated', (_e, req) => removeGenerated(req.id))
+  handle('pv:engine', async () => {
+    const r = await checkEngine()
+    return { ...r, url: cloneEngineUrl() }
+  })
+  handle('pv:engine-url', (_e, req) => { setCloneEngineUrl(req.url) })
+  handle('au:list', () => listAutomations())
+  handle('au:save', (_e, req) => { saveAutomation(req.automation) })
+  handle('au:remove', (_e, req) => { removeAutomation(req.id) })
+  handle('au:steps', () => Object.entries(STEP_INFO).map(([type, v]) => ({ type: type as StepType, label: v.label, detail: v.detail })))
+  handle('au:run', (_e, req) => {
+    const a = listAutomations().find((x) => x.id === req.id)
+    if (!a) throw new Error('Esa automatización ya no existe.')
+    return jobs.enqueue('automation', a.name, { automationId: a.id, title: req.title, text: req.text, lang: req.lang })
+  })
+
+  handle('pv:synthesize', async (_e, req) => {
+    const voice = listPersonalVoices().find((v) => v.id === req.voiceId)
+    if (!voice) throw new Error('Esa voz no existe.')
+    const { audio, durationSec } = await synthesizePersonal(voice, req.text)
+    const dir = join(dataDir, 'voces', 'generados')
+    mkdirSync(dir, { recursive: true })
+    const id = crypto.randomUUID()
+    const path = join(dir, `${id}.wav`)
+    writeFileSync(path, audio)
+    saveGenerated({ id, voiceId: voice.id, voiceName: voice.name, text: req.text, path, createdAt: Date.now(), durationSec })
+    return { path, durationSec }
+  })
 
   handle('tts:status', () => ({ ...ttsStatus(), catalog: voiceStatus() }))
   handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))

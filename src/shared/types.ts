@@ -229,6 +229,51 @@ export interface TtsStatus {
   voices: string[]
 }
 
+/** Una voz personal: la que ha creado el usuario a partir de una muestra. */
+export interface PersonalVoice {
+  id: string
+  /** Nombre que le da el usuario. */
+  name: string
+  /** Motor con el que se sintetiza. */
+  engine: string
+  /** Idioma principal de la voz. */
+  lang: Lang
+  /** Grabación original de la que sale. */
+  sampleId?: string
+  /**
+   * Consentimiento de la persona cuya voz es. Sin esto no se puede guardar la
+   * voz: no se clonan voces de terceros sin autorización.
+   */
+  consent: {
+    /** Nombre de quien autoriza. */
+    authorizedBy: string
+    /** Fecha del consentimiento. */
+    date: number
+    /** Notas: por ejemplo, con fines de uso personal. */
+    notes: string
+  }
+  createdAt: number
+  /** Frase de prueba, para oír cómo suena. */
+  testPhrase: string
+  /** Si el motor puede sintetizarla ahora mismo. */
+  available: boolean
+  /** Motivo por el que no está disponible. */
+  unavailableReason?: string
+}
+
+/** Una grabación original que el usuario ha importado o grabado. */
+export interface VoiceRecording {
+  id: string
+  name: string
+  /** Ruta del fichero de audio. */
+  path: string
+  /** Duración en segundos. */
+  durationSec: number
+  createdAt: number
+  /** Quién es la persona de la grabación (lo dice el usuario). */
+  speaker: string
+}
+
 /** Estado de los motores de reconocimiento de voz. */
 export interface SttStatus {
   /** Motor elegido en los ajustes. */

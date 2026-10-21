@@ -1,11 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
-import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, MeetingMinutes, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, MeetingMinutes, ModelRec, NetEvent, PersonalVoice, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang, VoiceRecording } from '@shared/types'
 import type { Job } from '@shared/job'
 import type { BackupInfo, Diagnostics } from '@shared/diagnostics'
 import type { CalendarEvent, Reminder } from '@shared/calendar'
 import type { UpdateInfo } from '@shared/update'
-import type { VoiceStatus } from '@shared/voice'
+import type { GeneratedClip, VoiceStatus } from '@shared/voice'
+import type { Automation, StepType } from '@shared/automation'
 
 /** Invoca un canal del contrato: el nombre y los argumentos están verificados por el compilador. */
 const invoke = <K extends IpcChannel>(channel: K, req?: IpcReq<K>): Promise<IpcRes<K>> =>
@@ -85,6 +86,24 @@ const api = {
   pushMeetingAudio: (sessionId: string, pcm: Float32Array): Promise<void> => invoke('meeting:audio-chunk', { sessionId, pcm }),
   stopMeetingAudio: (sessionId: string): Promise<{ path: string; durationSec: number } | null> => invoke('meeting:audio-stop', { sessionId }),
   discardMeetingAudio: (sessionId: string): Promise<void> => invoke('meeting:audio-discard', { sessionId }),
+
+  listPersonalVoices: (): Promise<PersonalVoice[]> => invoke('pv:list'),
+  savePersonalVoice: (voice: PersonalVoice): Promise<PersonalVoice> => invoke('pv:save', { voice }),
+  removePersonalVoice: (id: string): Promise<void> => invoke('pv:remove', { id }),
+  listRecordings: (): Promise<VoiceRecording[]> => invoke('pv:recordings'),
+  addRecording: (name: string, data: Uint8Array, speaker: string, durationSec: number): Promise<VoiceRecording> => invoke('pv:add-recording', { name, data, speaker, durationSec }),
+  removeRecording: (id: string): Promise<void> => invoke('pv:remove-recording', { id }),
+  listGenerated: (): Promise<GeneratedClip[]> => invoke('pv:generated'),
+  removeGenerated: (id: string): Promise<void> => invoke('pv:remove-generated', { id }),
+  cloneEngine: (): Promise<{ ok: boolean; message: string; url: string }> => invoke('pv:engine'),
+  setCloneEngineUrl: (url: string): Promise<void> => invoke('pv:engine-url', { url }),
+  synthesizePersonal: (voiceId: string, text: string): Promise<{ path: string; durationSec: number }> => invoke('pv:synthesize', { voiceId, text }),
+
+  listAutomations: (): Promise<Automation[]> => invoke('au:list'),
+  saveAutomation: (automation: Automation): Promise<void> => invoke('au:save', { automation }),
+  removeAutomation: (id: string): Promise<void> => invoke('au:remove', { id }),
+  automationSteps: (): Promise<{ type: StepType; label: string; detail: string }[]> => invoke('au:steps'),
+  runAutomation: (id: string, title: string, text: string, lang: Lang): Promise<Job> => invoke('au:run', { id, title, text, lang }),
 
   ttsStatus: (): Promise<TtsStatus & { catalog: VoiceStatus[] }> => invoke('tts:status'),
   installPiper: (): Promise<void> => invoke('tts:install-piper'),

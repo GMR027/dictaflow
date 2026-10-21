@@ -80,3 +80,14 @@ export const catalogLangs = (voices: Voice[]): Lang[] => {
 
 /** Tamaño en MB con un decimal, para la interfaz. */
 export const mb = (bytes: number): string => (bytes / 1048576).toFixed(1)
+
+/** Un audio generado con una voz personal. */
+export interface GeneratedClip {
+  id: string
+  voiceId: string
+  voiceName: string
+  text: string
+  path: string
+  createdAt: number
+  durationSec: number
+}

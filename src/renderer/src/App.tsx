@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { AudioTools } from './components/AudioTools'
+import { Automations } from './components/Automations'
 import { Calendar } from './components/Calendar'
 import { Dictation } from './components/Dictation'
 import { Jobs } from './components/Jobs'
@@ -9,6 +10,7 @@ import { Prompts } from './components/Prompts'
 import { Reader } from './components/Reader'
 import { Translate } from './components/Translate'
 import { Manual } from './components/Manual'
+import { MyVoices } from './components/MyVoices'
 import { Onboarding } from './components/Onboarding'
 import { Privacy } from './components/Privacy'
 import { Settings } from './components/Settings'
@@ -25,6 +27,8 @@ const NAV: { id: View; label: string }[] = [
   { id: 'reuniones', label: '🗂 Reuniones' },
   { id: 'traduccion', label: '🌐 Traducción' },
   { id: 'agenda', label: '🗓 Agenda' },
+  { id: 'voces', label: '🎙 Mis voces' },
+  { id: 'automatizaciones', label: '⚙ Automatizaciones' },
   { id: 'ajustes', label: '⚙ Ajustes' },
   { id: 'privacidad', label: '🔒 Privacidad' },
   { id: 'manual', label: '❓ Manual' }
@@ -76,6 +80,8 @@ export function App(): JSX.Element | null {
         {view === 'reuniones' && <Meetings />}
         {view === 'traduccion' && <Translate />}
         {view === 'agenda' && <Calendar />}
+        {view === 'voces' && <MyVoices />}
+        {view === 'automatizaciones' && <Automations />}
         {view === 'ajustes' && <Settings />}
         {view === 'privacidad' && <Privacy />}
         {view === 'manual' && <Manual />}

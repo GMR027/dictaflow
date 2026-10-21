@@ -4,7 +4,9 @@
 // `src/main/index.ts` y `src/preload/index.ts`: un error de tecleo se descubría
 // en runtime. Aquí se declara una sola vez y los dos extremos la usan, de modo
 // que el compilador avisa si un canal cambia de firma o desaparece.
-import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, MeetingMinutes, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from './types'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, MeetingMinutes, ModelRec, NetEvent, PersonalVoice, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang, VoiceRecording } from './types'
+import type { GeneratedClip } from './voice'
+import type { Automation, StepType } from './automation'
 import type { UpdateInfo } from './update'
 import type { Voice, VoiceStatus } from './voice'
 import type { Job } from './job'
@@ -88,6 +90,24 @@ export interface IpcContract {
   'meeting:audio-chunk': { req: { sessionId: string; pcm: Float32Array }; res: void }
   'meeting:audio-stop': { req: { sessionId: string }; res: { path: string; durationSec: number } | null }
   'meeting:audio-discard': { req: { sessionId: string }; res: void }
+
+  'pv:list': { req: void; res: PersonalVoice[] }
+  'pv:save': { req: { voice: PersonalVoice }; res: PersonalVoice }
+  'pv:remove': { req: { id: string }; res: void }
+  'pv:recordings': { req: void; res: VoiceRecording[] }
+  'pv:add-recording': { req: { name: string; data: Uint8Array; speaker: string; durationSec: number }; res: VoiceRecording }
+  'pv:remove-recording': { req: { id: string }; res: void }
+  'pv:generated': { req: void; res: GeneratedClip[] }
+  'pv:remove-generated': { req: { id: string }; res: void }
+  'pv:engine': { req: void; res: { ok: boolean; message: string; url: string } }
+  'pv:engine-url': { req: { url: string }; res: void }
+  'pv:synthesize': { req: { voiceId: string; text: string }; res: { path: string; durationSec: number } }
+
+  'au:list': { req: void; res: Automation[] }
+  'au:save': { req: { automation: Automation }; res: void }
+  'au:remove': { req: { id: string }; res: void }
+  'au:steps': { req: void; res: { type: StepType; label: string; detail: string }[] }
+  'au:run': { req: { id: string; title: string; text: string; lang: Lang }; res: Job }
 
   'tts:status': { req: void; res: TtsStatus & { catalog: VoiceStatus[] } }
   'tts:install-piper': { req: void; res: void }
