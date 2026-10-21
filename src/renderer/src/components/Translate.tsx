@@ -44,7 +44,7 @@ function LiveTranslate(): JSX.Element {
     setError('')
     try {
       if (source === 'mic') {
-        mic.current = new Mic({ deviceId: settings.micDeviceId, mode: 'continuous', onLevel: () => undefined, onSegment: handle })
+        mic.current = new Mic({ deviceId: settings.micDeviceId, mode: 'continuous', onLevel: () => undefined, filters: settings.micFilters, onSegment: handle })
         await mic.current.start()
       } else {
         seg.current = new Segmenter('continuous', handle)

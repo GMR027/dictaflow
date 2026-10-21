@@ -14,7 +14,7 @@ import { voiceStatus } from './catalog/voices'
 import { startSystemAudio, stopSystemAudio } from './sysaudio'
 import { runUninstall, uninstallInfo } from './uninstall'
 import { applyUpdate, checkUpdate } from './updater'
-import { type Collection, dataDir, getCollection, getHistory, saveCollection, getSettings, hasSecret, saveHistory, saveSettings, setSecret } from './store'
+import { type Collection, dataDir, flushSettings, getCollection, getHistory, saveCollection, getSettings, hasSecret, saveHistory, saveSettings, setSecret } from './store'
 import { applyDictionary, benchStt, downloadGgml, loadStt, sttStatus, stopStt, transcribe, transcribeDetailed } from './stt'
 
 // AppImage no puede instalar chrome-sandbox con setuid. Si el sistema restringe los user namespaces
@@ -219,7 +219,7 @@ app.whenReady().then(() => {
   handleArgs(process.argv)
 })
 
-app.on('before-quit', () => { quitting = true; stopStt(); stopSystemAudio() })
+app.on('before-quit', () => { quitting = true; flushSettings(); stopStt(); stopSystemAudio() })
 app.on('window-all-closed', () => { if (!tray) app.quit() })
 
 export type { HardwareInfo }

@@ -116,6 +116,7 @@ export const useApp = create<State>((set, get) => ({
         deviceId: settings.micDeviceId,
         mode: anywhere ? 'controlled' : settings.mode,
         pauseMs: settings.pauseMs,
+        filters: settings.micFilters,
         onLevel: (level) => set({ level }),
         onSegment: (pcm) => {
           partial?.reset()

@@ -11,5 +11,15 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run typecheck
+      # Las pruebas unitarias son parte de la puerta: una regresión no llega a la release.
+      - run: npm test
       - run: npm run build
       - run: node site/build.mjs
+      # El manifiesto de voces y de modelos no puede quedarse viejo respecto a las fuentes oficiales.
+      - name: Manifiesto al día
+        run: node tools/build-manifest.mjs --check
+      # El paquete no debe llevar ficheros que no hacen falta (onnxruntime-web, GPU).
+      - name: Empaquetar y comprobar
+        run: |
+          npm run dist:dir
+          node tools/check-package.mjs

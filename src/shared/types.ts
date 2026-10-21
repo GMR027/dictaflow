@@ -76,6 +76,15 @@ export interface Settings {
   rewriteIncremental: boolean
   /** Descarta la redacción si cambia cifras, horas o cantidades */
   guardNumbers: boolean
+  /** Filtros del micrófono. Apagarlos suele mejorar la precisión de Whisper. */
+  micFilters: MicFilters
+}
+
+/** Procesado que aplica el navegador al audio del micrófono antes de enviarlo. */
+export interface MicFilters {
+  echoCancellation: boolean
+  noiseSuppression: boolean
+  autoGainControl: boolean
 }
 
 export type SttEngine = 'transformers' | 'whispercpp'
@@ -113,7 +122,8 @@ export const DEFAULT_SETTINGS: Settings = {
   draftsEnabled: true,
   rewriteDelayMs: 2500,
   rewriteIncremental: true,
-  guardNumbers: true
+  guardNumbers: true,
+  micFilters: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
 }
 
 export interface HardwareInfo {

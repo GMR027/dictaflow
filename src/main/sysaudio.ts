@@ -3,24 +3,39 @@ import type { WebContents } from 'electron'
 
 let proc: ChildProcess | null = null
 
-/** Captura lo que suena en el equipo (monitor del sink por defecto de PipeWire) a 16 kHz mono f32. */
+/**
+ * Captura lo que suena en el equipo (monitor del sink por defecto de PipeWire)
+ * a 16 kHz mono f32.
+ *
+ * `pw-record` escribe una cabecera WAV antes de las muestras. Si esa cabecera
+ * llega partida entre dos trozos, hay que guardarla aparte: si no, los bytes
+ * perdidos se tomarían por audio y aparecerían como ruido al principio.
+ */
 export function startSystemAudio(sender: WebContents): void {
   stopSystemAudio()
   const child = spawn('pw-record', ['--rate', '16000', '--channels', '1', '--format', 'f32', '-P', 'stream.capture.sink=true', '-'], {
     stdio: ['ignore', 'pipe', 'ignore']
   })
-  let header = true
+  let header: Buffer | null = Buffer.alloc(0)
   let rest: Buffer = Buffer.alloc(0)
   child.stdout.on('data', (d: Buffer) => {
     let chunk: Buffer = d
-    if (header) {
-      // pw-record escribe una cabecera WAV antes de las muestras
+    if (header !== null) {
+      //Se busca el final de la cabecera: la marca «data» y su tamaño.
       const idx = chunk.indexOf('data')
-      if (chunk.subarray(0, 4).toString() === 'RIFF' && idx >= 0 && chunk.length >= idx + 8) {
+      if (idx >= 0 && chunk.length >= idx + 8) {
+        header = null
         chunk = chunk.subarray(idx + 8)
-        header = false
-      } else if (chunk.subarray(0, 4).toString() !== 'RIFF') header = false
-      else return
+      } else {
+        header = Buffer.concat([header, chunk])
+        //Si la cabecera no cabe en 1 KB, no es una cabecera WAV: se descarta.
+        if (header.length > 1024) {
+          header = null
+          chunk = Buffer.alloc(0)
+        } else {
+          return
+        }
+      }
     }
     chunk = Buffer.concat([rest, chunk])
     const usable = chunk.length - (chunk.length % 4)

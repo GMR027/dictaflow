@@ -105,6 +105,12 @@ export interface MicOptions {
   /** silencio (ms) que cierra una frase en modo continuo */
   pauseMs?: number
   onLevel: (rms: number) => void
+  /**
+   * Procesado del navegador. Apagar la supresión de ruido y el control automático
+   * de ganancia suele mejorar la precisión de Whisper; la cancelación de eco
+   * conviene dejarla si hablas con el altavoz encendido.
+   */
+  filters?: { echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean }
 }
 
 export class Mic {
@@ -118,10 +124,14 @@ export class Mic {
   }
 
   async start(): Promise<void> {
+    const f = this.opts.filters ?? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: this.opts.deviceId === 'default' ? undefined : { exact: this.opts.deviceId },
-        echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1
+        echoCancellation: f.echoCancellation,
+        noiseSuppression: f.noiseSuppression,
+        autoGainControl: f.autoGainControl,
+        channelCount: 1
       }
     })
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE })

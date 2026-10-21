@@ -115,13 +115,27 @@ export async function loadStt(progress?: (p: Progress) => void): Promise<void> {
   onProgress = undefined
 }
 
+/**
+ * Sustituye las palabras mal transcritas por su forma correcta.
+ * Las expresiones se compilan una vez y se reutilizan: compilar un patrón por
+ * entrada del diccionario en cada transcripción costaba CPU sin motivo.
+ */
+let dictCache: { key: string; rules: { re: RegExp; to: string }[] } | null = null
+
 export function applyDictionary(text: string): string {
-  let out = text
-  for (const { from, to } of getSettings().dictionary) {
-    if (!from.trim() || !to.trim()) continue
-    const esc = from.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, 'giu'), to)
+  const entries = getSettings().dictionary
+  const key = JSON.stringify(entries)
+  if (!dictCache || dictCache.key !== key) {
+    const rules = entries
+      .filter(({ from, to }) => from.trim() && to.trim())
+      .map(({ from, to }) => {
+        const esc = from.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        return { re: new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, 'giu'), to: to.trim() }
+      })
+    dictCache = { key, rules }
   }
+  let out = text
+  for (const { re, to } of dictCache?.rules ?? []) out = out.replace(re, to)
   return out
 }
 

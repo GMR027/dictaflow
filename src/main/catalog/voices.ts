@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs'
 import { join } from 'path'
 import type { Voice, VoiceStatus } from '@shared/voice'
 import manifest from './manifest.json'
-import { dataDir } from '../store'
+import { dataDir } from '../paths'
 
 export const voicesDir = join(dataDir, 'voices')
 export const piperDir = join(dataDir, 'piper')

@@ -11,11 +11,14 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmS
 import { dirname, join } from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
-import { netFetch } from './netlog'
+
+/** Cómo se hace la petición. Se inyecta para poder probar sin red. */
+export type FetchLike = (purpose: string, url: string, init?: RequestInit) => Promise<Response>
 
 export interface DownloadRequest {
   /** Motivo de la descarga; aparece en el registro de red. */
   purpose: string
+  /** URL del fichero. */
   url: string
   /** Ruta final del fichero. */
   dest: string
@@ -48,11 +51,17 @@ export function fileSha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
+/** Petición por defecto: no registra ni bloquea. La aplicación pasa su puerta de red. */
+const plainFetch: FetchLike = (_purpose, url, init) => fetch(url, init)
+
 /**
  * Descarga un fichero a disco verificando su integridad.
  * Si el destino ya existe y su hash coincide con el esperado, no se vuelve a descargar.
+ *
+ * `fetchImpl` permite pasar la puerta de red de la aplicación (que registra y
+ * bloquea en modo offline) o una alternativa en las pruebas.
  */
-export async function downloadFile(req: DownloadRequest): Promise<DownloadResult> {
+export async function downloadFile(req: DownloadRequest, fetchImpl: FetchLike = plainFetch): Promise<DownloadResult> {
   const { purpose, url, dest, sha256, size, onPct, signal } = req
   mkdirSync(dirname(dest), { recursive: true })
 
@@ -69,7 +78,7 @@ export async function downloadFile(req: DownloadRequest): Promise<DownloadResult
   const hash = createHash('sha256')
   let got = 0
   try {
-    const res = await netFetch(purpose, url, { signal })
+    const res = await fetchImpl(purpose, url, { signal })
     if (!res.ok || !res.body) throw new DownloadError(`No se pudo descargar (${res.status}): ${url}`, 'red')
     const total = Number(res.headers.get('content-length') ?? size ?? 0)
     const src = Readable.fromWeb(res.body as never)

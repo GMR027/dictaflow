@@ -29,6 +29,9 @@ export function Meetings(): JSX.Element {
   const queue = useRef<Promise<void>>(Promise.resolve())
   const segs = useRef<Segment[]>([])
   const t0 = useRef(0)
+  /** Instante en que arrancó cada fuente, para compartir una sola línea de tiempo. */
+  const micOffset = useRef(0)
+  const sysOffset = useRef(0)
 
   useEffect(() => { void window.api.getCollection<Meeting>('meetings').then(setMeetings) }, [])
   useEffect(() => () => { void stop(true) }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -36,13 +39,19 @@ export function Meetings(): JSX.Element {
   const persist = (next: Meeting[]): void => { setMeetings(next); void window.api.saveCollection('meetings', next) }
   const current = meetings.find((m) => m.id === sel) ?? null
 
-  const enqueue = (pcm: Float32Array, start: number, speaker?: string): void => {
+  /**
+   * Encola un fragmento para transcribir. `offset` es el instante en que arrancó
+   * esa fuente: con un reloj común, las marcas de tiempo del micrófono y del
+   * audio del sistema quedan en la misma escala y se pueden ordenar.
+   */
+  const enqueue = (pcm: Float32Array, start: number, offset: number, speaker?: string): void => {
     setPending((n) => n + 1)
     queue.current = queue.current.then(async () => {
       try {
         const r = await window.api.transcribeDetailed(pcm, settings.primaryLang)
         if (r.text) {
-          segs.current = [...segs.current, { start, end: start + pcm.length / 16000, text: r.text, speaker }].sort((a, b) => a.start - b.start)
+          const at = offset + start
+          segs.current = [...segs.current, { start: at, end: at + pcm.length / 16000, text: r.text, speaker }].sort((a, b) => a.start - b.start)
           setLive(segs.current)
         }
       } catch (e) { setError((e as Error).message) } finally { setPending((n) => n - 1) }
@@ -53,13 +62,16 @@ export function Meetings(): JSX.Element {
     setError(''); segs.current = []; setLive([]); setSel(null)
     t0.current = Date.now()
     const tag = (s: string): string | undefined => (source === 'both' ? s : undefined)
+    const clock = performance.now()
     try {
-      if (source !== 'system') {
-        mic.current = new Mic({ deviceId: settings.micDeviceId, mode: 'continuous', onLevel: () => undefined, onSegment: (p, t) => enqueue(p, t, tag('Yo')) })
+      if (source !== 'mic') {
+        micOffset.current = (performance.now() - clock) / 1000
+        mic.current = new Mic({ deviceId: settings.micDeviceId, mode: 'continuous', onLevel: () => undefined, filters: settings.micFilters, onSegment: (p, t) => enqueue(p, t, micOffset.current, tag('Yo')) })
         await mic.current.start()
       }
       if (source !== 'mic') {
-        sysSeg.current = new Segmenter('continuous', (p, t) => enqueue(p, t, tag('Sistema')))
+        sysOffset.current = (performance.now() - clock) / 1000
+        sysSeg.current = new Segmenter('continuous', (p, t) => enqueue(p, t, sysOffset.current, tag('Sistema')))
         unsub.current = window.api.onSystemAudio((c) => sysSeg.current?.feed(c))
         await window.api.startSystemAudio()
       }

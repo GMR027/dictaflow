@@ -6,6 +6,7 @@ import { createServer } from 'net'
 import { delimiter, join } from 'path'
 import { cpus } from 'os'
 import { encodeWav } from './wav'
+import { localFetch } from './net/local'
 
 export interface CppSegment { start: number; end: number; text: string }
 export interface CppResult { text: string; segments: CppSegment[] }
@@ -81,7 +82,7 @@ export class CppServer {
     while (Date.now() - t0 < readyTimeoutMs) {
       if (exited !== undefined) throw new Error(`whisper-server se cerró (código ${exited}). ${this.log.trim().split('\n').slice(-3).join(' | ')}`)
       try {
-        const r = await fetch(`http://127.0.0.1:${this.port}/`, { signal: AbortSignal.timeout(1000) })
+        const r = await localFetch(`http://127.0.0.1:${this.port}/`, { signal: AbortSignal.timeout(1000) })
         if (r.status < 500) return
       } catch { /* aún arrancando */ }
       await new Promise((r) => setTimeout(r, 150))
@@ -96,7 +97,7 @@ export class CppServer {
     form.append('response_format', timestamps ? 'verbose_json' : 'json')
     form.append('temperature', '0.0')
     form.append('language', lang ?? 'auto')
-    const res = await fetch(`http://127.0.0.1:${this.port}/inference`, { method: 'POST', body: form })
+    const res = await localFetch(`http://127.0.0.1:${this.port}/inference`, { method: 'POST', body: form })
     if (!res.ok) throw new Error(`whisper-server ${res.status}: ${(await res.text()).slice(0, 200)}`)
     return parseInference(await res.json())
   }

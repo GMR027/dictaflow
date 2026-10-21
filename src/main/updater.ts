@@ -13,8 +13,16 @@ const PAGE = `https://github.com/${REPO}/releases/latest`
 
 interface Release { tag_name: string; body?: string; html_url: string; assets: { name: string; browser_download_url: string }[] }
 
+/** La consulta a la API de GitHub va sin autenticar: 60 peticiones por hora y por IP. */
+const cache: { at: number; info: UpdateInfo | null } = { at: 0, info: null }
+const CACHE_MS = 5 * 60 * 1000
+
 export async function checkUpdate(): Promise<UpdateInfo> {
+  if (cache.info && Date.now() - cache.at < CACHE_MS) return cache.info
   const res = await netFetch('github:update-check', `https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' } })
+  if (res.status === 403 || res.status === 429) {
+    throw new Error('GitHub está limitando las consultas desde esta conexión (60 por hora). Inténtalo más tarde o descarga la versión desde la página de la aplicación.')
+  }
   if (!res.ok) throw new Error(`No se pudo consultar las versiones (GitHub ${res.status}).`)
   const rel = (await res.json()) as Release
   const kind = await detectKind()
@@ -28,10 +36,13 @@ export async function checkUpdate(): Promise<UpdateInfo> {
     const r = await netFetch('github:update-sums', sums.browser_download_url)
     if (r.ok) sha256 = sha256For(await r.text(), asset.name)
   }
-  return {
+  const info: UpdateInfo = {
     current, latest, available: isNewer(latest, current), notes: (rel.body ?? '').trim().slice(0, 2000),
     pageUrl: rel.html_url || PAGE, kind, asset: asset ? { name: asset.name, url: asset.browser_download_url } : null, sha256
   }
+  cache.info = info
+  cache.at = Date.now()
+  return info
 }
 
 async function download(info: UpdateInfo, dest: string, sender: WebContents): Promise<void> {

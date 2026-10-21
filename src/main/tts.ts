@@ -34,7 +34,7 @@ export async function installPiper(onPct: (what: string, pct: number) => void, s
     size: m.size,
     onPct: (pct) => onPct('Motor de voz', pct),
     signal
-  })
+  }, netFetch)
   await run('tar', ['-xzf', tgz, '-C', piperDir])
   rmSync(tgz, { force: true })
   if (!existsSync(piperBin)) throw new Error('El motor Piper se descargó pero no se pudo instalar. Revisa los permisos de la carpeta de datos.')
@@ -55,7 +55,7 @@ export async function installVoice(id: string, onPct: (what: string, pct: number
     sha256: m.config.sha256,
     size: m.config.size,
     signal
-  })
+  }, netFetch)
   await downloadFile({
     purpose: 'piper:voice',
     url: m.model.url,
@@ -64,7 +64,7 @@ export async function installVoice(id: string, onPct: (what: string, pct: number
     size: m.model.size,
     onPct: (pct) => onPct(id, pct),
     signal
-  })
+  }, netFetch)
 }
 
 /** Borra una voz descargada. */

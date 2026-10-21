@@ -13,6 +13,10 @@ files:
   - "!node_modules/onnxruntime-node/bin/napi-v6/{darwin,win32}/**"
   - "!node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**"
   - "!node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime_providers_{cuda,tensorrt}.so"
+  # onnxruntime-web (141 MB) es la compilación para navegador. El proceso de voz usa
+  # onnxruntime-node y nunca carga este paquete: se ha comprobado que el modelo se
+  # carga y la inferencia funciona sin él (tools/check-package.mjs lo verifica).
+  - "!node_modules/onnxruntime-web/**"
 
 asar: true
 # Los módulos nativos y el worker de voz (proceso Node aparte) no pueden vivir dentro del asar

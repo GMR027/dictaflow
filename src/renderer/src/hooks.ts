@@ -19,7 +19,7 @@ export function useQuickDictation(onText: (text: string) => void): { recording: 
     }
     setError('')
     const m = new Mic({
-      deviceId: settings.micDeviceId, mode: 'controlled', onLevel: () => undefined,
+      deviceId: settings.micDeviceId, mode: 'controlled', onLevel: () => undefined, filters: settings.micFilters,
       onSegment: async (pcm) => {
         setBusy(true)
         try {

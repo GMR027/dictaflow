@@ -47,7 +47,7 @@ function SpeechToText(): JSX.Element {
       return
     }
     const m = new Mic({
-      deviceId: settings.micDeviceId, mode: 'controlled', onLevel: () => undefined,
+      deviceId: settings.micDeviceId, mode: 'controlled', onLevel: () => undefined, filters: settings.micFilters,
       onSegment: (p) => void load(`grabacion-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.wav`, encodeWav(p), p)
     })
     try { await m.start(); mic.current = m; setRecording(true) } catch (e) { setStatus(`Micrófono: ${(e as Error).message}`) }

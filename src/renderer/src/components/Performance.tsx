@@ -12,7 +12,7 @@ const MODELS: Record<string, string> = {
   'Xenova/whisper-medium': 'medium · 1,5 GB · el más preciso, lento en CPU'
 }
 
-function Help({ children }: { children: string }): JSX.Element {
+function Help({ children }: { children: React.ReactNode }): JSX.Element {
   return <p className="muted help">{children}</p>
 }
 
@@ -136,6 +136,17 @@ export function Performance(): JSX.Element {
           <input type="range" min={500} max={1600} step={50} value={settings.pauseMs} onChange={(e) => void patchSettings({ pauseMs: Number(e.target.value) })} />
         </label>
         <Help>Solo en «Parlante activo». Es el silencio que debe haber para que se considere terminada una frase y se transcriba. Menos tiempo = el texto aparece antes, pero se corta si dudas a mitad de frase. Más tiempo = frases más completas y precisas, con más espera.</Help>
+        <h3>Procesado del micrófono</h3>
+        <label className="inline check">
+          <input type="checkbox" checked={settings.micFilters.echoCancellation} onChange={(e) => void patchSettings({ micFilters: { ...settings.micFilters, echoCancellation: e.target.checked } })} /> Cancelación de eco
+        </label>
+        <label className="inline check">
+          <input type="checkbox" checked={settings.micFilters.noiseSuppression} onChange={(e) => void patchSettings({ micFilters: { ...settings.micFilters, noiseSuppression: e.target.checked } })} /> Supresión de ruido
+        </label>
+        <label className="inline check">
+          <input type="checkbox" checked={settings.micFilters.autoGainControl} onChange={(e) => void patchSettings({ micFilters: { ...settings.micFilters, autoGainControl: e.target.checked } })} /> Control automático de ganancia
+        </label>
+        <Help>Son los filtros que aplica el navegador antes de que el audio llegue a Whisper. La supresión de ruido y el control de ganancia suelen <b>empeorar</b> la precisión del reconocimiento y consumen CPU. La cancelación de eco conviene dejarla si hablas con el altavoz encendido. <button className="link" onClick={() => void patchSettings({ micFilters: { echoCancellation: true, noiseSuppression: false, autoGainControl: false } })}>Usar lo recomendado para reconocer voz</button></Help>
       </section>
 
       <section className="card">

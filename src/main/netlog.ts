@@ -5,32 +5,14 @@
 // enviado (cualquier tipo de cuerpo, no solo texto).
 import type { NetEvent } from '@shared/types'
 import { getSettings } from './store'
+import { bodyBytes, isLocalUrl } from './net/local'
 
 const events: NetEvent[] = []
 
-const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
-export const isLocalUrl = (url: string): boolean => LOCAL_HOSTS.has(new URL(url).hostname)
+export { bodyBytes, isLocalUrl }
 
 export const getNetEvents = (): NetEvent[] => events
 export const clearNetEvents = (): void => void (events.length = 0)
-
-/** Tamaño en bytes del cuerpo de una petición, sea del tipo que sea. */
-export function bodyBytes(body: BodyInit | null | undefined): number {
-  if (body == null) return 0
-  if (typeof body === 'string') return Buffer.byteLength(body)
-  if (body instanceof URLSearchParams) return Buffer.byteLength(body.toString())
-  if (typeof Blob !== 'undefined' && body instanceof Blob) return body.size
-  if (body instanceof ArrayBuffer) return body.byteLength
-  if (ArrayBuffer.isView(body)) return body.byteLength
-  if (typeof FormData !== 'undefined' && body instanceof FormData) {
-    let n = 0
-    for (const [, value] of body.entries()) {
-      n += typeof value === 'string' ? Buffer.byteLength(value) : value.size
-    }
-    return n
-  }
-  return 0
-}
 
 /** Anota una petición saliente en el registro de la pestaña Privacidad. */
 export function logNetEvent(purpose: string, url: string, bytes = 0): void {
