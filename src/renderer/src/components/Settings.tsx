@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DictEntry, Lang } from '@shared/types'
+import { mb } from '@shared/voice'
 import { useApp } from '../store'
 import { AIServices } from './AIServices'
 import { Performance } from './Performance'
@@ -53,6 +54,10 @@ function General(): JSX.Element {
       await window.api.installVoice(id)
       refreshTts()
     } catch (e) { setDlMsg((e as Error).message) } finally { off(); setDlBusy('') }
+  }
+  const removeVoice = async (id: string): Promise<void> => {
+    await window.api.removeVoice(id)
+    refreshTts()
   }
 
   useEffect(() => {
@@ -138,10 +143,20 @@ function General(): JSX.Element {
           </>
         )}
         <h3>Voces locales (Piper)</h3>
+        <p className="muted">Todas las funciones que leen en voz alta (texto a voz, lector, resúmenes) usan este mismo catálogo. Puedes escuchar la muestra antes de descargar.</p>
         {tts?.catalog.map((v) => (
           <div key={v.id} className="rec ok">
-            <span><b>{v.label}</b> <small>~{v.sizeMB} MB</small></span>
-            {tts.voices.includes(v.id) ? <em className="ok">✓ instalada</em> : (
+            <span>
+              <b>{v.label}</b> <small>· {v.variant} · {v.quality} · ~{mb(v.sizeBytes)} MB</small><br />
+              <small className="muted">Licencia: {v.license}{v.usage === 'no-comercial' ? ' (solo uso no comercial)' : v.usage === 'terminos-propios' ? ' (con sus propias condiciones)' : ''}</small><br />
+              <small className="muted">Fuente: {v.source}</small>
+            </span>
+            {tts.voices.includes(v.id) ? (
+              <>
+                <em className="ok">✓ instalada</em>
+                <button onClick={() => void removeVoice(v.id)} title="Borrar los archivos de esta voz">🗑</button>
+              </>
+            ) : (
               <button onClick={() => void getVoice(v.id)} disabled={!!dlBusy}>{dlBusy === v.id ? `Descargando… ${dlMsg}` : 'Descargar'}</button>
             )}
           </div>

@@ -1,14 +1,16 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, Notification, screen, shell, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, Menu, Notification, screen, shell, Tray, nativeImage, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import appIcon from '../../build/icon.png?asset'
-import type { ChatMsg, HardwareInfo, Lang, TransLang, PillState, RewriteRequest, SecretName, Settings } from '@shared/types'
+import type { HardwareInfo } from '@shared/types'
+import type { IpcChannel, IpcReq, IpcRes } from '@shared/ipc'
 import { detectHardware, listOllamaModels, recommend } from './hardware'
 import { installOllama, startOllama } from './ollama-setup'
 import { complete, generate, pullOllamaModel, rewriteGuarded, testLLM, translate, warmLLM, type ContentAction } from './llm'
 import { clearNetEvents, getNetEvents } from './netlog'
 import { exportNote, launchAgent, openFileDialog, pickDir, readProjectContext, saveFileDialog } from './tools'
-import { installPiper, installVoice, synthesize, ttsStatus, VOICES } from './tts'
+import { fetchVoiceSample, installPiper, installVoice, removeVoice, synthesize, ttsStatus } from './tts'
+import { voiceStatus } from './catalog/voices'
 import { startSystemAudio, stopSystemAudio } from './sysaudio'
 import { runUninstall, uninstallInfo } from './uninstall'
 import { applyUpdate, checkUpdate } from './updater'
@@ -94,35 +96,45 @@ function createTray(): void {
   }
 }
 
-function registerIpc(): void {
-  ipcMain.handle('settings:get', () => getSettings())
-  ipcMain.handle('settings:save', (_e, patch: Partial<Settings>) => saveSettings(patch))
-  ipcMain.handle('secret:set', (_e, name: SecretName, value: string) => setSecret(name, value))
-  ipcMain.handle('secret:has', (_e, name: SecretName) => hasSecret(name))
+/**
+ * Registra un canal IPC con su firma. El nombre del canal y la forma de los
+ * argumentos salen de `src/shared/ipc.ts`: si no coinciden, no compila.
+ */
+function handle<K extends IpcChannel>(
+  channel: K,
+  fn: (e: IpcMainInvokeEvent, req: IpcReq<K>) => IpcRes<K> | Promise<IpcRes<K>>
+): void {
+  ipcMain.handle(channel, (e, req) => fn(e, req as IpcReq<K>))
+}
 
-  ipcMain.handle('hw:detect', async () => {
+function registerIpc(): void {
+  handle('settings:get', () => getSettings())
+  handle('settings:save', (_e, patch) => saveSettings(patch))
+  handle('secret:set', (_e, { name, value }) => setSecret(name, value))
+  handle('secret:has', (_e, { name }) => hasSecret(name))
+
+  handle('hw:detect', async () => {
     const hw = await detectHardware()
     return { hw, recs: recommend(hw) }
   })
-  ipcMain.handle('ollama:list', (_e, base?: string) => listOllamaModels(base))
-  ipcMain.handle('ollama:install', (e) => installOllama(e.sender))
-  ipcMain.handle('ollama:start', () => startOllama())
-  ipcMain.handle('ollama:pull', async (e, name: string) => {
-    await pullOllamaModel(name, (pct, status) => e.sender.send('ollama:pull-progress', { name, pct, status }))
+  handle('ollama:list', (_e, req) => listOllamaModels(req?.base))
+  handle('ollama:install', (e) => installOllama(e.sender))
+  handle('ollama:start', () => startOllama())
+  handle('ollama:pull', async (e, req) => {
+    await pullOllamaModel(req.name, (pct, status) => e.sender.send('ollama:pull-progress', { name: req.name, pct, status }))
   })
 
-  ipcMain.handle('stt:load', async (e) => {
+  handle('stt:load', async (e) => {
     await loadStt((p) => e.sender.send('stt:progress', p))
   })
-  ipcMain.handle('stt:status', () => sttStatus())
-  ipcMain.handle('stt:bench', () => benchStt())
-  ipcMain.handle('stt:download-ggml', (e, id: string) => downloadGgml(id, (p) => e.sender.send('stt:progress', p)))
-  ipcMain.handle('stt:transcribe', (_e, pcm: Float32Array, lang: TransLang | 'auto') => transcribe(pcm, lang))
+  handle('stt:status', () => sttStatus())
+  handle('stt:bench', () => benchStt())
+  handle('stt:download-ggml', (e, req) => downloadGgml(req.id, (p) => e.sender.send('stt:progress', p)))
+  handle('stt:transcribe', (_e, req) => transcribe(req.pcm, req.lang))
+  handle('stt:detailed', (_e, req) => transcribeDetailed(req.pcm, req.lang, req.timestamps))
+  handle('dict:apply', (_e, { text }) => applyDictionary(text))
 
-  ipcMain.handle('stt:detailed', (_e, pcm: Float32Array, lang: TransLang | 'auto', timestamps: boolean) => transcribeDetailed(pcm, lang, timestamps))
-  ipcMain.handle('dict:apply', (_e, text: string) => applyDictionary(text))
-
-  ipcMain.handle('llm:rewrite', (e, req: RewriteRequest) => {
+  handle('llm:rewrite', (e, req) => {
     const st = getSettings()
     // Modo programador: el contexto del repo y el destino los resuelve el proceso principal
     if (req.mode !== 'rewrite') req = { ...req, target: st.promptTarget, projectContext: readProjectContext(st.projectDir) || undefined }
@@ -131,68 +143,70 @@ function registerIpc(): void {
       return r.text
     })
   })
-  ipcMain.handle('llm:warm', () => warmLLM().catch(() => undefined))
-  ipcMain.handle('llm:chat', (_e, system: string, msgs: ChatMsg[]) => complete(system, msgs, 0.6))
-  ipcMain.handle('llm:translate', (_e, text: string, to: TransLang) => translate(text, to))
-  ipcMain.handle('llm:generate', (_e, action: ContentAction, text: string, lang: Lang) => generate(action, text, lang))
+  handle('llm:warm', () => warmLLM().catch(() => undefined))
+  handle('llm:chat', (_e, req) => complete(req.system, req.msgs, 0.6))
+  handle('llm:translate', (_e, req) => translate(req.text, req.to))
+  handle('llm:generate', (_e, req) => generate(req.action as ContentAction, req.text, req.lang))
+  handle('llm:test', () => testLLM())
 
-  ipcMain.handle('col:get', (_e, name: Collection) => getCollection(name))
-  ipcMain.handle('col:save', (_e, name: Collection, items: unknown[]) => saveCollection(name, items))
+  handle('col:get', (_e, req) => getCollection(req.name))
+  handle('col:save', (_e, req) => saveCollection(req.name, req.items))
 
-  ipcMain.handle('tts:status', () => ({ ...ttsStatus(), catalog: VOICES }))
-  ipcMain.handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))
-  ipcMain.handle('tts:install-voice', (e, id: string) => installVoice(id, (what, pct) => e.sender.send('tts:progress', { what, pct })))
-  ipcMain.handle('tts:synth', async (_e, text: string, lang: Lang) => new Uint8Array(await synthesize(text, lang)))
+  handle('tts:status', () => ({ ...ttsStatus(), catalog: voiceStatus() }))
+  handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))
+  handle('tts:install-voice', (e, req) => installVoice(req.id, (what, pct) => e.sender.send('tts:progress', { what, pct })))
+  handle('tts:remove-voice', (_e, req) => removeVoice(req.id))
+  handle('tts:sample', (_e, req) => fetchVoiceSample(req.id))
+  handle('tts:synth', async (_e, req) => new Uint8Array(await synthesize(req.text, req.lang, req.voice)))
 
-  ipcMain.handle('project:pick', async () => {
+  handle('project:pick', async () => {
     const dir = await pickDir('Carpeta del proyecto')
     if (dir) saveSettings({ projectDir: dir })
     return dir
   })
-  ipcMain.handle('vault:pick', async () => {
+  handle('vault:pick', async () => {
     const dir = await pickDir('Carpeta de notas (Obsidian, Logseq…)')
     if (dir) saveSettings({ vaultDir: dir })
     return dir
   })
-  ipcMain.handle('project:context', () => readProjectContext(getSettings().projectDir))
-  ipcMain.handle('agent:launch', (_e, agent: 'claude-code' | 'opencode', prompt: string) => launchAgent(agent, getSettings().projectDir, prompt))
-  ipcMain.handle('note:export', (_e, title: string, body: string, tags: string[]) => exportNote(title, body, tags))
-  ipcMain.handle('file:save', (_e, name: string, data: Uint8Array | string) => saveFileDialog(name, typeof data === 'string' ? data : Buffer.from(data)))
-  ipcMain.handle('file:open', async (_e, title: string, exts: string[]) => {
-    const f = await openFileDialog(title, exts)
+  handle('project:context', () => readProjectContext(getSettings().projectDir))
+  handle('agent:launch', (_e, req) => launchAgent(req.agent, getSettings().projectDir, req.prompt))
+  handle('note:export', (_e, req) => exportNote(req.title, req.body, req.tags))
+  handle('file:save', (_e, req) => saveFileDialog(req.name, typeof req.data === 'string' ? req.data : Buffer.from(req.data)))
+  handle('file:open', async (_e, req) => {
+    const f = await openFileDialog(req.title, req.exts)
     return f ? { name: f.name, data: new Uint8Array(f.data) } : null
   })
-  ipcMain.handle('sysaudio:start', (e) => startSystemAudio(e.sender))
-  ipcMain.handle('sysaudio:stop', () => stopSystemAudio())
-  ipcMain.handle('llm:test', () => testLLM())
+  handle('sysaudio:start', (e) => startSystemAudio(e.sender))
+  handle('sysaudio:stop', () => stopSystemAudio())
 
-  ipcMain.handle('history:get', () => getHistory())
-  ipcMain.handle('history:save', (_e, items) => saveHistory(items))
+  handle('history:get', () => getHistory())
+  handle('history:save', (_e, req) => saveHistory(req.items))
 
-  ipcMain.handle('net:events', () => ({ events: getNetEvents(), dataDir }))
-  ipcMain.handle('net:clear', () => clearNetEvents())
-  ipcMain.handle('app:launch-cmd', () => {
+  handle('net:events', () => ({ events: getNetEvents(), dataDir }))
+  handle('net:clear', () => clearNetEvents())
+  handle('app:launch-cmd', () => {
     if (process.env.APPIMAGE) return `"${process.env.APPIMAGE}" --toggle` // execPath cambia en cada ejecución del AppImage
     if (!app.isPackaged) return `"${process.execPath}" "${app.getAppPath()}" --toggle`
     return existsSync('/usr/bin/dictaflow') ? 'dictaflow --toggle' : `"${process.execPath}" --toggle`
   })
-  ipcMain.handle('update:check', () => checkUpdate())
-  ipcMain.handle('update:apply', (e) => applyUpdate(e.sender))
-  ipcMain.handle('app:version', () => app.getVersion())
-  ipcMain.handle('uninstall:info', () => uninstallInfo())
-  ipcMain.handle('uninstall:run', (_e, removeData: boolean) => runUninstall(removeData))
-  ipcMain.handle('app:open-data-dir', () => shell.openPath(dataDir))
+  handle('update:check', () => checkUpdate())
+  handle('update:apply', (e) => applyUpdate(e.sender))
+  handle('app:version', () => app.getVersion())
+  handle('uninstall:info', () => uninstallInfo())
+  handle('uninstall:run', (_e, req) => runUninstall(req.removeData))
+  handle('app:open-data-dir', () => shell.openPath(dataDir))
 
-  ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
-  ipcMain.handle('notify', (_e, title: string, body: string) => {
+  handle('clipboard:write', (_e, { text }) => clipboard.writeText(text))
+  handle('notify', (_e, { title, body }) => {
     if (Notification.isSupported()) new Notification({ title, body, silent: true }).show()
   })
-  ipcMain.handle('pill:set', (_e, s: PillState) => {
+  handle('pill:set', (_e, req) => {
     if (!pill) return
-    pill.webContents.send('pill:state', s)
-    if (s.state === 'idle') pill.hide()
+    pill.webContents.send('pill:state', req.state)
+    if (req.state.state === 'idle') pill.hide()
     else pill.showInactive()
-    if (s.state === 'done' || s.state === 'error') setTimeout(() => pill?.hide(), 2200)
+    if (req.state.state === 'done' || req.state.state === 'error') setTimeout(() => pill?.hide(), 2200)
   })
 }
 

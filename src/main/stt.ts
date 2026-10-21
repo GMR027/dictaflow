@@ -1,6 +1,6 @@
 import { fork, type ChildProcess } from 'child_process'
 import { join } from 'path'
-import { TRANS_LANGS, type Segment, type TransLang } from '@shared/types'
+import { TRANS_LANGS, type Segment, type SttStatus, type TransLang } from '@shared/types'
 import { netFetch } from './netlog'
 import { getSecret, getSettings, modelsDir } from './store'
 import { encodeWav } from './wav'
@@ -60,7 +60,7 @@ function cppConfig(): { bin: string; model: string } {
 }
 
 /** Estado de los motores para Ajustes. */
-export function sttStatus(): { engine: string; active: 'transformers' | 'whispercpp'; fallbackReason: string | null; cpp: { bin: string; model: string; ggml: { id: string; label: string; sizeMB: number; installed: boolean }[] } } {
+export function sttStatus(): SttStatus {
   const s = getSettings()
   const c = cppConfig()
   return {

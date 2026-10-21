@@ -5,7 +5,7 @@ import { decodeToMono16k, encodeMp3, encodeWav, fmtTime, toSubtitles, wavToPcm }
 import { Speaker } from '../speech'
 import { download, splitText } from '../textutil'
 import { useApp } from '../store'
-import { TtsSetup, useTtsStatus } from './TtsSetup'
+import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
 
 const ACTIONS: [string, string][] = [
   ['summary', 'Resumen'], ['chapters', 'Capítulos'], ['post', 'Post para redes'], ['notes', 'Notas'], ['study', 'Apuntes de estudio']
@@ -141,7 +141,6 @@ function TextToSpeech(): JSX.Element {
   const [error, setError] = useState('')
   const speaker = useRef(new Speaker())
   const cloud = settings.ttsProvider === 'openai'
-  const voices = (info?.catalog ?? []).filter((v) => v.lang === lang)
 
   const play = async (): Promise<void> => {
     setError(''); setBusy('Reproduciendo…')
@@ -176,11 +175,13 @@ function TextToSpeech(): JSX.Element {
           </select>
         </label>
         {!cloud && (
-          <label>Voz
-            <select value={settings.ttsVoice[lang]} onChange={(e) => void patchSettings({ ttsVoice: { ...settings.ttsVoice, [lang]: e.target.value } })}>
-              {voices.map((v) => <option key={v.id} value={v.id}>{v.label}{info?.voices.includes(v.id) ? '' : ' (sin descargar)'}</option>)}
-            </select>
-          </label>
+          <VoicePicker
+            lang={lang}
+            value={settings.ttsVoice[lang]}
+            onChange={(id) => void patchSettings({ ttsVoice: { ...settings.ttsVoice, [lang]: id } })}
+            info={info}
+            onChanged={refresh}
+          />
         )}
         <label>Velocidad {settings.ttsSpeed.toFixed(1)}×
           <input type="range" min="0.6" max="1.6" step="0.1" value={settings.ttsSpeed} onChange={(e) => void patchSettings({ ttsSpeed: Number(e.target.value) })} />

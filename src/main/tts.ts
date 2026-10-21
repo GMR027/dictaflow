@@ -1,65 +1,89 @@
-import { spawn, execFile } from 'child_process'
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'fs'
+import { execFile, spawn } from 'child_process'
+import { existsSync, readFileSync, rmSync } from 'fs'
 import { join } from 'path'
-import { pipeline } from 'stream/promises'
-import { Readable } from 'stream'
 import { promisify } from 'util'
-import type { Lang, TtsStatus, Voice } from '@shared/types'
-import { netFetch } from './netlog'
+import type { Lang, TtsStatus } from '@shared/types'
 import { dataDir, getSecret, getSettings } from './store'
+import { downloadFile } from './download'
+import { netFetch } from './netlog'
+import {
+  installedVoiceIds, piperBin, piperDir, piperInstalled, piperManifest, removeVoice,
+  voiceConfigPath, voiceManifest, voiceModelPath, voicesDir
+} from './catalog/voices'
 
 const run = promisify(execFile)
-const piperDir = join(dataDir, 'piper')
-const piperBin = join(piperDir, 'piper', 'piper')
-const voicesDir = join(dataDir, 'voices')
-const HF = 'https://huggingface.co/rhasspy/piper-voices/resolve/main'
-const PIPER_URL = 'https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz'
 
-export const VOICES: Voice[] = [
-  { id: 'es_ES-davefx-medium', lang: 'es', label: 'Español (España) · Dave', path: 'es/es_ES/davefx/medium', sizeMB: 63 },
-  { id: 'es_MX-ald-medium', lang: 'es', label: 'Español (México) · Ald', path: 'es/es_MX/ald/medium', sizeMB: 63 },
-  { id: 'en_US-lessac-medium', lang: 'en', label: 'English (US) · Lessac', path: 'en/en_US/lessac/medium', sizeMB: 63 },
-  { id: 'en_US-amy-medium', lang: 'en', label: 'English (US) · Amy', path: 'en/en_US/amy/medium', sizeMB: 63 }
-]
-
+/** Estado del motor de voz local y de las voces descargadas. */
 export function ttsStatus(): TtsStatus {
-  mkdirSync(voicesDir, { recursive: true })
-  return {
-    piperInstalled: existsSync(piperBin),
-    voices: readdirSync(voicesDir).filter((f) => f.endsWith('.onnx')).map((f) => f.replace('.onnx', ''))
-  }
+  return { piperInstalled: piperInstalled(), voices: installedVoiceIds() }
 }
 
-async function download(purpose: string, url: string, dest: string, onPct: (pct: number) => void): Promise<void> {
-  const res = await netFetch(purpose, url)
-  if (!res.ok || !res.body) throw new Error(`Descarga fallida (${res.status}): ${url}`)
-  const total = Number(res.headers.get('content-length') ?? 0)
-  let got = 0
-  const src = Readable.fromWeb(res.body as never)
-  src.on('data', (c: Buffer) => { got += c.length; if (total) onPct(Math.round((got / total) * 100)) })
-  await pipeline(src, createWriteStream(dest))
-}
-
-export async function installPiper(onPct: (what: string, pct: number) => void): Promise<void> {
+/**
+ * Instala el motor Piper. El tarball se verifica con su SHA-256 antes de
+ * descomprimirlo: no se ejecuta nada que no haya pasado la comprobación.
+ */
+export async function installPiper(onPct: (what: string, pct: number) => void, signal?: AbortSignal): Promise<void> {
   if (getSettings().strictOffline) throw new Error('Modo offline estricto activo: desactívalo en Privacidad para descargar.')
-  mkdirSync(piperDir, { recursive: true })
+  const m = piperManifest()
   const tgz = join(piperDir, 'piper.tgz')
-  await download('piper:binary', PIPER_URL, tgz, (p) => onPct('Motor de voz', p))
+  await downloadFile({
+    purpose: 'piper:binary',
+    url: m.url,
+    dest: tgz,
+    sha256: m.sha256,
+    size: m.size,
+    onPct: (pct) => onPct('Motor de voz', pct),
+    signal
+  })
   await run('tar', ['-xzf', tgz, '-C', piperDir])
   rmSync(tgz, { force: true })
+  if (!existsSync(piperBin)) throw new Error('El motor Piper se descargó pero no se pudo instalar. Revisa los permisos de la carpeta de datos.')
 }
 
-export async function installVoice(id: string, onPct: (what: string, pct: number) => void): Promise<void> {
-  const v = VOICES.find((x) => x.id === id)
-  if (!v) throw new Error(`Voz desconocida: ${id}`)
+/**
+ * Descarga una voz del catálogo: su modelo y su configuración, los dos verificados.
+ * Si se interrumpe, no queda nada a medias: los ficheros se renombran al final.
+ */
+export async function installVoice(id: string, onPct: (what: string, pct: number) => void, signal?: AbortSignal): Promise<void> {
   if (getSettings().strictOffline) throw new Error('Modo offline estricto activo: desactívalo en Privacidad para descargar.')
-  mkdirSync(voicesDir, { recursive: true })
-  await download('piper:voice-config', `${HF}/${v.path}/${id}.onnx.json`, join(voicesDir, `${id}.onnx.json`), () => undefined)
-  await download('piper:voice', `${HF}/${v.path}/${id}.onnx`, join(voicesDir, `${id}.onnx`), (p) => onPct(v.label, p))
+  const m = voiceManifest(id)
+  if (!m) throw new Error(`Voz desconocida: ${id}`)
+  await downloadFile({
+    purpose: 'piper:voice-config',
+    url: m.config.url,
+    dest: voiceConfigPath(id),
+    sha256: m.config.sha256,
+    size: m.config.size,
+    signal
+  })
+  await downloadFile({
+    purpose: 'piper:voice',
+    url: m.model.url,
+    dest: voiceModelPath(id),
+    sha256: m.model.sha256,
+    size: m.model.size,
+    onPct: (pct) => onPct(id, pct),
+    signal
+  })
+}
+
+/** Borra una voz descargada. */
+export { removeVoice }
+
+/**
+ * Muestra de audio de una voz (para escuchar antes de descargarla). Se pide
+ * directamente a la fuente oficial; no se guarda en el equipo.
+ */
+export async function fetchVoiceSample(id: string): Promise<Uint8Array> {
+  const m = voiceManifest(id)
+  if (!m?.sample) throw new Error('Esta voz no tiene muestra de audio.')
+  const res = await netFetch('piper:sample', m.sample)
+  if (!res.ok) throw new Error(`No se pudo descargar la muestra (${res.status}).`)
+  return new Uint8Array(await res.arrayBuffer())
 }
 
 /** Devuelve un WAV. Local con Piper o nube compatible con OpenAI según Ajustes. */
-export async function synthesize(text: string, lang: Lang): Promise<Buffer> {
+export async function synthesize(text: string, lang: Lang, voiceId?: string): Promise<Buffer> {
   const s = getSettings()
   if (s.ttsProvider === 'openai') {
     const key = getSecret('openai-audio')
@@ -73,9 +97,12 @@ export async function synthesize(text: string, lang: Lang): Promise<Buffer> {
     return Buffer.from(await res.arrayBuffer())
   }
 
-  const voice = s.ttsVoice[lang]
-  const model = join(voicesDir, `${voice}.onnx`)
-  if (!existsSync(piperBin) || !existsSync(model)) throw new Error('Falta instalar el motor o la voz local (Audio → Texto a voz).')
+  const voice = voiceId ?? s.ttsVoice[lang]
+  const model = voiceModelPath(voice)
+  if (!existsSync(piperBin)) throw new Error('Falta instalar el motor de voz local (Audio → Texto a voz).')
+  if (!existsSync(model)) throw new Error(`La voz ${voice} no está descargada (Audio → Texto a voz).`)
+  if (!existsSync(voiceConfigPath(voice))) throw new Error(`La voz ${voice} está incompleta: falta su configuración. Vuelve a descargarla.`)
+
   const out = join(dataDir, `tts-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`)
   await new Promise<void>((resolve, reject) => {
     const child = spawn(piperBin, ['--model', model, '--length_scale', String(1 / s.ttsSpeed), '--output_file', out], {
@@ -92,3 +119,6 @@ export async function synthesize(text: string, lang: Lang): Promise<Buffer> {
   rmSync(out, { force: true })
   return wav
 }
+
+/** Ruta de la carpeta de voces (la interfaz la necesita para abrirla). */
+export const voicesFolder = (): string => voicesDir

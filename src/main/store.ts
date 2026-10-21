@@ -1,7 +1,7 @@
 import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { DEFAULT_SETTINGS, type SecretName, type Settings } from '@shared/types'
+import { DEFAULT_SETTINGS, type HistoryItem, type SecretName, type Settings } from '@shared/types'
 
 export const dataDir = join(app.getPath('home'), '.local', 'share', 'dictaflow')
 export const modelsDir = join(dataDir, 'models')
@@ -54,13 +54,7 @@ export function hasSecret(name: SecretName): boolean {
   return !!readJson<Record<string, string>>(secretsFile, {})[name]
 }
 
-export interface HistoryItem {
-  id: string
-  createdAt: number
-  raw: string
-  polished: string
-  kind: 'rewrite' | 'prompt'
-}
+export type { HistoryItem }
 
 const historyFile = join(dataDir, 'history.json')
 export const getHistory = (): HistoryItem[] => readJson<HistoryItem[]>(historyFile, [])

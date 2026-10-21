@@ -1,85 +1,94 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes } from '@shared/ipc'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
 import type { UpdateInfo } from '@shared/update'
-import type { ChatMsg, HardwareInfo, Lang, TransLang, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, TtsStatus, Voice } from '@shared/types'
+import type { VoiceStatus } from '@shared/voice'
 
-const on = <T>(channel: string, cb: (payload: T) => void): (() => void) => {
-  const h = (_e: unknown, payload: T): void => cb(payload)
+/** Invoca un canal del contrato: el nombre y los argumentos están verificados por el compilador. */
+const invoke = <K extends IpcChannel>(channel: K, req?: IpcReq<K>): Promise<IpcRes<K>> =>
+  ipcRenderer.invoke(channel, req) as Promise<IpcRes<K>>
+
+/** Se suscribe a un evento del proceso principal. */
+const on = <K extends IpcEvent>(channel: K, cb: (payload: IpcEvents[K]) => void): (() => void) => {
+  const h = (_e: unknown, payload: IpcEvents[K]): void => cb(payload)
   ipcRenderer.on(channel, h)
   return () => ipcRenderer.removeListener(channel, h)
 }
 
 const api = {
-  getSettings: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
-  saveSettings: (p: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('settings:save', p),
-  setSecret: (n: SecretName, v: string): Promise<void> => ipcRenderer.invoke('secret:set', n, v),
-  hasSecret: (n: SecretName): Promise<boolean> => ipcRenderer.invoke('secret:has', n),
+  getSettings: (): Promise<Settings> => invoke('settings:get'),
+  saveSettings: (p: Partial<Settings>): Promise<Settings> => invoke('settings:save', p),
+  setSecret: (n: SecretName, v: string): Promise<void> => invoke('secret:set', { name: n, value: v }),
+  hasSecret: (n: SecretName): Promise<boolean> => invoke('secret:has', { name: n }),
 
-  detectHardware: (): Promise<{ hw: HardwareInfo; recs: ModelRec[] }> => ipcRenderer.invoke('hw:detect'),
-  listOllama: (base?: string): Promise<{ running: boolean; models: string[] }> => ipcRenderer.invoke('ollama:list', base),
-  installOllama: (): Promise<'installed' | 'cancelled'> => ipcRenderer.invoke('ollama:install'),
-  startOllama: (): Promise<boolean> => ipcRenderer.invoke('ollama:start'),
+  detectHardware: (): Promise<{ hw: HardwareInfo; recs: ModelRec[] }> => invoke('hw:detect'),
+  listOllama: (base?: string): Promise<{ running: boolean; models: string[] }> => invoke('ollama:list', { base }),
+  installOllama: (): Promise<'installed' | 'cancelled'> => invoke('ollama:install'),
+  startOllama: (): Promise<boolean> => invoke('ollama:start'),
   onInstallLog: (cb: (line: string) => void) => on('ollama:install-log', cb),
-  pullOllama: (name: string): Promise<void> => ipcRenderer.invoke('ollama:pull', name),
+  pullOllama: (name: string): Promise<void> => invoke('ollama:pull', { name }),
   onPullProgress: (cb: (p: { name: string; pct: number; status: string }) => void) => on('ollama:pull-progress', cb),
 
-  loadStt: (): Promise<void> => ipcRenderer.invoke('stt:load'),
-  sttStatus: (): Promise<{ engine: string; active: 'transformers' | 'whispercpp'; fallbackReason: string | null; cpp: { bin: string; model: string; ggml: { id: string; label: string; sizeMB: number; installed: boolean }[] } }> => ipcRenderer.invoke('stt:status'),
-  benchStt: (): Promise<{ engine: string; model: string; loadMs: number; ms: number }> => ipcRenderer.invoke('stt:bench'),
-  downloadGgml: (id: string): Promise<void> => ipcRenderer.invoke('stt:download-ggml', id),
+  loadStt: (): Promise<void> => invoke('stt:load'),
+  sttStatus: (): Promise<SttStatus> => invoke('stt:status'),
+  benchStt: (): Promise<{ engine: string; model: string; loadMs: number; ms: number }> => invoke('stt:bench'),
+  downloadGgml: (id: string): Promise<void> => invoke('stt:download-ggml', { id }),
   onLlmNotice: (cb: (msg: string) => void) => on('llm:notice', cb),
   onSttProgress: (cb: (p: { file?: string; progress?: number; status: string }) => void) => on('stt:progress', cb),
-  transcribe: (pcm: Float32Array, lang: TransLang | 'auto'): Promise<string> => ipcRenderer.invoke('stt:transcribe', pcm, lang),
+  transcribe: (pcm: Float32Array, lang: TransLang | 'auto'): Promise<string> => invoke('stt:transcribe', { pcm, lang }),
 
   transcribeDetailed: (pcm: Float32Array, lang: TransLang | 'auto', timestamps = false): Promise<{ text: string; segments: Segment[] }> =>
-    ipcRenderer.invoke('stt:detailed', pcm, lang, timestamps),
-  applyDictionary: (text: string): Promise<string> => ipcRenderer.invoke('dict:apply', text),
-  chat: (system: string, msgs: ChatMsg[]): Promise<string> => ipcRenderer.invoke('llm:chat', system, msgs),
-  translate: (text: string, to: TransLang): Promise<string> => ipcRenderer.invoke('llm:translate', text, to),
-  generate: (action: string, text: string, lang: Lang): Promise<string> => ipcRenderer.invoke('llm:generate', action, text, lang),
+    invoke('stt:detailed', { pcm, lang, timestamps }),
+  applyDictionary: (text: string): Promise<string> => invoke('dict:apply', { text }),
+  chat: (system: string, msgs: ChatMsg[]): Promise<string> => invoke('llm:chat', { system, msgs }),
+  translate: (text: string, to: TransLang): Promise<string> => invoke('llm:translate', { text, to }),
+  generate: (action: string, text: string, lang: Lang): Promise<string> => invoke('llm:generate', { action, text, lang }),
 
-  getCollection: <T>(name: 'prompts' | 'meetings' | 'library'): Promise<T[]> => ipcRenderer.invoke('col:get', name),
-  saveCollection: (name: 'prompts' | 'meetings' | 'library', items: unknown[]): Promise<void> => ipcRenderer.invoke('col:save', name, items),
+  getCollection: <T>(name: 'prompts' | 'meetings' | 'library'): Promise<T[]> => invoke('col:get', { name }) as Promise<T[]>,
+  saveCollection: (name: 'prompts' | 'meetings' | 'library', items: unknown[]): Promise<void> => invoke('col:save', { name, items }),
 
-  ttsStatus: (): Promise<TtsStatus & { catalog: Voice[] }> => ipcRenderer.invoke('tts:status'),
-  installPiper: (): Promise<void> => ipcRenderer.invoke('tts:install-piper'),
-  installVoice: (id: string): Promise<void> => ipcRenderer.invoke('tts:install-voice', id),
+  ttsStatus: (): Promise<TtsStatus & { catalog: VoiceStatus[] }> => invoke('tts:status'),
+  installPiper: (): Promise<void> => invoke('tts:install-piper'),
+  installVoice: (id: string): Promise<void> => invoke('tts:install-voice', { id }),
+  removeVoice: (id: string): Promise<void> => invoke('tts:remove-voice', { id }),
+  voiceSample: (id: string): Promise<Uint8Array> => invoke('tts:sample', { id }),
   onTtsProgress: (cb: (p: { what: string; pct: number }) => void) => on('tts:progress', cb),
-  synthesize: (text: string, lang: Lang): Promise<Uint8Array> => ipcRenderer.invoke('tts:synth', text, lang),
+  synthesize: (text: string, lang: Lang, voice?: string): Promise<Uint8Array> => invoke('tts:synth', { text, lang, voice }),
 
-  pickProject: (): Promise<string> => ipcRenderer.invoke('project:pick'),
-  pickVault: (): Promise<string> => ipcRenderer.invoke('vault:pick'),
-  projectContext: (): Promise<string> => ipcRenderer.invoke('project:context'),
-  launchAgent: (agent: 'claude-code' | 'opencode', prompt: string): Promise<'launched' | 'cancelled'> => ipcRenderer.invoke('agent:launch', agent, prompt),
-  exportNote: (title: string, body: string, tags: string[]): Promise<string> => ipcRenderer.invoke('note:export', title, body, tags),
-  saveFile: (name: string, data: Uint8Array | string): Promise<string> => ipcRenderer.invoke('file:save', name, data),
-  openFile: (title: string, exts: string[]): Promise<{ name: string; data: Uint8Array } | null> => ipcRenderer.invoke('file:open', title, exts),
-  startSystemAudio: (): Promise<void> => ipcRenderer.invoke('sysaudio:start'),
-  stopSystemAudio: (): Promise<void> => ipcRenderer.invoke('sysaudio:stop'),
+  pickProject: (): Promise<string> => invoke('project:pick'),
+  pickVault: (): Promise<string> => invoke('vault:pick'),
+  projectContext: (): Promise<string> => invoke('project:context'),
+  launchAgent: (agent: 'claude-code' | 'opencode', prompt: string): Promise<'launched' | 'cancelled'> => invoke('agent:launch', { agent, prompt }),
+  exportNote: (title: string, body: string, tags: string[]): Promise<string> => invoke('note:export', { title, body, tags }),
+  saveFile: (name: string, data: Uint8Array | string): Promise<string> => invoke('file:save', { name, data }),
+  openFile: (title: string, exts: string[]): Promise<{ name: string; data: Uint8Array } | null> => invoke('file:open', { title, exts }),
+  startSystemAudio: (): Promise<void> => invoke('sysaudio:start'),
+  stopSystemAudio: (): Promise<void> => invoke('sysaudio:stop'),
   onSystemAudio: (cb: (pcm: Float32Array) => void) => on('sysaudio:chunk', cb),
 
-  rewrite: (req: RewriteRequest): Promise<string> => ipcRenderer.invoke('llm:rewrite', req),
-  warmLLM: (): Promise<void> => ipcRenderer.invoke('llm:warm'),
-  testLLM: (): Promise<string> => ipcRenderer.invoke('llm:test'),
+  rewrite: (req: RewriteRequest): Promise<string> => invoke('llm:rewrite', req),
+  warmLLM: (): Promise<void> => invoke('llm:warm'),
+  testLLM: (): Promise<string> => invoke('llm:test'),
 
-  getHistory: () => ipcRenderer.invoke('history:get'),
-  saveHistory: (items: unknown[]): Promise<void> => ipcRenderer.invoke('history:save', items),
+  getHistory: (): Promise<HistoryItem[]> => invoke('history:get'),
+  saveHistory: (items: HistoryItem[]): Promise<void> => invoke('history:save', { items }),
 
-  getNetEvents: (): Promise<{ events: NetEvent[]; dataDir: string }> => ipcRenderer.invoke('net:events'),
-  clearNetEvents: (): Promise<void> => ipcRenderer.invoke('net:clear'),
-  launchCmd: (): Promise<string> => ipcRenderer.invoke('app:launch-cmd'),
-  checkUpdate: (): Promise<UpdateInfo> => ipcRenderer.invoke('update:check'),
-  applyUpdate: (): Promise<'relaunching' | 'downloaded' | 'opened' | 'cancelled'> => ipcRenderer.invoke('update:apply'),
+  getNetEvents: (): Promise<{ events: NetEvent[]; dataDir: string }> => invoke('net:events'),
+  clearNetEvents: (): Promise<void> => invoke('net:clear'),
+  launchCmd: (): Promise<string> => invoke('app:launch-cmd'),
+  checkUpdate: (): Promise<UpdateInfo> => invoke('update:check'),
+  applyUpdate: (): Promise<'relaunching' | 'downloaded' | 'opened' | 'cancelled'> => invoke('update:apply'),
   onUpdateProgress: (cb: (pct: number) => void) => on('update:progress', cb),
-  appVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
-  uninstallInfo: (): Promise<{ kind: string; command: string; runnable: boolean; dataPaths: string[]; dataSizeMB: number }> => ipcRenderer.invoke('uninstall:info'),
-  uninstall: (removeData: boolean): Promise<'done' | 'cancelled'> => ipcRenderer.invoke('uninstall:run', removeData),
-  openDataDir: (): Promise<string> => ipcRenderer.invoke('app:open-data-dir'),
+  appVersion: (): Promise<string> => invoke('app:version'),
+  uninstallInfo: (): Promise<{ kind: string; command: string; runnable: boolean; dataPaths: string[]; dataSizeMB: number }> => invoke('uninstall:info'),
+  uninstall: (removeData: boolean): Promise<'done' | 'cancelled'> => invoke('uninstall:run', { removeData }),
+  openDataDir: (): Promise<string> => invoke('app:open-data-dir'),
 
-  copy: (text: string): Promise<void> => ipcRenderer.invoke('clipboard:write', text),
-  notify: (title: string, body: string): Promise<void> => ipcRenderer.invoke('notify', title, body),
-  setPill: (s: PillState): Promise<void> => ipcRenderer.invoke('pill:set', s),
+  copy: (text: string): Promise<void> => invoke('clipboard:write', { text }),
+  notify: (title: string, body: string): Promise<void> => invoke('notify', { title, body }),
+  setPill: (s: PillState): Promise<void> => invoke('pill:set', { state: s }),
   onPill: (cb: (s: PillState) => void) => on('pill:state', cb),
-  onToggleDictation: (cb: () => void) => on<void>('dictation:toggle', cb)
+  onToggleDictation: (cb: () => void) => on('dictation:toggle', () => cb())
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -10,3 +10,5 @@ site/dist/
 .DS_Store
 # datos locales (modelos, voces, ajustes) nunca van al repositorio
 .local/
+# caché de la herramienta de manifiesto (ficheros ya descargados)
+tools/.cache/

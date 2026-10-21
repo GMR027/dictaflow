@@ -6,7 +6,7 @@ import { importDocument } from '../docs'
 import { Speaker } from '../speech'
 import { download, splitText } from '../textutil'
 import { useApp } from '../store'
-import { TtsSetup, useTtsStatus } from './TtsSetup'
+import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
 
 export function Reader(): JSX.Element {
   const { settings, flash, notice } = useApp()
@@ -129,6 +129,13 @@ export function Reader(): JSX.Element {
               <select value={lang} onChange={(e) => setLang(e.target.value as Lang)} aria-label="Idioma de lectura">
                 <option value="es">Leer en español</option><option value="en">Read in English</option>
               </select>
+              <VoicePicker
+                lang={lang}
+                value={settings.ttsVoice[lang]}
+                onChange={(id) => void useApp.getState().patchSettings({ ttsVoice: { ...settings.ttsVoice, [lang]: id } })}
+                info={info}
+                onChanged={refresh}
+              />
               <label className="inline">Texto <input type="range" min="13" max="26" value={font} onChange={(e) => setFont(Number(e.target.value))} /></label>
               <label className="inline">Velocidad {settings.ttsSpeed.toFixed(1)}× <input type="range" min="0.6" max="1.6" step="0.1" value={settings.ttsSpeed} onChange={(e) => void useApp.getState().patchSettings({ ttsSpeed: Number(e.target.value) })} /></label>
             </div>

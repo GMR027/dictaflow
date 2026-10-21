@@ -187,13 +187,19 @@ export interface TtsStatus {
   voices: string[]
 }
 
-export interface Voice {
-  id: string
-  lang: Lang
-  label: string
-  /** ruta dentro del repo rhasspy/piper-voices */
-  path: string
-  sizeMB: number
+/** Estado de los motores de reconocimiento de voz. */
+export interface SttStatus {
+  /** Motor elegido en los ajustes. */
+  engine: SttEngine
+  /** Motor que está sirviendo peticiones ahora mismo. */
+  active: 'transformers' | 'whispercpp'
+  /** Por qué se usa el motor de reserva, si se usa. */
+  fallbackReason: string | null
+  cpp: {
+    bin: string
+    model: string
+    ggml: { id: string; label: string; sizeMB: number; installed: boolean }[]
+  }
 }
 
 export interface LibraryDoc {
@@ -204,6 +210,15 @@ export interface LibraryDoc {
   chapters: { title: string; text: string }[]
   addedAt: number
   progress: { chapter: number; paragraph: number }
+}
+
+/** Una transcripción guardada en el historial. */
+export interface HistoryItem {
+  id: string
+  createdAt: number
+  raw: string
+  polished: string
+  kind: 'rewrite' | 'prompt'
 }
 
 export interface NetEvent {
