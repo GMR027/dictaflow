@@ -1,5 +1,8 @@
 // Proceso Node independiente (ELECTRON_RUN_AS_NODE): onnxruntime-node no es seguro dentro del
 // proceso principal de Electron (buffers externos prohibidos por V8 -> crash). Aquí corre aislado.
+//
+// Las peticiones se atienden de una en una: la sesión de onnxruntime del modelo no admite
+// inferencias en paralelo y, en CPU, dos a la vez se roban el tiempo y ralentizan las dos.
 type Asr = (audio: Float32Array, opts: Record<string, unknown>) => Promise<{ text: string; chunks?: { timestamp: [number, number | null]; text: string }[] }>
 
 type Msg =
@@ -24,20 +27,25 @@ async function load(msg: Extract<Msg, { type: 'load' }>): Promise<void> {
   loadedModel = msg.model
 }
 
-process.on('message', async (msg: Msg) => {
-  try {
-    if (msg.type === 'load') {
-      await load(msg)
-      reply({ id: msg.id, ok: true })
-    } else {
-      if (!asr) throw new Error('El modelo de voz no está cargado')
-      const opts: Record<string, unknown> = { task: 'transcribe', chunk_length_s: 30, stride_length_s: 5, no_repeat_ngram_size: 3, max_new_tokens: 200 }
-      if (msg.language) opts.language = msg.language
-      if (msg.timestamps) opts.return_timestamps = true
-      const out = await asr(msg.pcm, opts)
-      reply({ id: msg.id, ok: true, text: out.text.trim(), chunks: out.chunks })
-    }
-  } catch (e) {
-    reply({ id: msg.id, ok: false, error: (e as Error).message })
+async function handle(msg: Msg): Promise<void> {
+  if (msg.type === 'load') {
+    await load(msg)
+    reply({ id: msg.id, ok: true })
+    return
   }
+  if (!asr) throw new Error('El modelo de voz no está cargado')
+  const opts: Record<string, unknown> = { task: 'transcribe', chunk_length_s: 30, stride_length_s: 5, no_repeat_ngram_size: 3, max_new_tokens: 200 }
+  if (msg.language) opts.language = msg.language
+  if (msg.timestamps) opts.return_timestamps = true
+  const out = await asr(msg.pcm, opts)
+  reply({ id: msg.id, ok: true, text: out.text.trim(), chunks: out.chunks })
+}
+
+// Una petición cada vez: la cola garantiza el orden y evita inferencias solapadas.
+let chain: Promise<void> = Promise.resolve()
+
+process.on('message', (msg: Msg) => {
+  chain = chain.then(() => handle(msg)).catch((e) => {
+    reply({ id: (msg as { id: number }).id, ok: false, error: (e as Error).message })
+  })
 })

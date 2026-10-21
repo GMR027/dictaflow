@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes } from '@shared/ipc'
+import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
 import type { ChatMsg, HardwareInfo, HistoryItem, Lang, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
 import type { UpdateInfo } from '@shared/update'
 import type { VoiceStatus } from '@shared/voice'
@@ -35,10 +35,11 @@ const api = {
   downloadGgml: (id: string): Promise<void> => invoke('stt:download-ggml', { id }),
   onLlmNotice: (cb: (msg: string) => void) => on('llm:notice', cb),
   onSttProgress: (cb: (p: { file?: string; progress?: number; status: string }) => void) => on('stt:progress', cb),
-  transcribe: (pcm: Float32Array, lang: TransLang | 'auto'): Promise<string> => invoke('stt:transcribe', { pcm, lang }),
+  transcribe: (pcm: Float32Array, lang: TransLang | 'auto', priority: SttPriority = 'final'): Promise<TranscribeResult> =>
+    invoke('stt:transcribe', { pcm, lang, priority }),
 
-  transcribeDetailed: (pcm: Float32Array, lang: TransLang | 'auto', timestamps = false): Promise<{ text: string; segments: Segment[] }> =>
-    invoke('stt:detailed', { pcm, lang, timestamps }),
+  transcribeDetailed: (pcm: Float32Array, lang: TransLang | 'auto', timestamps = false, priority: SttPriority = 'final'): Promise<TranscribeResult> =>
+    invoke('stt:detailed', { pcm, lang, timestamps, priority }),
   applyDictionary: (text: string): Promise<string> => invoke('dict:apply', { text }),
   chat: (system: string, msgs: ChatMsg[]): Promise<string> => invoke('llm:chat', { system, msgs }),
   translate: (text: string, to: TransLang): Promise<string> => invoke('llm:translate', { text, to }),

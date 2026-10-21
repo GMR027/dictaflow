@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/types'
 
 // Mic y PartialTranscriber falsos: el store se prueba sin navegador ni audio
-interface FakeMic { opts: { pauseMs?: number; mode: string; onSegment: (p: Float32Array) => void }; started: boolean; stopped: boolean | 'discard' }
+interface FakeMic { opts: { pauseMs?: number; mode: string; onSegment: (p: Float32Array, start?: number, meta?: { silenceMs: number; speechMs: number }) => void }; started: boolean; stopped: boolean | 'discard' }
 const mics: FakeMic[] = []
 const partials: { started: boolean; stopped: boolean }[] = []
 
@@ -49,7 +49,7 @@ async function load(over: Partial<Settings> = {}) {
     saveSettings: vi.fn(async (p: Partial<Settings>) => (settings = { ...settings, ...p })),
     onSttProgress: vi.fn(), onToggleDictation: vi.fn(), onLlmNotice: vi.fn(),
     loadStt: vi.fn(async () => undefined), warmLLM: vi.fn(async () => undefined),
-    transcribe: vi.fn(async () => 'hola'),
+    transcribe: vi.fn(async () => ({ text: 'hola', segments: [], ms: 1 })),
     rewrite: vi.fn(async (r: { text: string }) => `R(${r.text})`),
     copy: vi.fn(), setPill: vi.fn(), notify: vi.fn()
   }
@@ -118,7 +118,7 @@ describe('dictado continuo', () => {
     const app = await load()
     api.rewrite.mockReturnValue(rw.promise)
     await app.getState().start()
-    mics[0].opts.onSegment(seg())
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 })
     await tick()
     expect(app.getState().raw).toBe('hola')
     expect(api.rewrite).not.toHaveBeenCalled() // aún dentro de la espera
@@ -132,30 +132,30 @@ describe('dictado continuo', () => {
   })
   it('mantiene el orden aunque una transcripción tarde más que la siguiente', async () => {
     const app = await load({ autoRewrite: false })
-    const a = defer<string>(), b = defer<string>()
+    const a = defer<{ text: string; segments: never[]; ms: number }>(), b = defer<{ text: string; segments: never[]; ms: number }>()
     api.transcribe.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise)
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); mics[0].opts.onSegment(seg())
-    b.resolve('dos'); await tick()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 })
+    b.resolve({ text: 'dos', segments: [], ms: 1 }); await tick()
     expect(app.getState().raw).toBe('')
-    a.resolve('uno'); await tick()
+    a.resolve({ text: 'uno', segments: [], ms: 1 }); await tick()
     expect(app.getState().raw).toBe('uno dos')
     expect(app.getState().transcribing).toBe(0)
   })
   it('no pierde frases dictadas mientras otra se transcribe', async () => {
     const app = await load({ autoRewrite: false })
     const words = ['a', 'b', 'c', 'd', 'e']
-    api.transcribe.mockImplementation(async () => words.shift() ?? '')
+    api.transcribe.mockImplementation(async () => ({ text: words.shift() ?? '', segments: [], ms: 1 }))
     await app.getState().start()
-    for (let i = 0; i < 5; i++) mics[0].opts.onSegment(seg())
+    for (let i = 0; i < 5; i++) mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 })
     await tick()
     expect(app.getState().raw).toBe('a b c d e')
   })
   it('un fallo de transcripción no bloquea las siguientes ni pierde lo anterior', async () => {
     const app = await load({ autoRewrite: false })
-    api.transcribe.mockResolvedValueOnce('uno').mockRejectedValueOnce(new Error('El motor de voz se detuvo (código 137). Reintenta.')).mockResolvedValueOnce('tres')
+    api.transcribe.mockResolvedValueOnce({ text: 'uno', segments: [], ms: 1 }).mockRejectedValueOnce(new Error('El motor de voz se detuvo (código 137). Reintenta.')).mockResolvedValueOnce({ text: 'tres', segments: [], ms: 1 })
     await app.getState().start()
-    for (let i = 0; i < 3; i++) mics[0].opts.onSegment(seg())
+    for (let i = 0; i < 3; i++) mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 })
     await tick()
     expect(app.getState().raw).toBe('uno tres')
     expect(app.getState().error).toMatch(/Transcripción: El motor de voz se detuvo/)
@@ -164,7 +164,7 @@ describe('dictado continuo', () => {
   it('se pueden registrar métricas de latencia', async () => {
     const app = await load({ autoRewrite: false })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
     const m = (globalThis as unknown as { __dictaflowMetrics: () => Record<string, { n: number }> }).__dictaflowMetrics()
     expect(m.stt_ms.n).toBe(1)
   })
@@ -176,7 +176,7 @@ describe('cancelación', () => {
     const a = defer<string>()
     api.transcribe.mockReturnValueOnce(a.promise)
     await app.getState().start()
-    mics[0].opts.onSegment(seg())
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 })
     const c = app.getState().cancel()
     a.resolve('texto que no debe aparecer')
     await c; await tick()
@@ -189,7 +189,7 @@ describe('cancelación', () => {
     const app = await load({ autoRewrite: false })
     await app.getState().start(); await app.getState().cancel()
     await app.getState().start()
-    mics[1].opts.onSegment(seg()); await tick()
+    mics[1].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
     expect(app.getState().raw).toBe('hola')
   })
 })
@@ -197,9 +197,9 @@ describe('cancelación', () => {
 describe('comandos de voz', () => {
   it('«borra todo» limpia y no se escribe como texto', async () => {
     const app = await load({ autoRewrite: false })
-    api.transcribe.mockResolvedValueOnce('hola mundo').mockResolvedValueOnce('borra todo')
+    api.transcribe.mockResolvedValueOnce({ text: 'hola mundo', segments: [], ms: 1 }).mockResolvedValueOnce({ text: 'borra todo', segments: [], ms: 1 })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); mics[0].opts.onSegment(seg()); await tick()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
     expect(app.getState().raw).toBe('')
   })
 })
@@ -207,48 +207,48 @@ describe('comandos de voz', () => {
 describe('redacción automática', () => {
   it('en modo incremental solo redacta lo nuevo y lo añade', async () => {
     const app = await load()
-    api.transcribe.mockResolvedValueOnce('uno').mockResolvedValueOnce('dos')
+    api.transcribe.mockResolvedValueOnce({ text: 'uno', segments: [], ms: 1 }).mockResolvedValueOnce({ text: 'dos', segments: [], ms: 1 })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
     expect(app.getState().polished).toBe('R(uno)')
-    mics[0].opts.onSegment(seg()); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
     expect(api.rewrite.mock.calls[1][0].text).toBe('dos')
     expect(app.getState().polished).toBe('R(uno) R(dos)')
   })
   it('sin modo incremental rehace todo el texto', async () => {
     const app = await load({ rewriteIncremental: false })
-    api.transcribe.mockResolvedValueOnce('uno').mockResolvedValueOnce('dos')
+    api.transcribe.mockResolvedValueOnce({ text: 'uno', segments: [], ms: 1 }).mockResolvedValueOnce({ text: 'dos', segments: [], ms: 1 })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
-    mics[0].opts.onSegment(seg()); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
     expect(api.rewrite.mock.calls[1][0].text).toBe('uno dos')
     expect(app.getState().polished).toBe('R(uno dos)')
   })
   it('usa la espera configurada', async () => {
     const app = await load({ rewriteDelayMs: 600 })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
     await tick(500); expect(api.rewrite).not.toHaveBeenCalled()
     await tick(150); expect(api.rewrite).toHaveBeenCalledOnce()
   })
   it('si el usuario edita el texto ya redactado, vuelve a redactar todo', async () => {
     const app = await load()
-    api.transcribe.mockResolvedValueOnce('uno').mockResolvedValueOnce('dos')
+    api.transcribe.mockResolvedValueOnce({ text: 'uno', segments: [], ms: 1 }).mockResolvedValueOnce({ text: 'dos', segments: [], ms: 1 })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
     app.getState().setRaw('UNO corregido')
-    mics[0].opts.onSegment(seg()); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(DEFAULT_SETTINGS.rewriteDelayMs)
     expect(api.rewrite.mock.calls[1][0].text).toBe('UNO corregido dos')
   })
   it('lo dictado durante una redacción se redacta después, sin perderse', async () => {
     const app = await load({ rewriteDelayMs: 100 })
     const first = defer<string>()
     api.rewrite.mockReturnValueOnce(first.promise)
-    api.transcribe.mockResolvedValueOnce('uno').mockResolvedValueOnce('dos')
+    api.transcribe.mockResolvedValueOnce({ text: 'uno', segments: [], ms: 1 }).mockResolvedValueOnce({ text: 'dos', segments: [], ms: 1 })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick(); await tick(100)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(100)
     expect(app.getState().rewriting).toBe(true)
-    mics[0].opts.onSegment(seg()); await tick(); await tick(100) // se pide otra redacción mientras la primera sigue
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(100) // se pide otra redacción mientras la primera sigue
     expect(api.rewrite).toHaveBeenCalledOnce()
     first.resolve('R1'); await tick()
     expect(api.rewrite).toHaveBeenCalledTimes(2)
@@ -261,7 +261,7 @@ describe('redacción automática', () => {
     const slow = defer<string>()
     api.rewrite.mockReturnValueOnce(slow.promise)
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick(); await tick(100)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(100)
     app.getState().clearAll()
     slow.resolve('antigua'); await tick()
     expect(app.getState().polished).toBe('')
@@ -271,7 +271,7 @@ describe('redacción automática', () => {
     const app = await load({ rewriteDelayMs: 100 })
     api.rewrite.mockRejectedValueOnce(new Error('Ollama respondió 500: modelo no cargado'))
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick(); await tick(100)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(); await tick(100)
     expect(app.getState().error).toMatch(/Redacción: Ollama respondió 500/)
     expect(app.getState().raw).toBe('hola')
     expect(app.getState().rewriting).toBe(false)
@@ -281,7 +281,7 @@ describe('redacción automática', () => {
   it('sin redacción automática solo se redacta al pedirlo', async () => {
     const app = await load({ autoRewrite: false })
     await app.getState().start()
-    mics[0].opts.onSegment(seg()); await tick(10_000)
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(10_000)
     expect(api.rewrite).not.toHaveBeenCalled()
     await app.getState().rewrite('rewrite')
     expect(api.rewrite).toHaveBeenCalledOnce()

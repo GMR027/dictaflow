@@ -11,6 +11,17 @@ import type { Voice, VoiceStatus } from './voice'
 /** Colecciones guardadas como documentos en la carpeta de datos. */
 export type Collection = 'prompts' | 'meetings' | 'library'
 
+/** Prioridad de una transcripción: la definitiva nunca espera a un borrador. */
+export type SttPriority = 'final' | 'draft'
+
+/** Resultado de una transcripción: el texto, los segmentos y lo que tardó. */
+export interface TranscribeResult {
+  text: string
+  segments: Segment[]
+  /** Milisegundos que tardó la inferencia (sin contar la espera en cola). */
+  ms: number
+}
+
 export interface IpcContract {
   'settings:get': { req: void; res: Settings }
   'settings:save': { req: Partial<Settings>; res: Settings }
@@ -27,8 +38,8 @@ export interface IpcContract {
   'stt:status': { req: void; res: SttStatus }
   'stt:bench': { req: void; res: { engine: string; model: string; loadMs: number; ms: number } }
   'stt:download-ggml': { req: { id: string }; res: void }
-  'stt:transcribe': { req: { pcm: Float32Array; lang: TransLang | 'auto' }; res: string }
-  'stt:detailed': { req: { pcm: Float32Array; lang: TransLang | 'auto'; timestamps: boolean }; res: { text: string; segments: Segment[] } }
+  'stt:transcribe': { req: { pcm: Float32Array; lang: TransLang | 'auto'; priority?: SttPriority }; res: TranscribeResult }
+  'stt:detailed': { req: { pcm: Float32Array; lang: TransLang | 'auto'; timestamps: boolean; priority?: SttPriority }; res: TranscribeResult }
   'dict:apply': { req: { text: string }; res: string }
 
   'llm:rewrite': { req: RewriteRequest; res: string }

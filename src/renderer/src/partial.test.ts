@@ -4,14 +4,15 @@ import { PartialTranscriber } from './partial'
 
 const audio = (sec: number): Float32Array => new Float32Array(16000 * sec).fill(0.1)
 
-function setup(over: { busy?: () => boolean; transcribe?: (p: Float32Array) => Promise<string> } = {}) {
+function setup(over: { busy?: () => boolean; transcribe?: (p: Float32Array) => Promise<string>; closing?: () => boolean } = {}) {
   const drafts: string[] = []
   let pcm: Float32Array | null = audio(2)
   const p = new PartialTranscriber({
     snapshot: () => pcm,
     transcribe: over.transcribe ?? (async () => ' hola mundo '),
     onDraft: (t) => drafts.push(t),
-    busy: over.busy ?? (() => false)
+    busy: over.busy ?? (() => false),
+    closing: over.closing
   })
   return { p, drafts, set: (x: Float32Array | null) => { pcm = x } }
 }
@@ -54,15 +55,28 @@ describe('PartialTranscriber', () => {
     void p.tick(); set(audio(3)); void p.tick()
     expect(n).toBe(1)
   })
-  it('deja libre el motor tanto como lo ocupó el borrador anterior', async () => {
+  it('deja libre el motor algo más de lo que ocupó el borrador anterior', async () => {
     let n = 0
     const { p, set } = setup({ transcribe: async () => { ++n; await new Promise((r) => setTimeout(r, 30)); return 'x' } })
     await p.tick()
     set(audio(3)); await p.tick()
     expect(n).toBe(1)
+    // 30 ms de inferencia → 45 ms de espera: todavía no se relanza.
     await new Promise((r) => setTimeout(r, 40))
     await p.tick()
+    expect(n).toBe(1)
+    await new Promise((r) => setTimeout(r, 20))
+    await p.tick()
     expect(n).toBe(2)
+  })
+  it('no lanza borradores mientras la frase está en el silencio que la cierra', async () => {
+    let n = 0
+    let closing = false
+    const { p, set } = setup({ transcribe: async () => { ++n; return 'x' }, closing: () => closing })
+    set(audio(3))
+    closing = true
+    await p.tick()
+    expect(n).toBe(0)
   })
   it('un fallo no rompe ni publica nada', async () => {
     const { p, drafts } = setup({ transcribe: async () => { throw new Error('x') } })

@@ -16,7 +16,15 @@ export const concat = (chunks: Float32Array[]): Float32Array => {
   return out
 }
 
-export type SegmentHandler = (pcm: Float32Array, startSec: number) => void
+export type SegmentHandler = (pcm: Float32Array, startSec: number, meta: SegmentMeta) => void
+
+/** Datos de cómo se cerró una frase: sirven para medir cuánto se tardó. */
+export interface SegmentMeta {
+  /** Duración del silencio que cerró la frase (ms). Es la espera que se añade al texto. */
+  silenceMs: number
+  /** Duración de la voz detectada (ms). */
+  speechMs: number
+}
 
 /**
  * Corta un flujo de audio en frases.
@@ -31,8 +39,10 @@ export class Segmenter {
   private noise = 0.005
   private fed = 0
   private startAt = 0
+  /** Ya se avisó del silencio que cierra la frase. */
+  private silenceTold = false
 
-  constructor(private mode: 'continuous' | 'controlled', private onSegment: SegmentHandler, private pauseMs = 900) {}
+  constructor(private mode: 'continuous' | 'controlled', private onSegment: SegmentHandler, private pauseMs = 900, private onSilence?: () => void) {}
 
   feed(chunk: Float32Array): number {
     const level = rms(chunk)
@@ -59,6 +69,7 @@ export class Segmenter {
         this.preRoll = []
         this.silentMs = 0
         this.speechMs = 0
+        this.silenceTold = false
       }
       return level
     }
@@ -66,17 +77,23 @@ export class Segmenter {
     this.buf.push(chunk)
     this.speechMs += ms
     this.silentMs = voiced ? 0 : this.silentMs + ms
+    if (!voiced && !this.silenceTold) {
+      // Empieza el silencio que cerrará la frase: avisa para dejar libre el motor.
+      this.silenceTold = true
+      this.onSilence?.()
+    }
     if (this.silentMs >= this.pauseMs || this.speechMs >= 25000) this.emit()
     return level
   }
 
   private emit(): void {
     const pcm = concat(this.buf)
+    const meta: SegmentMeta = { silenceMs: Math.round(this.silentMs), speechMs: Math.round(this.speechMs) }
     this.buf = []
     this.speaking = false
     this.silentMs = 0
     // Whisper alucina texto con silencio: no se envía audio sin voz
-    if (pcm.length / SAMPLE_RATE > 0.5 && rms(pcm) > MIN_RMS) this.onSegment(pcm, this.startAt)
+    if (pcm.length / SAMPLE_RATE > 0.5 && rms(pcm) > MIN_RMS) this.onSegment(pcm, this.startAt, meta)
   }
 
   /** Audio de la frase en curso (sin consumirlo), para el texto provisional. Null si aún no hay habla. */
@@ -106,6 +123,12 @@ export interface MicOptions {
   pauseMs?: number
   onLevel: (rms: number) => void
   /**
+   * Se avisa en cuanto empieza el silencio que va a cerrar la frase. Sirve para
+   * no arrancar nada nuevo mientras se espera: el motor queda libre justo
+   * cuando va a llegar la transcripción definitiva.
+   */
+  onSilence?: () => void
+  /**
    * Procesado del navegador. Apagar la supresión de ruido y el control automático
    * de ganancia suele mejorar la precisión de Whisper; la cancelación de eco
    * conviene dejarla si hablas con el altavoz encendido.
@@ -120,7 +143,7 @@ export class Mic {
   private seg: Segmenter
 
   constructor(private opts: MicOptions) {
-    this.seg = new Segmenter(opts.mode, opts.onSegment, opts.pauseMs)
+    this.seg = new Segmenter(opts.mode, opts.onSegment, opts.pauseMs, opts.onSilence)
   }
 
   async start(): Promise<void> {

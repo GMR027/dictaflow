@@ -130,8 +130,8 @@ function registerIpc(): void {
   handle('stt:status', () => sttStatus())
   handle('stt:bench', () => benchStt())
   handle('stt:download-ggml', (e, req) => downloadGgml(req.id, (p) => e.sender.send('stt:progress', p)))
-  handle('stt:transcribe', (_e, req) => transcribe(req.pcm, req.lang))
-  handle('stt:detailed', (_e, req) => transcribeDetailed(req.pcm, req.lang, req.timestamps))
+  handle('stt:transcribe', (_e, req) => transcribe(req.pcm, req.lang, req.priority))
+  handle('stt:detailed', (_e, req) => transcribeDetailed(req.pcm, req.lang, req.timestamps, req.priority))
   handle('dict:apply', (_e, { text }) => applyDictionary(text))
 
   handle('llm:rewrite', (e, req) => {

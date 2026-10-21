@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { HardwareInfo, HwProfile, HwProfileSetting, SttEngine } from '@shared/types'
 import { classify, PROFILES, type Classification } from '@shared/profiles'
+import { reset as resetMetrics, STAGES, summary } from '../metrics'
 import { useApp } from '../store'
 
 type Status = Awaited<ReturnType<typeof window.api.sttStatus>>
@@ -14,6 +15,46 @@ const MODELS: Record<string, string> = {
 
 function Help({ children }: { children: React.ReactNode }): JSX.Element {
   return <p className="muted help">{children}</p>
+}
+
+/**
+ * Latencias medidas en este equipo. Se actualiza solo mientras la aplicación
+ * está abierta, para ver en qué se va el tiempo al dictar.
+ */
+function Latencies(): JSX.Element {
+  const [data, setData] = useState<Record<string, { n: number; p50: number; p95: number; p99: number }>>({})
+  useEffect(() => {
+    const t = setInterval(() => setData(summary()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const hay = Object.keys(data).length > 0
+  return (
+    <section className="card">
+      <h2>Latencias medidas</h2>
+      <p className="muted">Lo que ha tardado de verdad en este equipo, por etapas. Dicta unas frases y vuelve a mirar.</p>
+      {!hay && <p className="muted">Todavía no hay mediciones.</p>}
+      {hay && (
+        <table>
+          <thead><tr><th>Etapa</th><th>Mediciones</th><th>Mediana</th><th>p95</th><th>Máx.</th></tr></thead>
+          <tbody>
+            {STAGES.filter((s) => data[s.key]).map((s) => (
+              <tr key={s.key}>
+                <td><b>{s.label}</b><br /><small className="muted">{s.note}</small></td>
+                <td>{data[s.key].n}</td>
+                <td>{data[s.key].p50} ms</td>
+                <td>{data[s.key].p95} ms</td>
+                <td>{data[s.key].p99} ms</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="row">
+        <button onClick={() => { resetMetrics(); setData({}) }} disabled={!hay}>Borrar mediciones</button>
+        <button onClick={() => void window.api.copy(JSON.stringify(summary(), null, 2))} disabled={!hay}>📋 Copiar</button>
+      </div>
+    </section>
+  )
 }
 
 export function Performance(): JSX.Element {
@@ -168,6 +209,8 @@ export function Performance(): JSX.Element {
         </label>
         <Help>Si la IA cambia números, horas o cantidades (por ejemplo «cinco y media» → «5:30», o «tres» → «cuatro»), reintenta una vez y, si persiste, conserva tu texto dictado y te avisa. Escribir los números en cifras o en palabras es equivalente.</Help>
       </section>
+
+      <Latencies />
     </>
   )
 }

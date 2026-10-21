@@ -74,6 +74,10 @@ let epoch = 0
 let autoBase = ''
 let rewriteAgain = false
 let trash: { raw: string; polished: string; versions: string[] } | null = null
+/** Momento en que se transcribió la última frase: mide cuánto se espera antes de redactar. */
+let lastPhraseAt = 0
+/** true mientras la frase está en el silencio que la va a cerrar. */
+let closing = false
 
 export const useApp = create<State>((set, get) => ({
   ready: false,
@@ -118,23 +122,30 @@ export const useApp = create<State>((set, get) => ({
         pauseMs: settings.pauseMs,
         filters: settings.micFilters,
         onLevel: (level) => set({ level }),
-        onSegment: (pcm) => {
+        // El silencio que cierra la frase: a partir de aquí el motor se deja libre.
+        onSilence: () => { closing = true },
+        onSegment: (pcm, startSec, meta) => {
           partial?.reset()
+          closing = false
           set((s) => ({ transcribing: s.transcribing + 1 }))
           const mine = epoch
+          // Momento en que se cierra la frase: sirve para medir cuánto tarda en aparecer el texto.
+          const closedAt = performance.now()
+          record('silence_ms', meta?.silenceMs ?? 0)
+          lastPhraseAt = performance.now()
           queue = queue.then(async () => {
             try {
               if (mine !== epoch) return
-              const t0 = performance.now()
-              const text = await window.api.transcribe(pcm, get().settings.primaryLang)
-              record('stt_ms', performance.now() - t0)
+              const r = await window.api.transcribe(pcm, get().settings.primaryLang)
+              record('stt_ms', r.ms)
+              record('stt_total_ms', performance.now() - closedAt)
               if (mine !== epoch) return
-              const cmd = get().settings.voiceCommands && !anywhereSession ? COMMANDS.find((c) => c.re.test(norm(text))) : undefined
+              const cmd = get().settings.voiceCommands && !anywhereSession ? COMMANDS.find((c) => c.re.test(norm(r.text))) : undefined
               if (cmd) {
                 get().flash(`🎙 Comando: ${cmd.label}`)
                 await cmd.run(get, set)
-              } else if (text) {
-                set((s) => ({ raw: (s.raw ? s.raw + ' ' : '') + text }))
+              } else if (r.text) {
+                set((s) => ({ raw: (s.raw ? s.raw + ' ' : '') + r.text }))
                 if (get().settings.autoRewrite && !anywhereSession) {
                   clearTimeout(debounce)
                   debounce = setTimeout(() => void get().rewrite('rewrite', false, true), get().settings.rewriteDelayMs)
@@ -156,9 +167,12 @@ export const useApp = create<State>((set, get) => ({
         const m = mic
         partial = new PartialTranscriber({
           snapshot: () => m.snapshot(),
-          transcribe: (pcm) => window.api.transcribe(pcm, get().settings.primaryLang),
+          // El borrador va con prioridad baja: la transcripción definitiva nunca espera a un borrador.
+          transcribe: async (pcm) => (await window.api.transcribe(pcm, get().settings.primaryLang, 'draft')).text,
           onDraft: (draft) => set({ draft }),
-          busy: () => get().transcribing > 0
+          busy: () => get().transcribing > 0,
+          // Mientras la frase está en el silencio que la cierra no se lanza ningún borrador.
+          closing: () => closing
         })
         partial.start()
       }
@@ -205,6 +219,7 @@ export const useApp = create<State>((set, get) => ({
     if (!text) return
     set({ rewriting: true, error: null })
     const t0 = performance.now()
+    if (auto && lastPhraseAt) record('rewrite_wait_ms', t0 - lastPhraseAt)
     try {
       const out = await window.api.rewrite({
         text, lang: settings.primaryLang, tone: settings.tone, mode,

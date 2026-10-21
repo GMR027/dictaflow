@@ -5,11 +5,15 @@ import { netFetch } from './netlog'
 import { getSecret, getSettings, modelsDir } from './store'
 import { encodeWav } from './wav'
 import { CppServer, GGML_MODELS, findServerBinary, ggmlUrl } from './whispercpp'
+import { PriorityQueue, type SttPriority } from './stt-queue'
 import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from 'fs'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 
 type Progress = { file?: string; progress?: number; status: string }
+
+/** Prioridad de una transcripción: la definitiva nunca espera a un borrador. */
+export type { SttPriority } from './stt-queue'
 
 let worker: ChildProcess | null = null
 let seq = 0
@@ -18,7 +22,11 @@ let loadedModel = ''
 const cpp = new CppServer()
 /** Por qué se usó Transformers.js aunque se eligió whisper.cpp (null si no hubo fallback) */
 let fallbackReason: string | null = null
-const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
+
+/** Cola de transcripciones: una sola a la vez y la definitiva antes que el borrador. */
+const sttQueue = new PriorityQueue<{ text: string; segments: Segment[] }>()
+
+const waiting = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>()
 
 function getWorker(): ChildProcess {
   if (worker) return worker
@@ -29,25 +37,26 @@ function getWorker(): ChildProcess {
   })
   child.on('message', (m: any) => {
     if (m.type === 'progress') return onProgress?.(m.payload)
-    const p = pending.get(m.id)
+    const p = waiting.get(m.id)
     if (!p) return
-    pending.delete(m.id)
+    waiting.delete(m.id)
     m.ok ? p.resolve(m) : p.reject(new Error(m.error))
   })
   child.on('exit', (code) => {
     worker = null
     loadedModel = ''
-    for (const p of pending.values()) p.reject(new Error(`El motor de voz se detuvo (código ${code}). Reintenta.`))
-    pending.clear()
+    for (const p of waiting.values()) p.reject(new Error(`El motor de voz se detuvo (código ${code}). Reintenta.`))
+    waiting.clear()
   })
   worker = child
   return child
 }
 
+/** Manda un mensaje al worker y espera su respuesta. */
 function call<T>(msg: Record<string, unknown>): Promise<T> {
   const id = ++seq
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { resolve, reject })
+    waiting.set(id, { resolve, reject })
     getWorker().send({ id, ...msg })
   })
 }
@@ -154,32 +163,61 @@ async function cloudTranscribe(pcm: Float32Array, lang: TransLang | 'auto'): Pro
   return { text: j.text.trim(), segments: (j.segments ?? []).map((x) => ({ start: x.start, end: x.end, text: x.text.trim() })) }
 }
 
-/** Transcribe audio 16 kHz mono. `timestamps` devuelve segmentos con tiempos (subtítulos, reuniones). */
-export async function transcribeDetailed(pcm: Float32Array, lang: TransLang | 'auto', timestamps = false): Promise<{ text: string; segments: Segment[] }> {
-  if (getSettings().sttProvider === 'openai') {
-    const r = await cloudTranscribe(pcm, lang)
-    return { text: applyDictionary(r.text), segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text) })) }
-  }
-  await loadStt()
-  if (getSettings().sttEngine === 'whispercpp' && cpp.running && !fallbackReason) {
-    const lg = lang === 'auto' ? undefined : lang
-    try {
-      const r = await cpp.infer(pcm, lg, timestamps)
-      return { text: applyDictionary(r.text), segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text) })) }
-    } catch (e) {
-      fallbackReason = (e as Error).message
-      cpp.stop()
-    }
-  }
-  const res = await call<{ text: string; chunks?: { timestamp: [number, number | null]; text: string }[] }>({
-    type: 'transcribe', pcm, timestamps, language: lang === 'auto' ? undefined : TRANS_LANGS[lang].whisper
-  })
-  const segments = (res.chunks ?? []).map((c) => ({ start: c.timestamp[0], end: c.timestamp[1] ?? c.timestamp[0], text: applyDictionary(c.text.trim()) }))
-  return { text: applyDictionary(res.text), segments }
+/** Resultado de una transcripción: el texto, los segmentos y lo que tardó. */
+export interface TranscribeResult {
+  text: string
+  segments: Segment[]
+  /** Milisegundos que tardó la inferencia (sin contar la espera en cola). */
+  ms: number
 }
 
-export async function transcribe(pcm: Float32Array, lang: TransLang | 'auto'): Promise<string> {
-  return (await transcribeDetailed(pcm, lang)).text
+/**
+ * Transcribe audio 16 kHz mono. `timestamps` devuelve segmentos con tiempos
+ * (subtítulos, reuniones). `priority` decide si espera a los borradores: la
+ * transcripción definitiva nunca espera.
+ */
+export async function transcribeDetailed(
+  pcm: Float32Array,
+  lang: TransLang | 'auto',
+  timestamps = false,
+  priority: SttPriority = 'final'
+): Promise<TranscribeResult> {
+  if (getSettings().sttProvider === 'openai') {
+    const t0 = performance.now()
+    const r = await cloudTranscribe(pcm, lang)
+    return {
+      text: applyDictionary(r.text),
+      segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text) })),
+      ms: Math.round(performance.now() - t0)
+    }
+  }
+  await loadStt()
+  const r = await sttQueue.enqueue({
+    id: ++seq,
+    priority,
+    exec: async () => {
+      if (getSettings().sttEngine === 'whispercpp' && cpp.running && !fallbackReason) {
+        const lg = lang === 'auto' ? undefined : lang
+        try {
+          const r = await cpp.infer(pcm, lg, timestamps)
+          return { text: applyDictionary(r.text), segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text) })) }
+        } catch (e) {
+          fallbackReason = (e as Error).message
+          cpp.stop()
+        }
+      }
+      const res = await call<{ text: string; chunks?: { timestamp: [number, number | null]; text: string }[] }>({
+        type: 'transcribe', pcm, timestamps, language: lang === 'auto' ? undefined : TRANS_LANGS[lang].whisper
+      })
+      const segments = (res.chunks ?? []).map((c) => ({ start: c.timestamp[0], end: c.timestamp[1] ?? c.timestamp[0], text: applyDictionary(c.text.trim()) }))
+      return { text: applyDictionary(res.text), segments }
+    }
+  })
+  return { text: r.value.text, segments: r.value.segments, ms: r.ms }
+}
+
+export async function transcribe(pcm: Float32Array, lang: TransLang | 'auto', priority: SttPriority = 'final'): Promise<TranscribeResult> {
+  return transcribeDetailed(pcm, lang, false, priority)
 }
 
 export function stopStt(): void {

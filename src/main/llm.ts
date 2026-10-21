@@ -182,11 +182,61 @@ const ACTIONS: Record<ContentAction, string> = {
   study: 'Crea apuntes de estudio: resumen, glosario de términos clave, 8 flashcards (Pregunta/Respuesta) y 5 preguntas de repaso.'
 }
 
-export function generate(action: ContentAction, text: string, lang: Lang): Promise<string> {
-  return complete(
-    `${ACTIONS[action]} Escribe en ${LANG_NAME[lang]}. Usa solo información presente en el texto; no inventes. ${termsLine()}`,
-    [{ role: 'user', content: text.slice(0, 60000) }], 0.3
-  )
+/** Tamaño máximo que se envía de una vez al modelo. */
+const CHUNK_CHARS = 12_000
+/** A partir de este tamaño el texto se parte y se une. */
+const MAX_CHARS = 60_000
+
+/** Parte el texto en trozos por párrafos, sin partir un párrafo por la mitad. */
+function splitForChunks(text: string, max = CHUNK_CHARS): string[] {
+  const paras = text.split(/\n{2,}/)
+  const out: string[] = []
+  let cur = ''
+  for (const p of paras) {
+    if (cur && cur.length + p.length + 2 > max) {
+      out.push(cur)
+      cur = p
+    } else {
+      cur = cur ? `${cur}\n\n${p}` : p
+    }
+  }
+  if (cur.trim()) out.push(cur)
+  return out.length ? out : [text]
+}
+
+/**
+ * Genera el contenido pedido. Si el texto es largo, se procesa por partes y se
+ * unen: antes se cortaba en silencio a los 60 000 caracteres y el acta salía
+ * incompleta sin ningún aviso.
+ */
+export async function generate(action: ContentAction, text: string, lang: Lang): Promise<string> {
+  const full = text.trim()
+  if (full.length <= MAX_CHARS) {
+    return complete(
+      `${ACTIONS[action]} Escribe en ${LANG_NAME[lang]}. Usa solo información presente en el texto; no inventes. ${termsLine()}`,
+      [{ role: 'user', content: full }], 0.3
+    )
+  }
+
+  const chunks = splitForChunks(full)
+  const partes: string[] = []
+  for (let i = 0; i < chunks.length; i++) {
+    partes.push(await complete(
+      `${ACTIONS[action]} Escribe en ${LANG_NAME[lang]}. Usa solo información presente en el texto; no inventes. ${termsLine()}\nEsta es la parte ${i + 1} de ${chunks.length}: no repitas lo de otras partes.`,
+      [{ role: 'user', content: chunks[i] }], 0.3
+    ))
+  }
+  // Los capítulos se concatenan; lo demás se une en un solo texto.
+  if (action === 'chapters') return partes.join('\n\n')
+  try {
+    return await complete(
+      `Une estas partes en un solo texto en ${LANG_NAME[lang]}, con las mismas secciones y sin repetir contenido. No inventes nada que no esté en las partes. ${termsLine()}`,
+      [{ role: 'user', content: partes.map((p, i) => `--- Parte ${i + 1} ---\n${p}`).join('\n\n') }], 0.3
+    )
+  } catch {
+    // Si la unión falla, al menos se entrega todo el material.
+    return partes.join('\n\n')
+  }
 }
 
 export async function testLLM(): Promise<string> {
