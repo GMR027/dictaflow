@@ -50,8 +50,8 @@ const api = {
   generate: (action: string, text: string, lang: Lang): Promise<string> => invoke('llm:generate', { action, text, lang }),
   minutes: (text: string, lang: Lang): Promise<MeetingMinutes | null> => invoke('llm:minutes', { text, lang }),
 
-  getCollection: <T>(name: 'prompts' | 'meetings' | 'library'): Promise<T[]> => invoke('col:get', { name }) as Promise<T[]>,
-  saveCollection: (name: 'prompts' | 'meetings' | 'library', items: unknown[]): Promise<void> => invoke('col:save', { name, items }),
+  getCollection: <T>(name: 'prompts' | 'meetings'): Promise<T[]> => invoke('col:get', { name }) as Promise<T[]>,
+  saveCollection: (name: 'prompts' | 'meetings', items: unknown[]): Promise<void> => invoke('col:save', { name, items }),
 
   listLibrary: (): Promise<LibraryMeta[]> => invoke('library:list'),
   getLibraryDoc: (id: string): Promise<LibraryDoc | null> => invoke('library:get', { id }),

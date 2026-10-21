@@ -14,7 +14,7 @@ import type { BackupInfo, Diagnostics } from './diagnostics'
 import type { CalendarEvent, Reminder } from './calendar'
 
 /** Colecciones guardadas como documentos en la carpeta de datos. */
-export type Collection = 'prompts' | 'meetings' | 'library'
+export type Collection = 'prompts' | 'meetings'
 
 /** Prioridad de una transcripción: la definitiva nunca espera a un borrador. */
 export type SttPriority = 'final' | 'draft'

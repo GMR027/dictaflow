@@ -1,58 +1,13 @@
 import { safeStorage } from 'electron'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { dirname, join } from 'path'
+import { existsSync, mkdirSync, rmSync } from 'fs'
+import { join } from 'path'
 import { DEFAULT_SETTINGS, type HistoryItem, type LibraryDoc, type LibraryMeta, type SecretName, type Settings } from '@shared/types'
 import { dataDir, modelsDir } from './paths'
-import { migrateSettings, SCHEMA_VERSION } from './migrate'
+import { migrateSettings } from './migrate'
+import { readJson, readVersioned, writeJson, writeVersioned } from './storage'
 
 export { dataDir, modelsDir }
-
-/**
- * Versión del formato de los datos guardados. Al subirla hay que añadir la
- * migración correspondiente en `migrate.ts`; así un cambio de formato no rompe
- * la instalación de quien ya usaba la aplicación.
- */
 export { SCHEMA_VERSION } from './migrate'
-
-
-/** Envoltura con versión de todo lo que se guarda en disco. */
-interface Envelope<T> {
-  version: number
-  data: T
-}
-
-function readJson<T>(file: string, fallback: T): T {
-  try {
-    return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as T) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-/** Escribe a disco de forma atómica: un fallo a mitad no deja el fichero corrupto. */
-function writeJson(file: string, data: unknown): void {
-  mkdirSync(dirname(file), { recursive: true })
-  const tmp = `${file}.tmp`
-  writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 })
-  renameSync(tmp, file)
-}
-
-/** Lee un documento con versión, aplicando las migraciones pendientes. */
-function readVersioned<T>(file: string, fallback: T, migrate: (data: unknown, from: number) => T): T {
-  const raw = readJson<unknown>(file, undefined)
-  if (raw === undefined) return fallback
-  const isObject = raw !== null && typeof raw === 'object'
-  // Formato antiguo (v1): el documento era el dato sin envolver.
-  if (!isObject || !('version' in raw)) return migrate(raw, 1)
-  const env = raw as Envelope<unknown>
-  if (env.version === SCHEMA_VERSION) return env.data as T
-  return migrate(env.data, env.version)
-}
-
-/** Escribe un documento con versión. */
-function writeVersioned<T>(file: string, data: T): void {
-  writeJson(file, { version: SCHEMA_VERSION, data } satisfies Envelope<T>)
-}
 
 const settingsFile = join(dataDir, 'settings.json')
 const secretsFile = join(dataDir, 'secrets.json')
@@ -64,7 +19,7 @@ const secretsFile = join(dataDir, 'secrets.json')
 export function getSettings(): Settings {
   //Si hay un guardado pendiente, ese es el estado actual: el disco puede ir retrasado.
   if (pending) return pending
-  const stored = readVersioned<Partial<Settings>>(settingsFile, {}, migrate)
+  const stored = readVersioned<Partial<Settings>>(settingsFile, {}, migrateSettings)
   return { ...DEFAULT_SETTINGS, ...stored }
 }
 
@@ -90,11 +45,6 @@ export function flushSettings(): void {
   if (!pending) return
   writeVersioned(settingsFile, pending)
   pending = null
-}
-
-/** v1 guardaba los ajustes sin envolver; v2 los envuelve con la versión. */
-function migrate(data: unknown, from: number): Partial<Settings> {
-  return migrateSettings(data, from)
 }
 
 export function setSecret(name: SecretName, value: string): void {
@@ -123,8 +73,8 @@ const historyFile = join(dataDir, 'history.json')
 export const getHistory = (): HistoryItem[] => readVersioned<HistoryItem[]>(historyFile, [], (d) => (Array.isArray(d) ? d : []))
 export const saveHistory = (items: HistoryItem[]): void => writeVersioned(historyFile, items.slice(0, 500))
 
-/** Colecciones simples (prompts, reuniones, biblioteca) guardadas como documentos en la carpeta de datos. */
-export type Collection = 'prompts' | 'meetings' | 'library'
+/** Colecciones simples (prompts, reuniones) guardadas como documentos en la carpeta de datos. */
+export type Collection = 'prompts' | 'meetings'
 export const getCollection = <T>(name: Collection): T[] =>
   readVersioned<T[]>(join(dataDir, `${name}.json`), [], (d) => (Array.isArray(d) ? (d as T[]) : []))
 export const saveCollection = (name: Collection, items: unknown[]): void => writeVersioned(join(dataDir, `${name}.json`), items)
