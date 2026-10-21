@@ -7,6 +7,8 @@ import type { IpcChannel, IpcReq, IpcRes } from '@shared/ipc'
 import { detectHardware, listOllamaModels, recommend } from './hardware'
 import { installOllama, startOllama } from './ollama-setup'
 import { complete, generate, generateMinutes, pullOllamaModel, rewriteGuarded, testLLM, translate, warmLLM, type ContentAction } from './llm'
+import { listOpencodeModels, resolveBin } from './cli'
+import { PROVIDERS } from '@shared/providers'
 import { clearNetEvents, getNetEvents } from './netlog'
 import { exportNote, launchAgent, openFileDialog, pickDir, readProjectContext, saveFileDialog } from './tools'
 import { fetchVoiceSample, installPiper, installVoice, removeVoice, synthesize, ttsStatus } from './tts'
@@ -28,7 +30,7 @@ import { discardAudio, pushAudio, startAudio, stopAudio } from './meeting-audio'
 import { listAutomations, removeAutomation, runAutomation, saveAutomation, STEP_INFO, type StepType } from './automations'
 import {
   checkEngine, cloneEngineUrl, listGenerated, listPersonalVoices, listRecordings,
-  removeGenerated, removePersonalVoice, removeRecording, saveGenerated, savePersonalVoice,
+  readPersonalAudio, removeGenerated, removePersonalVoice, removeRecording, saveGenerated, savePersonalVoice,
   saveRecording, setCloneEngineUrl, synthesizePersonal
 } from './personal-voices'
 
@@ -202,6 +204,20 @@ function registerIpc(): void {
   handle('llm:generate', (_e, req) => generate(req.action as ContentAction, req.text, req.lang))
   handle('llm:minutes', (_e, req) => generateMinutes(req.text, req.lang))
   handle('llm:test', () => testLLM())
+  handle('llm:models', async (_e, req) => {
+    if (req.kind === 'opencode') return listOpencodeModels()
+    if (req.kind === 'ollama') {
+      const r = await listOllamaModels(getSettings().llm.baseUrl)
+      return {
+        bin: resolveBin('ollama'), models: r.models, providers: ['ollama'],
+        error: r.running ? undefined : 'Ollama no está en marcha. Arráncalo para ver sus modelos.'
+      }
+    }
+    if (req.kind === 'claude-cli') {
+      return { bin: resolveBin('claude'), models: PROVIDERS['claude-cli'].models ?? [], providers: ['anthropic'] }
+    }
+    return { bin: null, models: PROVIDERS[req.kind].models ?? [], providers: [] }
+  })
 
   handle('col:get', (_e, req) => getCollection(req.name))
   handle('col:save', (_e, req) => saveCollection(req.name, req.items))
@@ -279,6 +295,7 @@ function registerIpc(): void {
   handle('pv:remove-recording', (_e, req) => removeRecording(req.id))
   handle('pv:generated', () => listGenerated())
   handle('pv:remove-generated', (_e, req) => removeGenerated(req.id))
+  handle('pv:audio', (_e, req) => readPersonalAudio(req.path))
   handle('pv:engine', async () => {
     const r = await checkEngine()
     return { ...r, url: cloneEngineUrl() }

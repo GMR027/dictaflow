@@ -114,7 +114,7 @@ export const T = {
     reqTitle: 'Requisitos',
     req: ['Linux x86-64 con sesión gráfica (probado en GNOME/Wayland sobre Zorin OS)', 'PipeWire para capturar el audio del sistema (viene en las distribuciones modernas)', '8 GB de RAM recomendados; no hace falta GPU', 'Ollama es opcional — la app puede instalarlo por ti'],
     limitsTitle: 'Limitaciones conocidas',
-    limits: ['Los PDF escaneados (solo imágenes) necesitan OCR, que aún no está disponible.', 'Todavía no hay diarización automática: en las reuniones los hablantes solo se separan por origen («Yo» y «Sistema»), aunque puedes renombrar a cualquiera a mano.', 'No se incluye motor de clonación de voz: «Mis voces» se conecta a un servicio local que pones tú en marcha.', 'La app copia el texto dictado al portapapeles en lugar de escribirlo en otras apps: Wayland no lo permite sin permisos arriesgados.', 'La calidad de la redacción depende del modelo de IA que elijas.'],
+    limits: ['Los PDF escaneados (solo imágenes) necesitan OCR, que aún no está disponible.', 'Todavía no hay diarización automática: en las reuniones los hablantes solo se separan por origen («Yo» y «Sistema»), aunque puedes renombrar a cualquiera a mano.', 'No se incluye motor de clonación de voz: «Mis voces» funciona con voces locales de Piper y, para clonar, se conecta a un servicio local que pones tú en marcha.', 'La app copia el texto dictado al portapapeles en lugar de escribirlo en otras apps: Wayland no lo permite sin permisos arriesgados.', 'La calidad de la redacción depende del modelo de IA que elijas.'],
     faqTitle: 'Preguntas',
     faq: [
       ['¿De verdad es gratis?', 'Sí. DictaFlow tiene licencia MIT. Si usas un servicio de IA de pago, pagas a ese proveedor; los modelos locales no cuestan nada.'],

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Lang, Segment } from '@shared/types'
 import { Mic, SAMPLE_RATE, concat } from '../audio'
 import { decodeToMono16k, encodeWav, fmtTime, toSubtitles, wavToPcm } from '../audioio'
@@ -24,8 +24,27 @@ function SpeechToText(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [recording, setRecording] = useState(false)
   const [drag, setDrag] = useState(false)
+  const [modelReady, setModelReady] = useState<boolean | null>(null)
+  const [prep, setPrep] = useState('')
   const mic = useRef<Mic | null>(null)
   const lang = settings.primaryLang
+
+  useEffect(() => {
+    let alive = true
+    const refresh = (): void => { void window.api.sttStatus().then((s) => { if (alive) setModelReady(s.modelInstalled) }) }
+    refresh()
+    const off = window.api.onSttProgress((p) => {
+      if (p.status === 'progress') setPrep(`${p.file?.split('/').pop() ?? 'modelo'} ${Math.round(p.progress ?? 0)}%`)
+      if (p.status === 'ready' || p.status === 'done') { setPrep(''); refresh() }
+    })
+    return () => { alive = false; off() }
+  }, [settings.sttModel, settings.sttEngine, settings.sttProvider])
+
+  const prepareModel = async (): Promise<void> => {
+    setPrep('Preparando el modelo…')
+    try { await window.api.loadStt(); setPrep('Modelo listo.'); setModelReady(true) }
+    catch (e) { setPrep(`Error: ${(e as Error).message}`) }
+  }
 
   const load = async (n: string, data: Uint8Array, decoded?: Float32Array): Promise<void> => {
     setStatus('Leyendo audio…')
@@ -104,6 +123,19 @@ function SpeechToText(): JSX.Element {
         </div>
         <p className="muted">{status}</p>
       </div>
+
+      {settings.sttProvider === 'local' && settings.sttEngine === 'transformers' && modelReady === false && (
+        <div className="row">
+          <button onClick={() => void prepareModel()} disabled={!!prep}>⬇ Preparar modelo de voz ({settings.sttModel.split('/').pop()})</button>
+          <span className="muted">{prep || 'Se descarga una sola vez y luego funciona sin conexión.'}</span>
+        </div>
+      )}
+      {settings.sttProvider === 'local' && settings.sttEngine === 'transformers' && modelReady && (
+        <p className="muted">Modelo listo: {settings.sttModel.split('/').pop()}.</p>
+      )}
+      {settings.sttProvider === 'local' && settings.sttEngine === 'whispercpp' && (
+        <p className="muted">Motor whisper.cpp seleccionado. Sus modelos se gestionan en Ajustes → Rendimiento.</p>
+      )}
 
       <div className="row">
         <button className="primary" onClick={() => void transcribe()} disabled={!pcm || busy}>{busy ? 'Trabajando…' : 'Transcribir'}</button>

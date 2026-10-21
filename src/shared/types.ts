@@ -240,6 +240,8 @@ export interface PersonalVoice {
   lang: Lang
   /** Grabación original de la que sale. */
   sampleId?: string
+  /** Voz local de Piper que lee esta voz (motor «piper»). */
+  piperVoice?: string
   /**
    * Consentimiento de la persona cuya voz es. Sin esto no se puede guardar la
    * voz: no se clonan voces de terceros sin autorización.
@@ -282,6 +284,8 @@ export interface SttStatus {
   active: 'transformers' | 'whispercpp'
   /** Por qué se usa el motor de reserva, si se usa. */
   fallbackReason: string | null
+  /** El modelo de Transformers.js elegido ya está descargado. */
+  modelInstalled: boolean
   cpp: {
     bin: string
     model: string

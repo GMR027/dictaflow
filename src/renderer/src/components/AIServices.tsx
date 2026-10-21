@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react'
 import type { LLMKind, SecretName } from '@shared/types'
-import { connectPatch, PROVIDERS, serviceStatus, type ServiceStatus } from '@shared/providers'
+import { connectPatch, PROVIDERS, serviceStatus, type ProviderModels, type ServiceStatus } from '@shared/providers'
 import { useApp } from '../store'
 import { OllamaSetup } from './OllamaSetup'
 
 const BADGE: Record<ServiceStatus, string> = { active: 'En uso', ready: 'Listo', 'needs-key': 'Falta la clave' }
 const KINDS = Object.keys(PROVIDERS) as LLMKind[]
+
+/** Agrupa los IDs `proveedor/modelo` por proveedor para el selector. */
+function byProvider(models: string[]): [string, string[]][] {
+  const map = new Map<string, string[]>()
+  for (const id of models) {
+    const p = id.split('/')[0]
+    const list = map.get(p) ?? []
+    list.push(id)
+    map.set(p, list)
+  }
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+}
 
 export function AIServices(): JSX.Element {
   const { settings, patchSettings } = useApp()
@@ -13,6 +25,8 @@ export function AIServices(): JSX.Element {
   const [keyInput, setKeyInput] = useState('')
   const [ollama, setOllama] = useState<string[]>([])
   const [ollamaState, setOllamaState] = useState({ installed: true, running: true })
+  const [models, setModels] = useState<ProviderModels | null>(null)
+  const [loadingModels, setLoadingModels] = useState(false)
   const [test, setTest] = useState('')
   const [testing, setTesting] = useState(false)
 
@@ -25,15 +39,33 @@ export function AIServices(): JSX.Element {
       setOllamaState({ installed: hw.ollama.installed, running: hw.ollama.running })
     })
   }
+
+  const loadModels = async (kind: LLMKind): Promise<void> => {
+    setLoadingModels(true)
+    setModels(null)
+    try {
+      setModels(await window.api.listModels(kind))
+    } catch (e) {
+      setModels({ bin: null, models: [], providers: [], error: (e as Error).message })
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+
   useEffect(() => {
     refreshOllama()
     for (const n of ['anthropic', 'openai-compat'] as SecretName[]) void window.api.hasSecret(n).then((v) => setKeys((k) => ({ ...k, [n]: v })))
   }, [])
 
+  useEffect(() => {
+    void loadModels(active)
+    setTest('')
+    setKeyInput('')
+  }, [active])
+
   const choose = (kind: LLMKind): void => {
     if (kind === active) return
     void patchSettings(connectPatch(settings, kind))
-    setTest(''); setKeyInput('')
   }
   const saveKey = async (): Promise<void> => {
     if (!p.secret) return
@@ -46,6 +78,10 @@ export function AIServices(): JSX.Element {
     try { setTest('✓ ' + (await window.api.testLLM())) } catch (e) { setTest('✗ ' + (e as Error).message) }
     setTesting(false)
   }
+
+  const modelIds = models?.models ?? []
+  const grouped = byProvider(modelIds)
+  const invalidOpencode = active === 'opencode' && !!settings.llm.model && !modelIds.includes(settings.llm.model)
 
   return (
     <>
@@ -72,12 +108,51 @@ export function AIServices(): JSX.Element {
         {active === 'ollama' && (
           <OllamaSetup installed={ollamaState.installed} running={ollamaState.running} onChanged={refreshOllama} />
         )}
+
+        {models?.bin !== undefined && (active === 'opencode' || active === 'claude-cli') && (
+          <p className={models.bin ? 'muted' : 'warn'}>
+            {models.bin ? `CLI detectado: ${models.bin}` : 'CLI no encontrado en el PATH.'}
+          </p>
+        )}
+
         <label>Modelo
           {active === 'ollama' && ollama.length > 0 ? (
             <select value={settings.llm.model} onChange={(e) => void patchSettings({ llm: { ...settings.llm, model: e.target.value } })}>
               {!ollama.includes(settings.llm.model) && <option value={settings.llm.model}>{settings.llm.model} (no instalado)</option>}
               {ollama.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
+          ) : (active === 'opencode' || active === 'claude-cli') ? (
+            <>
+              <select
+                value={settings.llm.model}
+                disabled={loadingModels || !modelIds.length}
+                onChange={(e) => void patchSettings({ llm: { ...settings.llm, model: e.target.value } })}
+              >
+                <option value="">{active === 'opencode' ? 'Predeterminado de opencode (recomendado)' : 'Predeterminado de Claude'}</option>
+                {active === 'opencode'
+                  ? grouped.map(([provider, list]) => (
+                    <optgroup key={provider} label={provider}>
+                      {list.map((id) => <option key={id} value={id}>{id.slice(provider.length + 1)}</option>)}
+                    </optgroup>
+                  ))
+                  : modelIds.filter(Boolean).map((id) => <option key={id} value={id}>{id}</option>)}
+              </select>
+              <div className="row tight">
+                <button onClick={() => void loadModels(active)} disabled={loadingModels}>
+                  {loadingModels ? 'Cargando modelos…' : '↻ Actualizar modelos'}
+                </button>
+                {active === 'opencode' && models?.providers.length ? (
+                  <span className="muted">{modelIds.length} modelos · {models.providers.join(', ')}</span>
+                ) : null}
+              </div>
+              {models?.error && <span className="warn">{models.error}</span>}
+              {invalidOpencode && (
+                <span className="warn">
+                  El modelo guardado no está en la lista de opencode.{' '}
+                  <button className="link" onClick={() => void patchSettings({ llm: { ...settings.llm, model: '' } })}>Usar el predeterminado</button>
+                </span>
+              )}
+            </>
           ) : (
             <>
               <input list="llm-models" value={settings.llm.model} placeholder={p.models ? 'Elige uno o escribe otro' : ''}
@@ -86,6 +161,7 @@ export function AIServices(): JSX.Element {
             </>
           )}
         </label>
+
         {(active === 'ollama' || active === 'openai-compat') && (
           <label>URL base
             <input value={settings.llm.baseUrl ?? ''} onChange={(e) => void patchSettings({ llm: { ...settings.llm, baseUrl: e.target.value } })} />

@@ -139,7 +139,7 @@ export function Performance(): JSX.Element {
         </div>
         {status?.fallbackReason && settings.sttEngine === 'whispercpp' && <p className="warn" role="alert">whisper.cpp no está disponible, se usa Transformers.js: {status.fallbackReason}</p>}
         {settings.sttEngine === 'transformers' && (
-          <label>Modelo de Whisper
+          <label>Modelo de Whisper {settings.sttEngine === 'transformers' && status && !status.modelInstalled && <span className="warn">· sin descargar</span>}
             <select value={settings.sttModel} onChange={(e) => void patchSettings({ sttModel: e.target.value })}>
               {!(settings.sttModel in MODELS) && <option value={settings.sttModel}>{settings.sttModel}</option>}
               {Object.entries(MODELS).map(([id, l]) => <option key={id} value={id}>{l}</option>)}

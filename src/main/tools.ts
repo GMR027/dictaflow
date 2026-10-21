@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, join } from 'path'
 import type { PromptTarget } from '@shared/types'
 import { dataDir, getSettings } from './store'
+import { resolveBin } from './cli'
 
 const IGNORE = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', '__pycache__', '.venv', 'venv', 'target', '.cache'])
 
@@ -92,6 +93,8 @@ export function exportNote(title: string, body: string, tags: string[]): string 
 export async function launchAgent(agent: Extract<PromptTarget, 'claude-code' | 'opencode'>, dir: string, prompt: string): Promise<'launched' | 'cancelled'> {
   if (!dir || !existsSync(dir)) throw new Error('Elige primero la carpeta del proyecto.')
   const bin = agent === 'claude-code' ? 'claude' : 'opencode'
+  const exe = resolveBin(bin)
+  if (!exe) throw new Error(`No se encontró «${bin}». Instálalo o añade su carpeta al PATH.`)
   const { response } = await dialog.showMessageBox({
     type: 'question', title: `Enviar a ${bin}`, buttons: ['Cancelar', 'Abrir terminal'], defaultId: 0, cancelId: 0,
     message: `Se abrirá una terminal en ${dir} y se ejecutará ${bin} con tu prompt.`,
@@ -102,8 +105,9 @@ export async function launchAgent(agent: Extract<PromptTarget, 'claude-code' | '
   mkdirSync(tmp, { recursive: true })
   const file = join(tmp, `prompt-${Date.now()}.txt`)
   writeFileSync(file, prompt, { mode: 0o600 })
-  // El prompt viaja por archivo y argumentos posicionales, nunca interpolado en el comando
-  const script = `cd "$1" && ${bin} "$(cat "$2")"; exec bash`
-  spawn('gnome-terminal', ['--', 'bash', '-lc', script, '_', dir, file], { detached: true, stdio: 'ignore' }).unref()
+  // El prompt viaja por archivo y argumentos posicionales, nunca interpolado en el comando.
+  // El binario se pasa resuelto: `bash -lc` no siempre ve ~/.opencode/bin.
+  const script = 'cd "$1" && "$3" "$(cat "$2")"; exec bash'
+  spawn('gnome-terminal', ['--', 'bash', '-lc', script, '_', dir, file, exe], { detached: true, stdio: 'ignore' }).unref()
   return 'launched'
 }

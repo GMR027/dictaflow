@@ -67,7 +67,8 @@ async function voiceEntry(dir) {
       sha256: modelSha
     },
     config: {
-      url: `${HF}/resolve/main/${dir}/${config.path}`,
+      // `config.path` ya es la ruta completa dentro del repositorio.
+      url: `${HF}/resolve/main/${config.path}`,
       size: config.size,
       sha256: sha256(cfgBuf)
     },

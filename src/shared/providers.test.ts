@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { connectPatch, PROVIDERS, serviceStatus } from './providers'
+import { connectPatch, isOpencodeModel, normalizeModel, PROVIDERS, serviceStatus } from './providers'
 
 describe('connectPatch', () => {
   it('activa el servicio con sus valores por defecto', () => {
@@ -29,5 +29,24 @@ describe('serviceStatus', () => {
 describe('PROVIDERS', () => {
   it('solo Ollama es local', () => {
     expect(Object.entries(PROVIDERS).filter(([, v]) => !v.cloud).map(([k]) => k)).toEqual(['ollama'])
+  })
+})
+
+describe('modelos de opencode', () => {
+  it('acepta proveedor/modelo y el valor vacío (predeterminado)', () => {
+    expect(isOpencodeModel('opencode/minimax-m3.1-flash-free')).toBe(true)
+    expect(isOpencodeModel('ollama/qwen2.5:7b')).toBe(true)
+    expect(isOpencodeModel('')).toBe(true)
+  })
+
+  it('rechaza el nombre visible que rompía la conexión', () => {
+    expect(isOpencodeModel('MiniMax M3.1 Flash Free')).toBe(false)
+  })
+
+  it('normaliza el valor viejo a un modelo válido', () => {
+    expect(normalizeModel('opencode', 'MiniMax M3.1 Flash Free')).toBe('opencode/deepseek-v4.1-flash-free')
+    expect(normalizeModel('opencode', '')).toBe('')
+    expect(normalizeModel('opencode', 'opencode/deepseek-v4.1-flash-free')).toBe('opencode/deepseek-v4.1-flash-free')
+    expect(normalizeModel('claude-cli', 'sonnet')).toBe('sonnet')
   })
 })

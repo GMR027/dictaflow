@@ -11,11 +11,13 @@
 //     comercialmente), pero se puede apuntar a un servicio local que el
 //     usuario tenga en marcha.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import type { Lang, PersonalVoice, VoiceRecording } from '@shared/types'
 import type { GeneratedClip } from '@shared/voice'
 import { dataDir } from './paths'
 import { netFetch } from './netlog'
+import { installedVoiceIds, piperInstalled } from './catalog/voices'
+import { synthesize } from './tts'
 
 const base = join(dataDir, 'voces')
 const samplesDir = join(base, 'muestras')
@@ -41,13 +43,18 @@ export const listPersonalVoices = (): PersonalVoice[] => readJson<PersonalVoice[
 export const listRecordings = (): VoiceRecording[] => readJson<VoiceRecording[]>(recordingsFile, [])
 export const listGenerated = (): GeneratedClip[] => readJson<GeneratedClip[]>(generatedFile, [])
 
-/** Guarda una voz. Sin consentimiento no se guarda. */
-export function savePersonalVoice(v: PersonalVoice): PersonalVoice {
+/**
+ * Guarda una voz. Sin consentimiento no se guarda.
+ * La disponibilidad se comprueba de verdad: antes se marcaba disponible una voz
+ * de clonación aunque no hubiera ningún motor escuchando.
+ */
+export async function savePersonalVoice(v: PersonalVoice): Promise<PersonalVoice> {
   if (!v.consent?.authorizedBy?.trim()) throw new Error('Falta el consentimiento: dice quién autoriza el uso de esta voz.')
   if (!v.consent.date) throw new Error('Falta la fecha del consentimiento.')
   const all = listPersonalVoices()
   const i = all.findIndex((x) => x.id === v.id)
-  const guardada: PersonalVoice = { ...v, available: checkAvailable(v.engine), unavailableReason: unavailableReason(v.engine) }
+  const estado = await voiceAvailability(v)
+  const guardada: PersonalVoice = { ...v, ...estado }
   if (i >= 0) all[i] = guardada
   else all.unshift(guardada)
   writeJson(voicesFile, all)
@@ -85,27 +92,81 @@ export const setCloneEngineUrl = (url: string): void => {
   writeJson(join(base, 'motor.json'), { url })
 }
 
-/** ¿Hay un motor de clonación accesible? */
+/**
+ * ¿Hay un motor de clonación accesible? Un 404 también cuenta: significa que
+ * hay algo escuchando en ese puerto (antes se daba por roto).
+ */
 export async function checkEngine(): Promise<{ ok: boolean; message: string }> {
-  const url = cloneEngineUrl()
+  const url = cloneEngineUrl().replace(/\/$/, '')
+  let last = ''
+  for (const path of ['/health', '/']) {
+    try {
+      const res = await netFetch('clone:check', `${url}${path}`, { signal: AbortSignal.timeout(1500) })
+      if (res.status < 500) return { ok: true, message: `Motor encontrado en ${url} (HTTP ${res.status}).` }
+      last = `HTTP ${res.status}`
+    } catch (e) {
+      last = (e as Error).message
+    }
+  }
+  return { ok: false, message: `No hay motor de clonación en ${url}: ${last}` }
+}
+
+/** Estado real de una voz según su motor. */
+async function voiceAvailability(v: PersonalVoice): Promise<Pick<PersonalVoice, 'available' | 'unavailableReason'>> {
+  if (v.engine === 'piper') {
+    const ok = piperInstalled() && !!v.piperVoice && installedVoiceIds().includes(v.piperVoice)
+    return ok
+      ? { available: true }
+      : { available: false, unavailableReason: 'Falta la voz local de Piper. Descárgala en Audio → Texto a voz.' }
+  }
+  if (v.engine === 'servicio-local') {
+    const e = await checkEngine()
+    return e.ok ? { available: true } : { available: false, unavailableReason: e.message }
+  }
+  return { available: false, unavailableReason: `Motor desconocido: ${v.engine}` }
+}
+
+/** Duración aproximada de un WAV (cabecera RIFF), en segundos. */
+export function wavDurationSec(wav: Uint8Array): number {
   try {
-    const res = await netFetch('clone:check', `${url.replace(/\/$/, '')}/`, { signal: AbortSignal.timeout(1500) })
-    if (res.ok) return { ok: true, message: `Motor encontrado en ${url}` }
-    return { ok: false, message: `El motor de ${url} respondió ${res.status}.` }
-  } catch (e) {
-    return { ok: false, message: `No hay motor de clonación en ${url}: ${(e as Error).message}` }
+    const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength)
+    if (view.getUint32(0, false) !== 0x52494646) return Math.round((wav.length / 32000) * 10) / 10
+    let off = 12
+    let byteRate = 0
+    let dataSize = 0
+    while (off + 8 <= wav.length) {
+      const id = String.fromCharCode(wav[off], wav[off + 1], wav[off + 2], wav[off + 3])
+      const size = view.getUint32(off + 4, true)
+      if (id === 'fmt ' && off + 16 <= wav.length) byteRate = view.getUint32(off + 16, true)
+      if (id === 'data') { dataSize = size; break }
+      off += 8 + size + (size % 2)
+    }
+    if (!byteRate || !dataSize) return Math.round((wav.length / 32000) * 10) / 10
+    return Math.round((dataSize / byteRate) * 10) / 10
+  } catch {
+    return Math.round((wav.length / 32000) * 10) / 10
   }
 }
 
-const checkAvailable = (engine: string): boolean => engine === 'servicio-local'
-const unavailableReason = (engine: string): string | undefined =>
-  engine === 'servicio-local' ? undefined : `Motor desconocido: ${engine}`
+/** Devuelve los bytes de una grabación o de un audio generado (solo dentro de datos). */
+export function readPersonalAudio(path: string): Uint8Array {
+  const root = resolve(base)
+  const file = resolve(path)
+  if (file !== root && !file.startsWith(root + sep)) throw new Error('Ese audio no pertenece a DictaFlow.')
+  if (!existsSync(file)) throw new Error('El audio ya no existe.')
+  return new Uint8Array(readFileSync(file))
+}
 
 /**
  * Sintetiza con una voz personal usando el motor local configurado.
  * Devuelve los bytes del audio generado.
  */
 export async function synthesizePersonal(voice: PersonalVoice, text: string): Promise<{ audio: Uint8Array; durationSec: number }> {
+  if (voice.engine === 'piper') {
+    if (!voice.piperVoice) throw new Error('Esta voz no tiene una voz local de Piper asignada.')
+    const audio = new Uint8Array(await synthesize(text, voice.lang, voice.piperVoice))
+    return { audio, durationSec: wavDurationSec(audio) }
+  }
   if (voice.engine !== 'servicio-local') throw new Error(`El motor «${voice.engine}» no está disponible en esta versión.`)
   const url = cloneEngineUrl().replace(/\/$/, '')
   const res = await netFetch('clone:synth', `${url}/tts`, {
@@ -115,7 +176,7 @@ export async function synthesizePersonal(voice: PersonalVoice, text: string): Pr
   })
   if (!res.ok) throw new Error(`El motor de clonación respondió ${res.status}: ${(await res.text()).slice(0, 200)}`)
   const audio = new Uint8Array(await res.arrayBuffer())
-  return { audio, durationSec: Math.round((audio.length / 32000) * 10) / 10 }
+  return { audio, durationSec: wavDurationSec(audio) }
 }
 
 /** Guarda un audio generado con una voz personal. */

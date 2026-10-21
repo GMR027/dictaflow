@@ -4,7 +4,8 @@
 // `src/main/index.ts` y `src/preload/index.ts`: un error de tecleo se descubría
 // en runtime. Aquí se declara una sola vez y los dos extremos la usan, de modo
 // que el compilador avisa si un canal cambia de firma o desaparece.
-import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, MeetingMinutes, ModelRec, NetEvent, PersonalVoice, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang, VoiceRecording } from './types'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, LLMKind, MeetingMinutes, ModelRec, NetEvent, PersonalVoice, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang, VoiceRecording } from './types'
+import type { ProviderModels } from './providers'
 import type { GeneratedClip } from './voice'
 import type { Automation, StepType } from './automation'
 import type { UpdateInfo } from './update'
@@ -54,6 +55,7 @@ export interface IpcContract {
   'llm:generate': { req: { action: string; text: string; lang: Lang }; res: string }
   'llm:minutes': { req: { text: string; lang: Lang }; res: MeetingMinutes | null }
   'llm:test': { req: void; res: string }
+  'llm:models': { req: { kind: LLMKind }; res: ProviderModels }
 
   'col:get': { req: { name: Collection }; res: unknown[] }
   'col:save': { req: { name: Collection; items: unknown[] }; res: void }
@@ -99,6 +101,7 @@ export interface IpcContract {
   'pv:remove-recording': { req: { id: string }; res: void }
   'pv:generated': { req: void; res: GeneratedClip[] }
   'pv:remove-generated': { req: { id: string }; res: void }
+  'pv:audio': { req: { path: string }; res: Uint8Array }
   'pv:engine': { req: void; res: { ok: boolean; message: string; url: string } }
   'pv:engine-url': { req: { url: string }; res: void }
   'pv:synthesize': { req: { voiceId: string; text: string }; res: { path: string; durationSec: number } }

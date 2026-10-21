@@ -1,12 +1,9 @@
-import { spawn } from 'child_process'
-import { mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import { TRANS_LANGS, type ChatMsg, type LLMConfig, type Lang, type MeetingMinutes, type RewriteRequest, type Tone, type TransLang } from '@shared/types'
 import { netFetch } from './netlog'
 import { numbersPreserved } from '@shared/guard'
 import { extractJson } from '@shared/json'
 import { getSecret, getSettings } from './store'
+import { runClaude, runOpencode } from './cli'
 
 const TONES: Record<Tone, string> = {
   neutral: 'tono neutro y claro',
@@ -67,25 +64,6 @@ function userPrompt(req: RewriteRequest): string {
   return `${ctx}Texto dictado:\n${req.text}${prev}`
 }
 
-function runCli(bin: string, args: string[], input: string | null, timeoutMs = 120_000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // cwd temporal: los agentes no deben tocar ningún proyecto del usuario
-    const child = spawn(bin, args, { cwd: mkdtempSync(join(tmpdir(), 'dictaflow-')), stdio: ['pipe', 'pipe', 'pipe'] })
-    let out = ''
-    let err = ''
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
-    child.stdout.on('data', (d) => (out += d))
-    child.stderr.on('data', (d) => (err += d))
-    child.on('error', (e) => { clearTimeout(timer); reject(e) })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      code === 0 ? resolve(out.trim()) : reject(new Error(err.trim() || `${bin} terminó con código ${code}`))
-    })
-    if (input !== null) child.stdin.end(input)
-    else child.stdin.end()
-  })
-}
-
 async function openAiStyle(cfg: LLMConfig, system: string, msgs: ChatMsg[], key: string): Promise<string> {
   const res = await netFetch(`${cfg.kind}:chat`, `${cfg.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -139,13 +117,10 @@ export async function complete(system: string, msgs: ChatMsg[], temperature = 0.
       return openAiStyle(cfg, system, msgs, getSecret('openai-compat'))
     case 'claude-cli':
       // Usa la sesión/suscripción del CLI instalado; sin herramientas para que solo redacte.
-      return runCli('claude', [
-        '-p', '--system-prompt', system,
-        '--disallowedTools', 'Bash', 'Edit', 'Write', 'Read', 'WebFetch', 'WebSearch', 'Glob', 'Grep', 'Task',
-        ...(cfg.model ? ['--model', cfg.model] : [])
-      ], flat)
+      return runClaude(flat, system, cfg.model)
     case 'opencode':
-      return runCli('opencode', ['run', ...(cfg.model ? ['-m', cfg.model] : []), `${system}\n\n${flat}`], null)
+      // `--format json` evita el banner y los códigos ANSI; solo se devuelve el texto.
+      return runOpencode(`${system}\n\n${flat}`, cfg.model)
   }
 }
 

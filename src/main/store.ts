@@ -4,6 +4,7 @@ import { join } from 'path'
 import { DEFAULT_SETTINGS, type HistoryItem, type LibraryDoc, type LibraryMeta, type SecretName, type Settings } from '@shared/types'
 import { dataDir, modelsDir } from './paths'
 import { migrateSettings } from './migrate'
+import { normalizeModel } from '@shared/providers'
 import { readJson, readVersioned, writeJson, writeVersioned } from './storage'
 
 export { dataDir, modelsDir }
@@ -20,7 +21,9 @@ export function getSettings(): Settings {
   //Si hay un guardado pendiente, ese es el estado actual: el disco puede ir retrasado.
   if (pending) return pending
   const stored = readVersioned<Partial<Settings>>(settingsFile, {}, migrateSettings)
-  return { ...DEFAULT_SETTINGS, ...stored }
+  const settings = { ...DEFAULT_SETTINGS, ...stored }
+  // Un valor viejo pudo guardar el nombre visible de opencode en vez de su ID.
+  return { ...settings, llm: { ...settings.llm, model: normalizeModel(settings.llm.kind, settings.llm.model) } }
 }
 
 /**
@@ -29,7 +32,8 @@ export function getSettings(): Settings {
  * `flushSettings` fuerza la escritura (al cerrar la aplicación).
  */
 export function saveSettings(patch: Partial<Settings>): Settings {
-  const next = { ...getSettings(), ...patch }
+  const merged = { ...getSettings(), ...patch }
+  const next = { ...merged, llm: { ...merged.llm, model: normalizeModel(merged.llm.kind, merged.llm.model) } }
   pending = next
   if (!settingsTimer) settingsTimer = setTimeout(flushSettings, 300)
   return next

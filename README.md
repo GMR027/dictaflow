@@ -67,7 +67,7 @@ Descarga desde [Releases](https://github.com/GMR027/dictaflow/releases/latest) (
 
 **Requisitos:** Linux x86-64 con sesión gráfica (probado en GNOME/Wayland, Zorin OS) y PipeWire para capturar el audio del sistema.
 
-**Limitaciones:** sin OCR para PDF escaneados · **sin diarización automática**: en reuniones los hablantes solo se separan por origen («Yo»/«Sistema»), aunque puedes renombrar a cualquiera a mano · **sin motor de clonación de voz incluido**: *Mis voces* gestiona tus propias grabaciones y se conecta a un servicio local de clonación que pongas tú en marcha (los que hay pesan 2–3 GB y algunos, como XTTS-v2, no se pueden usar comercialmente) · el texto dictado va al portapapeles, no se escribe solo en otras apps (Wayland no lo permite sin permisos arriesgados; registra el atajo en *Ajustes → Dictar en cualquier app*).
+**Limitaciones:** sin OCR para PDF escaneados · **sin diarización automática**: en reuniones los hablantes solo se separan por origen («Yo»/«Sistema»), aunque puedes renombrar a cualquiera a mano · **sin motor de clonación incluido**: *Mis voces* funciona con las voces locales de Piper (sin conexión) y, si quieres clonar, se conecta a un servicio local que pongas tú en marcha (los que hay pesan 2–3 GB y algunos, como XTTS-v2, no se pueden usar comercialmente) · el texto dictado va al portapapeles, no se escribe solo en otras apps (Wayland no lo permite sin permisos arriesgados; registra el atajo en *Ajustes → Dictar en cualquier app*).
 
 ---
 

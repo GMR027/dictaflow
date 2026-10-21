@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
-import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, MeetingMinutes, ModelRec, NetEvent, PersonalVoice, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang, VoiceRecording } from '@shared/types'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, LLMKind, MeetingMinutes, ModelRec, NetEvent, PersonalVoice, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang, VoiceRecording } from '@shared/types'
+import type { ProviderModels } from '@shared/providers'
 import type { Job } from '@shared/job'
 import type { BackupInfo, Diagnostics } from '@shared/diagnostics'
 import type { CalendarEvent, Reminder } from '@shared/calendar'
@@ -95,6 +96,7 @@ const api = {
   removeRecording: (id: string): Promise<void> => invoke('pv:remove-recording', { id }),
   listGenerated: (): Promise<GeneratedClip[]> => invoke('pv:generated'),
   removeGenerated: (id: string): Promise<void> => invoke('pv:remove-generated', { id }),
+  personalAudio: (path: string): Promise<Uint8Array> => invoke('pv:audio', { path }),
   cloneEngine: (): Promise<{ ok: boolean; message: string; url: string }> => invoke('pv:engine'),
   setCloneEngineUrl: (url: string): Promise<void> => invoke('pv:engine-url', { url }),
   synthesizePersonal: (voiceId: string, text: string): Promise<{ path: string; durationSec: number }> => invoke('pv:synthesize', { voiceId, text }),
@@ -127,6 +129,7 @@ const api = {
   rewrite: (req: RewriteRequest): Promise<string> => invoke('llm:rewrite', req),
   warmLLM: (): Promise<void> => invoke('llm:warm'),
   testLLM: (): Promise<string> => invoke('llm:test'),
+  listModels: (kind: LLMKind): Promise<ProviderModels> => invoke('llm:models', { kind }),
 
   getHistory: (): Promise<HistoryItem[]> => invoke('history:get'),
   saveHistory: (items: HistoryItem[]): Promise<void> => invoke('history:save', { items }),

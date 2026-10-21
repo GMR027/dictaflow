@@ -5,17 +5,9 @@ import { promisify } from 'util'
 import type { HardwareInfo, ModelRec } from '@shared/types'
 import { parseCpuFlags } from '@shared/cpu'
 import { netFetch } from './netlog'
+import { whichCli } from './cli'
 
 const run = promisify(execFile)
-
-async function which(bin: string): Promise<boolean> {
-  try {
-    await run('which', [bin])
-    return true
-  } catch {
-    return false
-  }
-}
 
 export async function listOllamaModels(baseUrl = 'http://127.0.0.1:11434'): Promise<{ running: boolean; models: string[] }> {
   try {
@@ -48,7 +40,7 @@ export async function detectHardware(): Promise<HardwareInfo> {
     /* ignorar */
   }
   const [ollamaState, ollamaInstalled, claude, opencode] = await Promise.all([
-    listOllamaModels(), which('ollama'), which('claude'), which('opencode')
+    listOllamaModels(), whichCli('ollama'), whichCli('claude'), whichCli('opencode')
   ])
   const ollama = { ...ollamaState, installed: ollamaInstalled || ollamaState.running }
   return {

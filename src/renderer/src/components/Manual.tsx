@@ -46,7 +46,7 @@ const TOPICS: Topic[] = [
       <ul>
         <li><b>Ollama:</b> modelo local, privado y gratuito. Si no lo tienes, el botón <b>Instalar Ollama</b> (en el asistente y en Ajustes) lo instala con el instalador oficial; antes te muestra el comando y el sistema te pide tu contraseña. Si ya está instalado pero parado, aparece <b>Iniciar Ollama</b>.</li>
         <li><b>Claude (API key):</b> tu clave se guarda cifrada con el llavero del sistema.</li>
-        <li><b>Claude CLI / opencode:</b> usan las herramientas ya instaladas e iniciadas en tu equipo; Claude CLI se ejecuta sin acceso a archivos.</li>
+        <li><b>Claude CLI / opencode:</b> usan las herramientas ya instaladas e iniciadas en tu equipo; Claude CLI se ejecuta sin acceso a archivos. DictaFlow detecta el CLI aunque esté en <code>~/.opencode/bin</code> y muestra la lista de modelos que opencode tenga disponibles para elegir uno.</li>
         <li><b>Compatible con OpenAI:</b> LM Studio, OpenRouter u otro servidor.</li>
       </ul>
       <p>Usa «Probar conexión» tras configurar. La voz a texto siempre es local.</p>
@@ -125,7 +125,7 @@ const TOPICS: Topic[] = [
     body: (<>
       <p><b>🎙 Mis voces</b> reúne tus grabaciones originales, las voces que creas con ellas, los audios que generes y las frases de prueba.</p>
       <p><b>El consentimiento es obligatorio</b>: al guardar una voz se anota quién autoriza el uso y cuándo, y ese dato se guarda con la voz y va en las copias de seguridad. No se clonan voces de terceros.</p>
-      <p className="muted">Esta versión <b>no incluye un motor de clonación</b>: apunta a un servicio local que tengas en marcha (por defecto <code>http://127.0.0.1:8020</code>). Los motores abiertos que existen ocupan entre 2 y 3 GB y algunos, como XTTS-v2, no se pueden usar comercialmente.</p>
+      <p className="muted">Cada voz puede usar una <b>voz local de Piper</b> (funciona sin conexión y sin descargar nada más) o un <b>servicio local de clonación</b> que tengas en marcha (por defecto <code>http://127.0.0.1:8020</code>). Esta versión no incluye un motor de clonación: los que existen ocupan entre 2 y 3 GB y algunos, como XTTS-v2, no se pueden usar comercialmente.</p>
     </>)
   },
   {

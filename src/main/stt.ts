@@ -6,7 +6,7 @@ import { getSecret, getSettings, modelsDir } from './store'
 import { encodeWav } from './wav'
 import { CppServer, GGML_MODELS, findServerBinary, ggmlUrl } from './whispercpp'
 import { PriorityQueue, type SttPriority } from './stt-queue'
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from 'fs'
+import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'fs'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 
@@ -68,6 +68,18 @@ function cppConfig(): { bin: string; model: string } {
   return { bin: findServerBinary(whisperCpp.bin), model: whisperCpp.model || (GGML_MODELS.map((m) => ggmlPath(m.id)).find(existsSync) ?? '') }
 }
 
+/** ¿Está descargado el modelo de Transformers.js elegido? */
+export function sttModelInstalled(model = getSettings().sttModel): boolean {
+  const dir = join(modelsDir, model)
+  const onnx = join(dir, 'onnx')
+  if (!existsSync(join(dir, 'config.json')) || !existsSync(onnx)) return false
+  try {
+    return readdirSync(onnx).some((f) => f.endsWith('.onnx'))
+  } catch {
+    return false
+  }
+}
+
 /** Estado de los motores para Ajustes. */
 export function sttStatus(): SttStatus {
   const s = getSettings()
@@ -76,6 +88,7 @@ export function sttStatus(): SttStatus {
     engine: s.sttEngine,
     active: s.sttEngine === 'whispercpp' && cpp.running && !fallbackReason ? 'whispercpp' : 'transformers',
     fallbackReason,
+    modelInstalled: sttModelInstalled(s.sttModel),
     cpp: { ...c, ggml: GGML_MODELS.map((m) => ({ ...m, installed: existsSync(ggmlPath(m.id)) })) }
   }
 }
