@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
-import type { ChatMsg, HardwareInfo, HistoryItem, Lang, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
+import type { Job } from '@shared/job'
 import type { UpdateInfo } from '@shared/update'
 import type { VoiceStatus } from '@shared/voice'
 
@@ -47,6 +48,20 @@ const api = {
 
   getCollection: <T>(name: 'prompts' | 'meetings' | 'library'): Promise<T[]> => invoke('col:get', { name }) as Promise<T[]>,
   saveCollection: (name: 'prompts' | 'meetings' | 'library', items: unknown[]): Promise<void> => invoke('col:save', { name, items }),
+
+  listLibrary: (): Promise<LibraryMeta[]> => invoke('library:list'),
+  getLibraryDoc: (id: string): Promise<LibraryDoc | null> => invoke('library:get', { id }),
+  saveLibraryDoc: (doc: LibraryDoc): Promise<void> => invoke('library:save', { doc }),
+  setLibraryProgress: (id: string, progress: LibraryDoc['progress']): Promise<void> => invoke('library:progress', { id, progress }),
+  removeLibraryDoc: (id: string): Promise<void> => invoke('library:remove', { id }),
+
+  listJobs: (): Promise<Job[]> => invoke('jobs:list'),
+  cancelJob: (id: string): Promise<boolean> => invoke('jobs:cancel', { id }),
+  clearJobs: (): Promise<void> => invoke('jobs:clear'),
+  onJobsChanged: (cb: (jobs: Job[]) => void) => on('jobs:changed', cb),
+  exportAudio: (text: string, lang: Lang, voice: string | undefined, name: string): Promise<string> => invoke('audio:export', { text, lang, voice, name }),
+  startAudiobook: (docId: string, lang: Lang, voice?: string): Promise<Job> => invoke('audio:audiobook', { docId, lang, voice }),
+  listAudiobooks: (): Promise<{ title: string; dir: string; files: number; sizeMB: number }[]> => invoke('audio:audiobooks'),
 
   ttsStatus: (): Promise<TtsStatus & { catalog: VoiceStatus[] }> => invoke('tts:status'),
   installPiper: (): Promise<void> => invoke('tts:install-piper'),

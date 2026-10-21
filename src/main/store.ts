@@ -1,7 +1,7 @@
 import { safeStorage } from 'electron'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
-import { DEFAULT_SETTINGS, type HistoryItem, type SecretName, type Settings } from '@shared/types'
+import { DEFAULT_SETTINGS, type HistoryItem, type LibraryDoc, type LibraryMeta, type SecretName, type Settings } from '@shared/types'
 import { dataDir, modelsDir } from './paths'
 import { migrateSettings, SCHEMA_VERSION } from './migrate'
 
@@ -128,3 +128,51 @@ export type Collection = 'prompts' | 'meetings' | 'library'
 export const getCollection = <T>(name: Collection): T[] =>
   readVersioned<T[]>(join(dataDir, `${name}.json`), [], (d) => (Array.isArray(d) ? (d as T[]) : []))
 export const saveCollection = (name: Collection, items: unknown[]): void => writeVersioned(join(dataDir, `${name}.json`), items)
+
+/**
+ * Biblioteca: el índice va en library.json y el texto de cada documento en
+ * library/<id>.json. Así, cambiar el punto de lectura no reescribe el libro.
+ */
+const libraryDir = join(dataDir, 'library')
+
+export const getLibrary = (): LibraryMeta[] =>
+  readVersioned<LibraryMeta[]>(join(dataDir, 'library.json'), [], (d) => (Array.isArray(d) ? (d as LibraryMeta[]) : []))
+
+/** Un documento con su texto completo. */
+export const getLibraryDoc = (id: string): LibraryDoc | null =>
+  readVersioned<LibraryDoc | null>(join(libraryDir, `${id}.json`), null, (d) => (d as LibraryDoc) ?? null)
+
+/** Guarda un documento y actualiza el índice. */
+export const saveLibraryDoc = (doc: LibraryDoc): void => {
+  mkdirSync(libraryDir, { recursive: true })
+  writeVersioned(join(libraryDir, `${doc.id}.json`), doc)
+  const index = getLibrary()
+  const meta: LibraryMeta = {
+    id: doc.id,
+    title: doc.title,
+    kind: doc.kind,
+    chapters: doc.chapters.map((c) => ({ title: c.title, chars: c.text.length })),
+    addedAt: doc.addedAt,
+    progress: doc.progress
+  }
+  const i = index.findIndex((m) => m.id === doc.id)
+  if (i >= 0) index[i] = meta
+  else index.unshift(meta)
+  writeVersioned(join(dataDir, 'library.json'), index)
+}
+
+/** Actualiza solo el punto de lectura, sin tocar el texto. */
+export const updateLibraryProgress = (id: string, progress: LibraryDoc['progress']): void => {
+  const index = getLibrary()
+  const i = index.findIndex((m) => m.id === id)
+  if (i < 0) return
+  index[i] = { ...index[i], progress }
+  writeVersioned(join(dataDir, 'library.json'), index)
+}
+
+/** Borra un documento de la biblioteca y su contenido. */
+export const removeLibraryDoc = (id: string): void => {
+  const file = join(libraryDir, `${id}.json`)
+  if (existsSync(file)) rmSync(file, { force: true })
+  writeVersioned(join(dataDir, 'library.json'), getLibrary().filter((m) => m.id !== id))
+}

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { AudioTools } from './components/AudioTools'
 import { Dictation } from './components/Dictation'
+import { Jobs } from './components/Jobs'
 import { Logo } from './components/Logo'
 import { Meetings } from './components/Meetings'
 import { Prompts } from './components/Prompts'
@@ -63,6 +64,7 @@ export function App(): JSX.Element | null {
         <div className={`badge ${local ? 'local' : 'cloud'}`} title="Estado de privacidad">
           {local ? '🟢 Todo local' : `🟠 Nube: ${[cloud, cloudAudio ? 'audio' : ''].filter(Boolean).join(' + ')}`}
         </div>
+        <Jobs />
       </aside>
       <main>
         {view === 'dictado' && <Dictation />}

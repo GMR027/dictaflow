@@ -222,6 +222,21 @@ export interface LibraryDoc {
   progress: { chapter: number; paragraph: number }
 }
 
+/**
+ * La biblioteca se guarda partida: el índice (sin texto) y el contenido.
+ * Guardarlo todo junto obligaba a reescribir el libro entero cada vez que
+ * cambiaba el punto de lectura.
+ */
+export interface LibraryMeta {
+  id: string
+  title: string
+  kind: LibraryDoc['kind']
+  /** títulos y tamaño de cada capítulo, sin el texto */
+  chapters: { title: string; chars: number }[]
+  addedAt: number
+  progress: { chapter: number; paragraph: number }
+}
+
 /** Una transcripción guardada en el historial. */
 export interface HistoryItem {
   id: string

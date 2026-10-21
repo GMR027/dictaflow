@@ -15,7 +15,11 @@ import { startSystemAudio, stopSystemAudio } from './sysaudio'
 import { runUninstall, uninstallInfo } from './uninstall'
 import { applyUpdate, checkUpdate } from './updater'
 import { type Collection, dataDir, flushSettings, getCollection, getHistory, saveCollection, getSettings, hasSecret, saveHistory, saveSettings, setSecret } from './store'
+import { getLibrary, getLibraryDoc, removeLibraryDoc, saveLibraryDoc, updateLibraryProgress } from './store'
 import { applyDictionary, benchStt, downloadGgml, loadStt, sttStatus, stopStt, transcribe, transcribeDetailed } from './stt'
+import { JobQueue } from './jobs/queue'
+import { buildAudiobook, exportTextAsMp3, listAudiobooks, audiobooksDir } from './audio/export'
+import { ensureDataDirs } from './paths'
 
 // AppImage no puede instalar chrome-sandbox con setuid. Si el sistema restringe los user namespaces
 // (Ubuntu 24.04+, Debian) Chromium abortaría al arrancar, así que solo en ese caso se desactiva su sandbox.
@@ -29,6 +33,29 @@ let win: BrowserWindow | null = null
 let pill: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
+
+/** Cola de trabajos en segundo plano (audiolibros, exportaciones). */
+const jobs = new JobQueue()
+
+// El audiolibro: un capítulo por fichero, con progreso y sin cargarlo todo en memoria.
+jobs.register('audiobook', async (job, report) => {
+  const p = job.payload ?? {}
+  const doc = getLibraryDoc(String(p.docId))
+  if (!doc) throw new Error('El documento ya no está en la biblioteca.')
+  const dir = join(audiobooksDir(), doc.title.replace(/[^\w\s-]/g, '').trim().slice(0, 60) || 'audiolibro')
+  const from = Number(job.resume?.chapter ?? 0)
+  const r = await buildAudiobook({
+    title: doc.title,
+    chapters: doc.chapters,
+    lang: (p.lang as 'es' | 'en') ?? 'es',
+    voice: p.voice as string | undefined,
+    dir,
+    from,
+    onProgress: report,
+    shouldStop: () => jobs.isCancelled(job.id)
+  })
+  return { result: r.file, resume: { chapter: doc.chapters.length } }
+})
 
 // Una sola instancia: `dictaflow --toggle` (atajo de GNOME) alterna el dictado de la instancia viva.
 if (!app.requestSingleInstanceLock()) {
@@ -152,6 +179,25 @@ function registerIpc(): void {
   handle('col:get', (_e, req) => getCollection(req.name))
   handle('col:save', (_e, req) => saveCollection(req.name, req.items))
 
+  handle('library:list', () => getLibrary())
+  handle('library:get', (_e, req) => getLibraryDoc(req.id))
+  handle('library:save', (_e, req) => saveLibraryDoc(req.doc))
+  handle('library:progress', (_e, req) => updateLibraryProgress(req.id, req.progress))
+  handle('library:remove', (_e, req) => removeLibraryDoc(req.id))
+
+  handle('jobs:list', () => jobs.list())
+  handle('jobs:cancel', (_e, req) => jobs.cancel(req.id))
+  handle('jobs:clear', () => jobs.clearFinished())
+  handle('audio:export', (_e, req) => exportTextAsMp3(req.text, req.lang, req.voice, join(dataDir, 'exportaciones'), req.name))
+  handle('audio:audiobook', (_e, req) => {
+    const doc = getLibraryDoc(req.docId)
+    if (!doc) throw new Error('El documento ya no está en la biblioteca.')
+    return jobs.enqueue('audiobook', `Audiolibro: ${doc.title}`, {
+      docId: req.docId, lang: req.lang, voice: req.voice
+    })
+  })
+  handle('audio:audiobooks', () => listAudiobooks())
+
   handle('tts:status', () => ({ ...ttsStatus(), catalog: voiceStatus() }))
   handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))
   handle('tts:install-voice', (e, req) => installVoice(req.id, (what, pct) => e.sender.send('tts:progress', { what, pct })))
@@ -212,11 +258,14 @@ function registerIpc(): void {
 
 app.whenReady().then(() => {
   // Wayland: intenta usar ozone nativo; sin permisos extra ni atajos globales
+  ensureDataDirs()
   registerIpc()
   createWindow()
   createPill()
   createTray()
   handleArgs(process.argv)
+  // Los cambios de la cola se avisan a la interfaz.
+  jobs.onChange((list) => win?.webContents.send('jobs:changed', list))
 })
 
 app.on('before-quit', () => { quitting = true; flushSettings(); stopStt(); stopSystemAudio() })

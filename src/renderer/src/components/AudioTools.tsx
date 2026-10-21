@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { Lang, Segment } from '@shared/types'
 import { Mic, SAMPLE_RATE, concat } from '../audio'
-import { decodeToMono16k, encodeMp3, encodeWav, fmtTime, toSubtitles, wavToPcm } from '../audioio'
+import { decodeToMono16k, encodeWav, fmtTime, toSubtitles, wavToPcm } from '../audioio'
 import { Speaker } from '../speech'
 import { download, splitText } from '../textutil'
 import { useApp } from '../store'
@@ -149,6 +149,13 @@ function TextToSpeech(): JSX.Element {
   const render = async (fmt: 'wav' | 'mp3'): Promise<void> => {
     setError('')
     try {
+      if (fmt === 'mp3') {
+        // El MP3 lo hace el proceso principal: se escribe a disco sin cargar el audio en memoria.
+        setBusy('Sintetizando…')
+        const file = await window.api.exportAudio(text, lang, settings.ttsVoice[lang], 'dictaflow-voz')
+        flash(`Guardado: ${file}`)
+        return
+      }
       const parts = splitText(text)
       const pcms: Float32Array[] = []
       let rate = 22050
@@ -160,7 +167,7 @@ function TextToSpeech(): JSX.Element {
       }
       setBusy('Codificando…')
       const all = concat(pcms)
-      const file = await download(`dictaflow-voz.${fmt}`, fmt === 'wav' ? encodeWav(all, rate) : encodeMp3(all, rate))
+      const file = await download(`dictaflow-voz.${fmt}`, encodeWav(all, rate))
       if (file) flash(`Guardado: ${file}`)
     } catch (e) { setError((e as Error).message) } finally { setBusy('') }
   }

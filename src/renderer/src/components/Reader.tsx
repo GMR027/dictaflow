@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Lang, LibraryDoc } from '@shared/types'
+import type { Lang, LibraryDoc, LibraryMeta } from '@shared/types'
 import { concat } from '../audio'
-import { encodeMp3, wavToPcm } from '../audioio'
 import { importDocument } from '../docs'
 import { Speaker } from '../speech'
-import { download, splitText } from '../textutil'
+import { splitText } from '../textutil'
 import { useApp } from '../store'
 import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
 
 export function Reader(): JSX.Element {
   const { settings, flash, notice } = useApp()
-  const [docs, setDocs] = useState<LibraryDoc[]>([])
-  const [cur, setCur] = useState<string | null>(null)
+  const [metas, setMetas] = useState<LibraryMeta[]>([])
+  const [doc, setDoc] = useState<LibraryDoc | null>(null)
   const [lang, setLang] = useState<Lang>(settings.primaryLang)
   const [font, setFont] = useState(17)
   const [playing, setPlaying] = useState(false)
@@ -24,24 +23,19 @@ export function Reader(): JSX.Element {
   const speaker = useRef(new Speaker())
   const activeEl = useRef<HTMLParagraphElement | null>(null)
 
-  const loaded = useRef(false)
-  useEffect(() => { void window.api.getCollection<LibraryDoc>('library').then((d) => { setDocs(d); loaded.current = true }) }, [])
-  // Guardado con retardo: el progreso cambia en cada párrafo y la biblioteca puede pesar varios MB
-  useEffect(() => {
-    if (!loaded.current) return
-    const t = setTimeout(() => void window.api.saveCollection('library', docs), 1500)
-    return () => clearTimeout(t)
-  }, [docs])
-  useEffect(() => { activeEl.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }, [active])
+  const refreshList = (): void => void window.api.listLibrary().then(setMetas)
+  useEffect(refreshList, [])
   useEffect(() => () => speaker.current.stop(), [])
 
-  const persist = (next: LibraryDoc[]): void => setDocs(next)
-  const doc = docs.find((d) => d.id === cur) ?? null
   const chapter = doc?.chapters[doc.progress.chapter]
   const units = chapter ? splitText(chapter.text, 350) : []
 
+  /** El punto de lectura se guarda aparte: no se reescribe el texto del libro. */
   const setProgress = (patch: Partial<LibraryDoc['progress']>): void => {
-    if (doc) setDocs((all) => all.map((d) => (d.id === doc.id ? { ...d, progress: { ...d.progress, ...patch } } : d)))
+    if (!doc) return
+    const progress = { ...doc.progress, ...patch }
+    setDoc({ ...doc, progress })
+    void window.api.setLibraryProgress(doc.id, progress)
   }
 
   const add = async (f: File | undefined): Promise<void> => {
@@ -49,8 +43,18 @@ export function Reader(): JSX.Element {
     setError(''); setBusy('Importando…')
     try {
       const d = await importDocument(f.name, new Uint8Array(await f.arrayBuffer()))
-      persist([d, ...docs]); setCur(d.id)
+      await window.api.saveLibraryDoc(d)
+      refreshList()
+      setDoc(d)
+      flash(`Documento añadido: ${d.title}`)
     } catch (e) { setError((e as Error).message) } finally { setBusy('') }
+  }
+
+  const open = async (id: string): Promise<void> => {
+    stop()
+    setActive(-1); setAi('')
+    const d = await window.api.getLibraryDoc(id)
+    setDoc(d)
   }
 
   const stop = (): void => { speaker.current.stop(); setPlaying(false) }
@@ -59,34 +63,20 @@ export function Reader(): JSX.Element {
     stop(); setError(''); setPlaying(true)
     try {
       await speaker.current.readAll(units, lang, from, (i) => { setActive(i); setProgress({ paragraph: i }) })
-      // al terminar el capítulo, sigue con el siguiente
     } catch (e) { setError((e as Error).message) } finally { setPlaying(false) }
   }
 
-  const exportAudio = async (all: boolean): Promise<void> => {
+  /**
+   * Audiolibro: un capítulo por fichero, hecho en segundo plano. Se puede
+   * cancelar y se reanuda si se para: los capítulos ya hechos se saltan.
+   */
+  const audiobook = async (): Promise<void> => {
     if (!doc) return
     setError('')
-    const chapters = all ? doc.chapters : [chapter!]
-    const parts: Uint8Array[] = []
     try {
-      for (let c = 0; c < chapters.length; c++) {
-        const us = splitText(chapters[c].text, 350)
-        const pcms: Float32Array[] = []
-        let rate = 22050
-        for (let i = 0; i < us.length; i++) {
-          setBusy(`Capítulo ${c + 1}/${chapters.length} · ${i + 1}/${us.length}`)
-          const r = await wavToPcm(await window.api.synthesize(us[i], lang))
-          rate = r.rate
-          pcms.push(r.pcm, new Float32Array(Math.round(rate * 0.3)))
-        }
-        parts.push(encodeMp3(concat(pcms), rate), new Uint8Array(0)) // MP3 por capítulo, concatenables
-      }
-      const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
-      let o = 0
-      for (const p of parts) { out.set(p, o); o += p.length }
-      const f = await download(`${doc.title}${all ? '' : ' - ' + chapter!.title}.mp3`, out)
-      if (f) flash(`Audiolibro guardado: ${f}`)
-    } catch (e) { setError((e as Error).message) } finally { setBusy('') }
+      const job = await window.api.startAudiobook(doc.id, lang, settings.ttsVoice[lang])
+      flash(`Audiolibro en marcha: ${job.title}. Se puede cancelar desde la barra lateral.`)
+    } catch (e) { setError((e as Error).message) }
   }
 
   const ask = async (kind: 'summary' | 'ask' | 'translate'): Promise<void> => {
@@ -107,11 +97,11 @@ export function Reader(): JSX.Element {
           <input type="file" accept=".pdf,.epub,.txt,.md" hidden onChange={(e) => { void add(e.target.files?.[0]); e.target.value = '' }} />
         </label>
         <div className="list">
-          {docs.length === 0 && <p className="muted">Añade un libro o documento para leerlo o convertirlo en audio.</p>}
-          {docs.map((d) => (
-            <div key={d.id} className={`item pick ${d.id === cur ? 'sel' : ''}`} onClick={() => { stop(); setCur(d.id); setActive(-1); setAi('') }}>
-              <b>{d.title}</b><br /><small className="muted">{d.kind.toUpperCase()} · {d.chapters.length} partes</small>
-              <button className="link" onClick={(e) => { e.stopPropagation(); persist(docs.filter((x) => x.id !== d.id)); if (cur === d.id) setCur(null) }}>quitar</button>
+          {metas.length === 0 && <p className="muted">Añade un libro o documento para leerlo o convertirlo en audio.</p>}
+          {metas.map((m) => (
+            <div key={m.id} className={`item pick ${m.id === doc?.id ? 'sel' : ''}`} onClick={() => void open(m.id)}>
+              <b>{m.title}</b><br /><small className="muted">{m.kind.toUpperCase()} · {m.chapters.length} partes</small>
+              <button className="link" onClick={(e) => { e.stopPropagation(); void window.api.removeLibraryDoc(m.id).then(refreshList) }}>quitar</button>
             </div>
           ))}
         </div>
@@ -143,8 +133,7 @@ export function Reader(): JSX.Element {
               {playing
                 ? <><button onClick={() => speaker.current.pause()}>⏸ Pausa</button><button onClick={() => speaker.current.resume()}>▶ Seguir</button><button onClick={stop}>■ Parar</button></>
                 : <button className="primary" onClick={() => void play(Math.max(active, doc.progress.paragraph, 0))}>▶ Leer en voz alta</button>}
-              <button onClick={() => void exportAudio(false)} disabled={!!busy}>⬇ Capítulo a MP3</button>
-              <button onClick={() => void exportAudio(true)} disabled={!!busy}>⬇ Libro completo a MP3</button>
+              <button onClick={() => void audiobook()} disabled={!!busy}>⬇ Audiolibro (en segundo plano)</button>
               <span className="muted">{busy}</span>
             </div>
             {error && <p className="warn" role="alert">{error}</p>}

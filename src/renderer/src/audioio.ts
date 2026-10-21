@@ -1,4 +1,3 @@
-import { Mp3Encoder } from '@breezystack/lamejs'
 import { SAMPLE_RATE } from './audio'
 
 /** Decodifica cualquier formato que soporte Chromium (mp3, wav, ogg, flac, m4a, webm…) a 16 kHz mono. */
@@ -24,23 +23,6 @@ export function encodeWav(pcm: Float32Array, sampleRate = SAMPLE_RATE): Uint8Arr
   str(36, 'data'); out.setUint32(40, pcm.length * 2, true)
   for (let i = 0; i < pcm.length; i++) out.setInt16(44 + i * 2, Math.round(Math.max(-1, Math.min(1, pcm[i])) * 32767), true)
   return new Uint8Array(out.buffer)
-}
-
-export function encodeMp3(pcm: Float32Array, sampleRate = SAMPLE_RATE): Uint8Array {
-  const enc = new Mp3Encoder(1, sampleRate, 96)
-  const i16 = new Int16Array(pcm.length)
-  for (let i = 0; i < pcm.length; i++) i16[i] = Math.round(Math.max(-1, Math.min(1, pcm[i])) * 32767)
-  const parts: Uint8Array[] = []
-  for (let i = 0; i < i16.length; i += 1152) {
-    const b = enc.encodeBuffer(i16.subarray(i, i + 1152))
-    if (b.length) parts.push(new Uint8Array(b))
-  }
-  const end = enc.flush()
-  if (end.length) parts.push(new Uint8Array(end))
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
-  let o = 0
-  for (const p of parts) { out.set(p, o); o += p.length }
-  return out
 }
 
 /** WAV (de Piper o la nube) → PCM float + frecuencia, para concatenar o convertir a MP3. */

@@ -4,9 +4,10 @@
 // `src/main/index.ts` y `src/preload/index.ts`: un error de tecleo se descubría
 // en runtime. Aquí se declara una sola vez y los dos extremos la usan, de modo
 // que el compilador avisa si un canal cambia de firma o desaparece.
-import type { ChatMsg, HardwareInfo, HistoryItem, Lang, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from './types'
+import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from './types'
 import type { UpdateInfo } from './update'
 import type { Voice, VoiceStatus } from './voice'
+import type { Job } from './job'
 
 /** Colecciones guardadas como documentos en la carpeta de datos. */
 export type Collection = 'prompts' | 'meetings' | 'library'
@@ -51,6 +52,19 @@ export interface IpcContract {
 
   'col:get': { req: { name: Collection }; res: unknown[] }
   'col:save': { req: { name: Collection; items: unknown[] }; res: void }
+
+  'library:list': { req: void; res: LibraryMeta[] }
+  'library:get': { req: { id: string }; res: LibraryDoc | null }
+  'library:save': { req: { doc: LibraryDoc }; res: void }
+  'library:progress': { req: { id: string; progress: LibraryDoc['progress'] }; res: void }
+  'library:remove': { req: { id: string }; res: void }
+
+  'jobs:list': { req: void; res: Job[] }
+  'jobs:cancel': { req: { id: string }; res: boolean }
+  'jobs:clear': { req: void; res: void }
+  'audio:export': { req: { text: string; lang: Lang; voice?: string; name: string }; res: string }
+  'audio:audiobook': { req: { docId: string; lang: Lang; voice?: string }; res: Job }
+  'audio:audiobooks': { req: void; res: { title: string; dir: string; files: number; sizeMB: number }[] }
 
   'tts:status': { req: void; res: TtsStatus & { catalog: VoiceStatus[] } }
   'tts:install-piper': { req: void; res: void }
@@ -100,6 +114,7 @@ export interface IpcEvents {
   'update:progress': number
   'pill:state': PillState
   'dictation:toggle': void
+  'jobs:changed': Job[]
 }
 
 export type IpcChannel = keyof IpcContract
