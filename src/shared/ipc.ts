@@ -9,6 +9,7 @@ import type { UpdateInfo } from './update'
 import type { Voice, VoiceStatus } from './voice'
 import type { Job } from './job'
 import type { BackupInfo, Diagnostics } from './diagnostics'
+import type { CalendarEvent, Reminder } from './calendar'
 
 /** Colecciones guardadas como documentos en la carpeta de datos. */
 export type Collection = 'prompts' | 'meetings' | 'library'
@@ -70,6 +71,17 @@ export interface IpcContract {
   'diagnostics:report': { req: void; res: Diagnostics }
   'backup:create': { req: { dest?: string }; res: BackupInfo }
   'backup:restore': { req: { data: Uint8Array }; res: { restored: string[]; skipped: string[] } }
+
+  'pdf:generate': { req: { title: string; body: string; name?: string }; res: string }
+
+  'cal:list': { req: void; res: CalendarEvent[] }
+  'cal:save': { req: { event: CalendarEvent }; res: void }
+  'cal:remove': { req: { id: string }; res: void }
+  'cal:export': { req: void; res: string }
+  'cal:import': { req: { data: string }; res: number }
+  'rem:list': { req: void; res: Reminder[] }
+  'rem:save': { req: { reminder: Reminder }; res: void }
+  'rem:remove': { req: { id: string }; res: void }
 
   'tts:status': { req: void; res: TtsStatus & { catalog: VoiceStatus[] } }
   'tts:install-piper': { req: void; res: void }

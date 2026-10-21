@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { AudioTools } from './components/AudioTools'
+import { Calendar } from './components/Calendar'
 import { Dictation } from './components/Dictation'
 import { Jobs } from './components/Jobs'
 import { Logo } from './components/Logo'
@@ -23,6 +24,7 @@ const NAV: { id: View; label: string }[] = [
   { id: 'lector', label: '📖 Lector' },
   { id: 'reuniones', label: '🗂 Reuniones' },
   { id: 'traduccion', label: '🌐 Traducción' },
+  { id: 'agenda', label: '🗓 Agenda' },
   { id: 'ajustes', label: '⚙ Ajustes' },
   { id: 'privacidad', label: '🔒 Privacidad' },
   { id: 'manual', label: '❓ Manual' }
@@ -73,6 +75,7 @@ export function App(): JSX.Element | null {
         {view === 'lector' && <Reader />}
         {view === 'reuniones' && <Meetings />}
         {view === 'traduccion' && <Translate />}
+        {view === 'agenda' && <Calendar />}
         {view === 'ajustes' && <Settings />}
         {view === 'privacidad' && <Privacy />}
         {view === 'manual' && <Manual />}

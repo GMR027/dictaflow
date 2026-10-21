@@ -35,6 +35,15 @@ export function Dictation(): JSX.Element {
   const [dev, setDev] = useState(false)
   const st = s.settings
   const pickProject = async (): Promise<void> => void s.patchSettings({ projectDir: (await window.api.pickProject()) || st.projectDir })
+  const exportPdf = async (): Promise<void> => {
+    try {
+      const texto = s.polished || s.raw
+      const f = await window.api.generatePdf(texto.slice(0, 60), texto, 'dictado')
+      useApp.getState().flash(`📄 PDF guardado: ${f}`)
+    } catch (e) {
+      useApp.setState({ error: (e as Error).message })
+    }
+  }
   const send = async (agent: 'claude-code' | 'opencode'): Promise<void> => {
     try { await window.api.launchAgent(agent, s.polished || s.raw) } catch (e) { useApp.setState({ error: (e as Error).message }) }
   }
@@ -134,6 +143,7 @@ export function Dictation(): JSX.Element {
           <button className="danger" onClick={remove} disabled={!s.polished && !s.raw}>🗑 Eliminar</button>
           <button onClick={() => void s.savePrompt()} disabled={!s.polished}>💾 Guardar prompt</button>
           <button onClick={() => void s.exportNote()} disabled={!s.polished && !s.raw}>📝 A notas</button>
+          <button onClick={() => void exportPdf()} disabled={!s.polished && !s.raw}>📄 PDF</button>
           {undo && <button className="link" onClick={() => { s.undoClear(); setUndo(false) }}>Deshacer</button>}
           {s.versions.length > 1 && <span className="muted">{s.versions.length} versiones</span>}
         </div>

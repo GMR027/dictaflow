@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, Notification, screen, shell, Tray, nativeImage, type IpcMainInvokeEvent } from 'electron'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import appIcon from '../../build/icon.png?asset'
 import type { HardwareInfo } from '@shared/types'
@@ -22,6 +22,8 @@ import { buildAudiobook, exportTextAsMp3, listAudiobooks, audiobooksDir } from '
 import { ensureDataDirs } from './paths'
 import { diagnostics } from './diagnostics'
 import { createBackup, restoreFromBuffer } from './backup'
+import { generatePdf } from './pdf'
+import { dueEventReminders, dueReminders, fromIcs, listEvents, listReminders, removeEvent, removeReminder, saveEvent, saveReminder, toIcs } from './calendar'
 
 // AppImage no puede instalar chrome-sandbox con setuid. Si el sistema restringe los user namespaces
 // (Ubuntu 24.04+, Debian) Chromium abortaría al arrancar, así que solo en ese caso se desactiva su sandbox.
@@ -207,6 +209,40 @@ function registerIpc(): void {
   })
   handle('backup:restore', (_e, req) => restoreFromBuffer(Buffer.from(req.data)))
 
+  handle('pdf:generate', async (_e, req) => {
+    const name = req.name ?? 'documento'
+    const dest = join(app.getPath('downloads'), `${name.replace(/[^\w\s-]/g, '').trim() || 'documento'}.pdf`)
+    return generatePdf(req.title, req.body, dest)
+  })
+
+  handle('cal:list', () => listEvents())
+  handle('cal:save', (_e, req) => saveEvent(req.event))
+  handle('cal:remove', (_e, req) => removeEvent(req.id))
+  handle('cal:export', (_e, req) => {
+    const dest = join(app.getPath('downloads'), 'dictaflow-calendario.ics')
+    writeFileSync(dest, toIcs(listEvents()), 'utf8')
+    return dest
+  })
+  handle('cal:import', (_e, req) => {
+    const evs = fromIcs(req.data)
+    for (const e of evs) {
+      saveEvent({
+        id: crypto.randomUUID(),
+        title: e.title,
+        notes: e.notes,
+        start: e.start,
+        durationMin: e.durationMin,
+        location: e.location,
+        reminder: false,
+        remindBeforeMin: 0
+      })
+    }
+    return evs.length
+  })
+  handle('rem:list', () => listReminders())
+  handle('rem:save', (_e, req) => saveReminder(req.reminder))
+  handle('rem:remove', (_e, req) => removeReminder(req.id))
+
   handle('tts:status', () => ({ ...ttsStatus(), catalog: voiceStatus() }))
   handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))
   handle('tts:install-voice', (e, req) => installVoice(req.id, (what, pct) => e.sender.send('tts:progress', { what, pct })))
@@ -275,7 +311,27 @@ app.whenReady().then(() => {
   handleArgs(process.argv)
   // Los cambios de la cola se avisan a la interfaz.
   jobs.onChange((list) => win?.webContents.send('jobs:changed', list))
+  startReminderWatcher()
 })
+
+/**
+ * Avisa de los recordatorios que tocan. Se mira cada 30 s: los avisos salen
+ * como notificaciones del sistema y no salen del equipo.
+ */
+function startReminderWatcher(): void {
+  const check = (): void => {
+    for (const r of dueReminders()) {
+      if (Notification.isSupported()) new Notification({ title: 'DictaFlow · Recordatorio', body: r.text, silent: false }).show()
+      else console.log('Recordatorio:', r.text)
+    }
+    for (const e of dueEventReminders()) {
+      const body = e.remindBeforeMin > 0 ? `Empieza en ${e.remindBeforeMin} minutos` : 'Empieza ahora'
+      if (Notification.isSupported()) new Notification({ title: `DictaFlow · ${e.title}`, body, silent: false }).show()
+    }
+  }
+  check()
+  setInterval(check, 30_000)
+}
 
 app.on('before-quit', () => { quitting = true; flushSettings(); stopStt(); stopSystemAudio() })
 app.on('window-all-closed', () => { if (!tray) app.quit() })

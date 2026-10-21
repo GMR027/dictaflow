@@ -152,6 +152,12 @@ export function Meetings(): JSX.Element {
             <button onClick={() => void makeMinutes('meeting')} disabled={!!busy}>📋 Generar acta</button>
             <button onClick={() => void makeMinutes('study')} disabled={!!busy}>🎓 Apuntes de clase</button>
             <button onClick={async () => flash(`📝 ${await window.api.exportNote(current.title, toMarkdown(current), ['reunion'])}`)}>📝 A notas</button>
+            <button onClick={async () => {
+              try {
+                const f = await window.api.generatePdf(current.title, current.summary || toMarkdown(current), 'reunion')
+                flash(`📄 PDF guardado: ${f}`)
+              } catch (e) { setError((e as Error).message) }
+            }}>📄 PDF</button>
             <button onClick={() => void download(`${current.title}.srt`, toSubtitles(current.segments, 'srt'))}>⬇ .srt</button>
             <button className="danger" onClick={() => { persist(meetings.filter((m) => m.id !== current.id)); setSel(null) }}>🗑</button>
             <span className="muted">{busy}</span>

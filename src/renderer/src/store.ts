@@ -5,7 +5,7 @@ import { Mic } from './audio'
 import { record } from './metrics'
 import { PartialTranscriber } from './partial'
 
-export type View = 'dictado' | 'prompts' | 'audio' | 'lector' | 'reuniones' | 'traduccion' | 'ajustes' | 'privacidad' | 'manual'
+export type View = 'dictado' | 'prompts' | 'audio' | 'lector' | 'reuniones' | 'traduccion' | 'agenda' | 'ajustes' | 'privacidad' | 'manual'
 
 interface State {
   ready: boolean

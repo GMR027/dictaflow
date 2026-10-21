@@ -3,6 +3,7 @@ import type { IpcChannel, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, Tran
 import type { ChatMsg, HardwareInfo, HistoryItem, Lang, LibraryDoc, LibraryMeta, ModelRec, NetEvent, PillState, RewriteRequest, SecretName, Segment, Settings, SttStatus, TtsStatus, TransLang } from '@shared/types'
 import type { Job } from '@shared/job'
 import type { BackupInfo, Diagnostics } from '@shared/diagnostics'
+import type { CalendarEvent, Reminder } from '@shared/calendar'
 import type { UpdateInfo } from '@shared/update'
 import type { VoiceStatus } from '@shared/voice'
 
@@ -67,6 +68,17 @@ const api = {
   diagnostics: (): Promise<Diagnostics> => invoke('diagnostics:report'),
   createBackup: (dest?: string): Promise<BackupInfo> => invoke('backup:create', { dest }),
   restoreBackup: (data: Uint8Array): Promise<{ restored: string[]; skipped: string[] }> => invoke('backup:restore', { data }),
+
+  generatePdf: (title: string, body: string, name?: string): Promise<string> => invoke('pdf:generate', { title, body, name }),
+
+  listEvents: (): Promise<CalendarEvent[]> => invoke('cal:list'),
+  saveEvent: (event: CalendarEvent): Promise<void> => invoke('cal:save', { event }),
+  removeEvent: (id: string): Promise<void> => invoke('cal:remove', { id }),
+  exportCalendar: (): Promise<string> => invoke('cal:export'),
+  importCalendar: (data: string): Promise<number> => invoke('cal:import', { data }),
+  listReminders: (): Promise<Reminder[]> => invoke('rem:list'),
+  saveReminder: (reminder: Reminder): Promise<void> => invoke('rem:save', { reminder }),
+  removeReminder: (id: string): Promise<void> => invoke('rem:remove', { id }),
 
   ttsStatus: (): Promise<TtsStatus & { catalog: VoiceStatus[] }> => invoke('tts:status'),
   installPiper: (): Promise<void> => invoke('tts:install-piper'),
