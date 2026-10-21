@@ -1,6 +1,6 @@
 {
   "name": "dictaflow",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Voice dictation with AI rewriting, text-to-speech, reader and meeting transcription. Local-first. / Dictado por voz con redacción por IA, lector y reuniones. Local primero.",
   "main": "out/main/index.js",
   "type": "commonjs",
