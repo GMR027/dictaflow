@@ -16,6 +16,11 @@ export interface PartialOptions {
   maxSec?: number
   /** true mientras la frase está en el silencio que la va a cerrar */
   closing?: () => boolean
+  /**
+   * Reloj. Se puede inyectar para que las pruebas no dependan del tiempo real
+   * de la máquina.
+   */
+  now?: () => number
 }
 /**
  * Texto provisional mientras se habla: transcribe periódicamente lo acumulado de la frase en curso.
@@ -57,7 +62,8 @@ export class PartialTranscriber {
   }
 
   async tick(): Promise<void> {
-    if (this.inflight || this.o.busy() || Date.now() < this.nextAt) return
+    const now = this.o.now ?? Date.now
+    if (this.inflight || this.o.busy() || now() < this.nextAt) return
     if (this.o.closing?.()) return
     const all = this.o.snapshot()
     if (!all) return
@@ -68,10 +74,10 @@ export class PartialTranscriber {
     const gen = this.gen
     this.inflight = true
     this.lastLen = pcm.length
-    const t0 = Date.now()
+    const t0 = now()
     try {
       const text = await this.o.transcribe(pcm)
-      record('draft_ms', Date.now() - t0)
+      record('draft_ms', now() - t0)
       if (gen === this.gen) this.o.onDraft(text.trim())
     } catch {
       /* un borrador fallido no es un error: llegará la transcripción definitiva */
@@ -81,7 +87,7 @@ export class PartialTranscriber {
       // ventana de 30 s). Dejar el motor libre algo más del tiempo que ocupó
       // reduce las veces que la transcripción definitiva se encuentra con un
       // borrador en marcha, que es lo que más se nota al dictar.
-      this.nextAt = Date.now() + Math.round((Date.now() - t0) * 1.5)
+      this.nextAt = now() + Math.round((now() - t0) * 1.5)
     }
   }
 }

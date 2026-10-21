@@ -13,7 +13,7 @@ async function until(check: () => boolean, timeoutMs = 3000): Promise<void> {
   if (!check()) throw new Error('La condición no se cumplió a tiempo.')
 }
 
-function setup(over: { busy?: () => boolean; transcribe?: (p: Float32Array) => Promise<string>; closing?: () => boolean } = {}) {
+function setup(over: { busy?: () => boolean; transcribe?: (p: Float32Array) => Promise<string>; closing?: () => boolean; now?: () => number } = {}) {
   const drafts: string[] = []
   let pcm: Float32Array | null = audio(2)
   const p = new PartialTranscriber({
@@ -21,7 +21,8 @@ function setup(over: { busy?: () => boolean; transcribe?: (p: Float32Array) => P
     transcribe: over.transcribe ?? (async () => ' hola mundo '),
     onDraft: (t) => drafts.push(t),
     busy: over.busy ?? (() => false),
-    closing: over.closing
+    closing: over.closing,
+    now: over.now
   })
   return { p, drafts, set: (x: Float32Array | null) => { pcm = x } }
 }
@@ -64,20 +65,26 @@ describe('PartialTranscriber', () => {
     void p.tick(); set(audio(3)); void p.tick()
     expect(n).toBe(1)
   })
-  it('deja libre el motor algo más de lo que ocupó el borrador anterior', async () => {
+  it('deja libre el motor algo más de lo ocupó el borrador anterior', async () => {
+    // Con un reloj falso el resultado no depende de la carga de la máquina.
+    let ahora = 1000
     let n = 0
-    const { p, set } = setup({ transcribe: async () => { ++n; await new Promise((r) => setTimeout(r, 30)); return 'x' } })
-    await p.tick()
-    set(audio(3)); await p.tick()
-    expect(n).toBe(1)
-    // 30 ms de inferencia → 45 ms de espera: todavía no se relanza.
-    await wait(40)
+    const { p, set } = setup({
+      now: () => ahora,
+      transcribe: async () => { ++n; ahora += 30; return 'x' } // la inferencia tarda 30 ms
+    })
     await p.tick()
     expect(n).toBe(1)
-    // El borrador se relanza cuando pasa la espera: se prueba hasta que ocurra.
-    const t0 = Date.now()
-    while (n < 2 && Date.now() - t0 < 3000) { await p.tick(); await wait(5) }
-    expect(n).toBe(2)
+    // El motor queda libre 1,5 veces lo que duró el borrador: 45 ms.
+    set(audio(3))
+    await p.tick()
+    expect(n).toBe(1) // aún no había pasado la espera
+    ahora += 40
+    await p.tick()
+    expect(n).toBe(1) // 40 ms de los 45: todavía no
+    ahora += 10
+    await p.tick()
+    expect(n).toBe(2) // ahora sí
   })
   it('no lanza borradores mientras la frase está en el silencio que la cierra', async () => {
     let n = 0
