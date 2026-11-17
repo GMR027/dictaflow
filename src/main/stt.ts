@@ -1,4 +1,5 @@
 import { fork, type ChildProcess } from 'child_process'
+import { applyDictionary as applyDict } from '@shared/dictionary'
 import { join } from 'path'
 import { TRANS_LANGS, type Segment, type SttStatus, type TransLang } from '@shared/types'
 import { netFetch } from './netlog'
@@ -137,28 +138,9 @@ export async function loadStt(progress?: (p: Progress) => void): Promise<void> {
   onProgress = undefined
 }
 
-/**
- * Sustituye las palabras mal transcritas por su forma correcta.
- * Las expresiones se compilan una vez y se reutilizan: compilar un patrón por
- * entrada del diccionario en cada transcripción costaba CPU sin motivo.
- */
-let dictCache: { key: string; rules: { re: RegExp; to: string }[] } | null = null
-
+/** Aplica el diccionario personal de los ajustes (la lógica vive en `@shared/dictionary`). */
 export function applyDictionary(text: string): string {
-  const entries = getSettings().dictionary
-  const key = JSON.stringify(entries)
-  if (!dictCache || dictCache.key !== key) {
-    const rules = entries
-      .filter(({ from, to }) => from.trim() && to.trim())
-      .map(({ from, to }) => {
-        const esc = from.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        return { re: new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, 'giu'), to: to.trim() }
-      })
-    dictCache = { key, rules }
-  }
-  let out = text
-  for (const { re, to } of dictCache?.rules ?? []) out = out.replace(re, to)
-  return out
+  return applyDict(text, getSettings().dictionary)
 }
 
 async function cloudTranscribe(pcm: Float32Array, lang: TransLang | 'auto'): Promise<{ text: string; segments: Segment[] }> {

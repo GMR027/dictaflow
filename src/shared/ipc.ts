@@ -13,6 +13,7 @@ import type { Voice, VoiceStatus } from './voice'
 import type { Job } from './job'
 import type { BackupInfo, Diagnostics } from './diagnostics'
 import type { CalendarEvent, Reminder } from './calendar'
+import type { DeviceInfo, LocalModel, LocalModelFile, LocalModelProgress } from './local-models'
 
 /** Colecciones guardadas como documentos en la carpeta de datos. */
 export type Collection = 'prompts' | 'meetings'
@@ -29,6 +30,13 @@ export interface TranscribeResult {
 }
 
 export interface IpcContract {
+  // Solo Android: modelos de IA descargados al teléfono (src/shared/local-models.ts).
+  'models:device': { req: void; res: DeviceInfo }
+  'models:list': { req: void; res: LocalModelFile[] }
+  'models:download': { req: { model: LocalModel }; res: void }
+  'models:cancel': { req: { id: string }; res: void }
+  'models:remove': { req: { id: string }; res: void }
+
   'settings:get': { req: void; res: Settings }
   'settings:save': { req: Partial<Settings>; res: Settings }
   'secret:set': { req: { name: SecretName; value: string }; res: void }
@@ -161,6 +169,7 @@ export interface IpcEvents {
   'pill:state': PillState
   'dictation:toggle': void
   'jobs:changed': Job[]
+  'models:progress': LocalModelProgress
 }
 
 export type IpcChannel = keyof IpcContract

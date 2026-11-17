@@ -78,6 +78,8 @@ export interface Settings {
   guardNumbers: boolean
   /** Filtros del micrófono. Apagarlos suele mejorar la precisión de Whisper. */
   micFilters: MicFilters
+  /** Android: modelo de redacción descargado al teléfono (archivo .gguf); vacío = ninguno. */
+  localLlm: string
 }
 
 /** Procesado que aplica el navegador al audio del micrófono antes de enviarlo. */
@@ -123,7 +125,8 @@ export const DEFAULT_SETTINGS: Settings = {
   rewriteDelayMs: 2500,
   rewriteIncremental: true,
   guardNumbers: true,
-  micFilters: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+  micFilters: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  localLlm: ''
 }
 
 export interface HardwareInfo {
