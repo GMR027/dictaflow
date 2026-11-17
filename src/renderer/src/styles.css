@@ -248,3 +248,21 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
 .minutes .tasks { list-style: none; padding-left: 0; }
 .minutes .tasks li { margin-bottom: 6px; }
 .speaker-input { width: 120px; font: inherit; font-weight: 600; }
+
+/* Teléfono (Android): el menú pasa a una barra inferior desplazable y el contenido ocupa la pantalla. */
+@media (max-width: 600px) {
+  .shell { grid-template-columns: 1fr; grid-template-rows: 1fr auto; height: 100dvh; }
+  aside { grid-row: 2; flex-direction: row; padding: 4px 6px; border-right: 0; border-top: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; }
+  aside nav { flex-direction: row; flex: none; }
+  aside nav button { white-space: nowrap; }
+  aside > :not(nav) { display: none; }
+  main { padding: 12px; }
+  .onboard { padding: 8px; min-height: 100dvh; }
+  .wizard { padding: 16px; max-height: 98dvh; }
+  .card { padding: 12px; }
+  /* Tarjetas de modelos: el texto ocupa toda la línea y la etiqueta y el botón bajan debajo. */
+  .rec { flex-wrap: wrap; }
+  .rec span { flex: 1 1 calc(100% - 40px); }
+  .rec em { margin-left: auto; }
+  .rec progress { width: 100%; }
+}

@@ -3,10 +3,14 @@ import type { DictEntry, Lang } from '@shared/types'
 import { mb } from '@shared/voice'
 import { useApp } from '../store'
 import { AIServices } from './AIServices'
+import { LocalModels } from './LocalModels'
 import { DiagnosticsPanel } from './Diagnostics'
 import { Performance } from './Performance'
 import { Updates } from './Updates'
 import { useTtsStatus } from './TtsSetup'
+
+/** En Android se ocultan las secciones que solo existen en escritorio (Piper, Ollama, atajos, desinstalar…). */
+const ANDROID = window.api.platform === 'android'
 
 function General(): JSX.Element {
   const { settings, patchSettings } = useApp()
@@ -112,117 +116,136 @@ function General(): JSX.Element {
         <p className="muted">Solo se ejecutan cuando una frase es exactamente un comando (puedes anteponer «Flow»): «borra eso», «nuevo párrafo», «nueva línea», «copia», «rehaz», «redacta», «hazlo más formal / corto / casual», «conviértelo en prompt», «guarda este prompt», «pausa».</p>
       </section>
 
-      <section className="card">
-        <h2>Audio: voz a texto y texto a voz</h2>
-        <div className="row">
-          <label>Voz → texto
-            <select value={settings.sttProvider} onChange={(e) => void patchSettings({ sttProvider: e.target.value as 'local' | 'openai' })}>
-              <option value="local">Local (Whisper)</option><option value="openai">Nube (compatible con OpenAI)</option>
-            </select>
-          </label>
-          <label>Texto → voz
-            <select value={settings.ttsProvider} onChange={(e) => void patchSettings({ ttsProvider: e.target.value as 'piper' | 'openai' })}>
-              <option value="piper">Local (Piper)</option><option value="openai">Nube (compatible con OpenAI)</option>
-            </select>
-          </label>
-        </div>
-        {(settings.sttProvider === 'openai' || settings.ttsProvider === 'openai') && (
-          <>
-            <p className="warn">Con la nube, el audio o el texto se envía a ese servicio. La barra lateral lo indicará.</p>
-            <label>URL base<input value={settings.cloudAudio.baseUrl} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, baseUrl: e.target.value } })} /></label>
-            <div className="row">
-              <label>Modelo STT<input value={settings.cloudAudio.sttModel} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, sttModel: e.target.value } })} /></label>
-              <label>Modelo TTS<input value={settings.cloudAudio.ttsModel} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, ttsModel: e.target.value } })} /></label>
-              <label>Voz TTS<input value={settings.cloudAudio.ttsVoice} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, ttsVoice: e.target.value } })} /></label>
-            </div>
-            <div className="row">
-              <label className="grow">API key {keys['openai-audio'] && <span className="ok">· guardada cifrada</span>}
-                <input type="password" value={audioKey} autoComplete="off" placeholder={keys['openai-audio'] ? '••••••••' : 'Pega tu clave'} onChange={(e) => setAudioKey(e.target.value)} />
-              </label>
-              <button onClick={() => void saveAudioKey()} disabled={!audioKey && !keys['openai-audio']}>{audioKey ? 'Guardar' : 'Borrar clave'}</button>
-            </div>
-          </>
-        )}
-        <h3>Voces locales (Piper)</h3>
-        <p className="muted">Todas las funciones que leen en voz alta (texto a voz, lector, resúmenes) usan este mismo catálogo. Puedes escuchar la muestra antes de descargar.</p>
-        {tts?.catalog.map((v) => (
-          <div key={v.id} className="rec ok">
-            <span>
-              <b>{v.label}</b> <small>· {v.variant} · {v.quality} · ~{mb(v.sizeBytes)} MB</small><br />
-              <small className="muted">Licencia: {v.license}{v.usage === 'no-comercial' ? ' (solo uso no comercial)' : v.usage === 'terminos-propios' ? ' (con sus propias condiciones)' : ''}</small><br />
-              <small className="muted">Fuente: {v.source}</small>
-            </span>
-            {tts.voices.includes(v.id) ? (
-              <>
-                <em className="ok">✓ instalada</em>
-                <button onClick={() => void removeVoice(v.id)} title="Borrar los archivos de esta voz">🗑</button>
-              </>
-            ) : (
-              <button onClick={() => void getVoice(v.id)} disabled={!!dlBusy}>{dlBusy === v.id ? `Descargando… ${dlMsg}` : 'Descargar'}</button>
-            )}
-          </div>
-        ))}
-        {dlMsg && !dlBusy && <p className="warn">{dlMsg}</p>}
-      </section>
-
-      <section className="card">
-        <h2>Notas (Obsidian, Logseq, Markdown)</h2>
-        <p className="muted">Los botones «A notas» guardan archivos .md con metadatos en esta carpeta.</p>
-        <div className="row">
-          <input className="grow" readOnly value={settings.vaultDir || '~/Documentos/DictaFlow-Notas (por defecto)'} />
-          <button onClick={() => void window.api.pickVault().then(async (d) => { if (d) await patchSettings({ vaultDir: d }) })}>Elegir carpeta…</button>
-        </div>
-      </section>
-
-      <section className="card">
-        <h2>Dictar en cualquier app</h2>
-        <p>Funciona con un atajo de teclado que registras tú en GNOME, sin dar permisos especiales a la app:</p>
-        <ol>
-          <li>Abre <b>Configuración → Teclado → Atajos personalizados → Añadir</b>.</li>
-          <li>Nombre: <code>DictaFlow dictar</code>. Atajo: por ejemplo <code>Super+Alt+D</code>.</li>
-          <li>Comando (cópialo con el botón):</li>
-        </ol>
-        <div className="row">
-          <code className="cmd">{cmd}</code>
-          <button onClick={() => void window.api.copy(cmd)}>Copiar comando</button>
-        </div>
-        <p className="muted">Pulsa el atajo para empezar a grabar, púlsalo otra vez para terminar: el texto redactado queda en el portapapeles y lo pegas con Ctrl+V. En Wayland ninguna app puede escribir en otra sin permisos elevados, por eso se pega manualmente.</p>
-      </section>
-
-      <Updates />
-
-      <DiagnosticsPanel />
-
-      <section className="card">
-        <h2>Desinstalar</h2>
-        {un && (
-          <>
-            <p className="muted">Instalación detectada: <b>{KIND[un.kind] ?? un.kind}</b>. Comando para desinstalar la aplicación:</p>
-            <div className="row">
-              <code className="cmd">{un.command}</code>
-              <button onClick={() => void window.api.copy(un.command)}>Copiar comando</button>
-            </div>
-            <label className="inline check">
-              <input type="checkbox" checked={wipe} onChange={(e) => setWipe(e.target.checked)} />
-              Borrar también mis datos ({un.dataSizeMB} MB: modelos, voces, ajustes, biblioteca y reuniones)
+      {!ANDROID && (
+        <section className="card">
+          <h2>Audio: voz a texto y texto a voz</h2>
+          <div className="row">
+            <label>Voz → texto
+              <select value={settings.sttProvider} onChange={(e) => void patchSettings({ sttProvider: e.target.value as 'local' | 'openai' })}>
+                <option value="local">Local (Whisper)</option><option value="openai">Nube (compatible con OpenAI)</option>
+              </select>
             </label>
-            <div className="row">
-              <button className="danger" onClick={() => void doUninstall()} disabled={!un.runnable && !wipe}>
-                {un.runnable ? '🗑 Desinstalar aplicación' : '🗑 Borrar solo mis datos'}
-              </button>
-              {!un.runnable && <span className="muted">Esta instalación no se quita desde la app: usa el comando.</span>}
+            <label>Texto → voz
+              <select value={settings.ttsProvider} onChange={(e) => void patchSettings({ ttsProvider: e.target.value as 'piper' | 'openai' })}>
+                <option value="piper">Local (Piper)</option><option value="openai">Nube (compatible con OpenAI)</option>
+              </select>
+            </label>
+          </div>
+          {(settings.sttProvider === 'openai' || settings.ttsProvider === 'openai') && (
+            <>
+              <p className="warn">Con la nube, el audio o el texto se envía a ese servicio. La barra lateral lo indicará.</p>
+              <label>URL base<input value={settings.cloudAudio.baseUrl} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, baseUrl: e.target.value } })} /></label>
+              <div className="row">
+                <label>Modelo STT<input value={settings.cloudAudio.sttModel} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, sttModel: e.target.value } })} /></label>
+                <label>Modelo TTS<input value={settings.cloudAudio.ttsModel} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, ttsModel: e.target.value } })} /></label>
+                <label>Voz TTS<input value={settings.cloudAudio.ttsVoice} onChange={(e) => void patchSettings({ cloudAudio: { ...settings.cloudAudio, ttsVoice: e.target.value } })} /></label>
+              </div>
+              <div className="row">
+                <label className="grow">API key {keys['openai-audio'] && <span className="ok">· guardada cifrada</span>}
+                  <input type="password" value={audioKey} autoComplete="off" placeholder={keys['openai-audio'] ? '••••••••' : 'Pega tu clave'} onChange={(e) => setAudioKey(e.target.value)} />
+                </label>
+                <button onClick={() => void saveAudioKey()} disabled={!audioKey && !keys['openai-audio']}>{audioKey ? 'Guardar' : 'Borrar clave'}</button>
+              </div>
+            </>
+          )}
+          <h3>Voces locales (Piper)</h3>
+          <p className="muted">Todas las funciones que leen en voz alta (texto a voz, lector, resúmenes) usan este mismo catálogo. Puedes escuchar la muestra antes de descargar.</p>
+          {tts?.catalog.map((v) => (
+            <div key={v.id} className="rec ok">
+              <span>
+                <b>{v.label}</b> <small>· {v.variant} · {v.quality} · ~{mb(v.sizeBytes)} MB</small><br />
+                <small className="muted">Licencia: {v.license}{v.usage === 'no-comercial' ? ' (solo uso no comercial)' : v.usage === 'terminos-propios' ? ' (con sus propias condiciones)' : ''}</small><br />
+                <small className="muted">Fuente: {v.source}</small>
+              </span>
+              {tts.voices.includes(v.id) ? (
+                <>
+                  <em className="ok">✓ instalada</em>
+                  <button onClick={() => void removeVoice(v.id)} title="Borrar los archivos de esta voz">🗑</button>
+                </>
+              ) : (
+                <button onClick={() => void getVoice(v.id)} disabled={!!dlBusy}>{dlBusy === v.id ? `Descargando… ${dlMsg}` : 'Descargar'}</button>
+              )}
             </div>
-            {unErr && <p className="warn" role="alert">{unErr}</p>}
-            <p className="muted">Siempre se pide confirmación antes de borrar nada. Los archivos que hayas exportado (notas, audios) no se tocan.</p>
-          </>
-        )}
-      </section>
+          ))}
+          {dlMsg && !dlBusy && <p className="warn">{dlMsg}</p>}
+        </section>
+      )}
+
+      {!ANDROID && (
+        <section className="card">
+          <h2>Notas (Obsidian, Logseq, Markdown)</h2>
+          <p className="muted">Los botones «A notas» guardan archivos .md con metadatos en esta carpeta.</p>
+          <div className="row">
+            <input className="grow" readOnly value={settings.vaultDir || '~/Documentos/DictaFlow-Notas (por defecto)'} />
+            <button onClick={() => void window.api.pickVault().then(async (d) => { if (d) await patchSettings({ vaultDir: d }) })}>Elegir carpeta…</button>
+          </div>
+        </section>
+      )}
+
+      {!ANDROID && (
+        <section className="card">
+          <h2>Dictar en cualquier app</h2>
+          <p>Funciona con un atajo de teclado que registras tú en GNOME, sin dar permisos especiales a la app:</p>
+          <ol>
+            <li>Abre <b>Configuración → Teclado → Atajos personalizados → Añadir</b>.</li>
+            <li>Nombre: <code>DictaFlow dictar</code>. Atajo: por ejemplo <code>Super+Alt+D</code>.</li>
+            <li>Comando (cópialo con el botón):</li>
+          </ol>
+          <div className="row">
+            <code className="cmd">{cmd}</code>
+            <button onClick={() => void window.api.copy(cmd)}>Copiar comando</button>
+          </div>
+          <p className="muted">Pulsa el atajo para empezar a grabar, púlsalo otra vez para terminar: el texto redactado queda en el portapapeles y lo pegas con Ctrl+V. En Wayland ninguna app puede escribir en otra sin permisos elevados, por eso se pega manualmente.</p>
+        </section>
+      )}
+
+      {!ANDROID && <Updates />}
+
+      {!ANDROID && <DiagnosticsPanel />}
+
+      {!ANDROID && (
+        <section className="card">
+          <h2>Desinstalar</h2>
+          {un && (
+            <>
+              <p className="muted">Instalación detectada: <b>{KIND[un.kind] ?? un.kind}</b>. Comando para desinstalar la aplicación:</p>
+              <div className="row">
+                <code className="cmd">{un.command}</code>
+                <button onClick={() => void window.api.copy(un.command)}>Copiar comando</button>
+              </div>
+              <label className="inline check">
+                <input type="checkbox" checked={wipe} onChange={(e) => setWipe(e.target.checked)} />
+                Borrar también mis datos ({un.dataSizeMB} MB: modelos, voces, ajustes, biblioteca y reuniones)
+              </label>
+              <div className="row">
+                <button className="danger" onClick={() => void doUninstall()} disabled={!un.runnable && !wipe}>
+                  {un.runnable ? '🗑 Desinstalar aplicación' : '🗑 Borrar solo mis datos'}
+                </button>
+                {!un.runnable && <span className="muted">Esta instalación no se quita desde la app: usa el comando.</span>}
+              </div>
+              {unErr && <p className="warn" role="alert">{unErr}</p>}
+              <p className="muted">Siempre se pide confirmación antes de borrar nada. Los archivos que hayas exportado (notas, audios) no se tocan.</p>
+            </>
+          )}
+        </section>
+      )}
     </div>
   )
 }
 
 export function Settings(): JSX.Element {
   const [tab, setTab] = useState<'general' | 'ai' | 'perf'>('general')
+  if (ANDROID) {
+    return (
+      <div className="view">
+        <div className="seg tabs" role="tablist">
+          <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}>General</button>
+          <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>🤖 Servicios de IA</button>
+        </div>
+        {tab === 'ai' ? <section className="card"><h2>Modelos de IA en este teléfono</h2><LocalModels /></section> : <General />}
+      </div>
+    )
+  }
   return (
     <div className="view">
       <div className="seg tabs" role="tablist">

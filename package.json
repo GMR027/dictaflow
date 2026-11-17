@@ -12,9 +12,13 @@
     "test": "vitest run",
     "dist": "electron-vite build && electron-builder --linux --publish never",
     "dist:dir": "electron-vite build && electron-builder --linux --dir --publish never",
-    "site": "node site/build.mjs"
+    "site": "node site/build.mjs",
+    "android:ui": "vite build -c android/vite.config.ts",
+    "android:build": "android/compilar.sh"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.12.5",
+    "@tauri-apps/plugin-opener": "^2.7.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

@@ -3,6 +3,9 @@ import type { HardwareInfo, Lang, ModelRec } from '@shared/types'
 import { useApp } from '../store'
 import { Logo } from './Logo'
 import { OllamaSetup } from './OllamaSetup'
+import { LocalModels } from './LocalModels'
+
+const ANDROID = window.api.platform === 'android'
 
 const LANGS: Record<Lang, string> = { es: 'Español', en: 'English' }
 const badge = { recommended: '★ Recomendado', ok: 'Compatible', slow: '⚠ Lento' } as const
@@ -84,7 +87,14 @@ export function Onboarding(): JSX.Element {
             </label>
           </>
         )}
-        {step === 1 && (
+        {step === 1 && ANDROID && (
+          <>
+            <h1>Modelos de IA</h1>
+            <p>Descarga al menos el modelo de voz para dictar. Todo corre dentro del teléfono, sin enviar tu voz ni tus textos a ningún servidor.</p>
+            <LocalModels />
+          </>
+        )}
+        {step === 1 && !ANDROID && (
           <>
             <h1>Tu equipo</h1>
             {!hw ? <p>Analizando…</p> : (
@@ -123,8 +133,17 @@ export function Onboarding(): JSX.Element {
         {step === 2 && (
           <>
             <h1>Todo listo</h1>
-            <p>Se descargará el modelo de voz y se guardará en tu equipo. Después la transcripción funciona sin conexión.</p>
-            <p className="muted">Si tienes suscripciones (Claude, opencode…) las activas luego en Ajustes → Cuentas.</p>
+            {ANDROID ? (
+              <>
+                <p>{settings.sttModel ? 'El modelo de voz está listo: la transcripción funciona sin conexión.' : 'Aún no has descargado un modelo de voz. Puedes hacerlo luego en Ajustes → Servicios de IA.'}</p>
+                <p className="muted">Puedes cambiar o borrar los modelos cuando quieras en Ajustes → Servicios de IA.</p>
+              </>
+            ) : (
+              <>
+                <p>Se descargará el modelo de voz y se guardará en tu equipo. Después la transcripción funciona sin conexión.</p>
+                <p className="muted">Si tienes suscripciones (Claude, opencode…) las activas luego en Ajustes → Cuentas.</p>
+              </>
+            )}
             {busy && <p>{msg} {sttLoading}</p>}
             {!busy && msg && <p className="warn">{msg}</p>}
           </>
