@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "Solo la interfaz local empaquetada en la app puede llamar a Rust; ninguna página remota tiene acceso.",
+  "windows": ["main"],
+  "local": true,
+  "permissions": [
+    "core:event:default",
+    "core:app:allow-version"
+  ]
+}

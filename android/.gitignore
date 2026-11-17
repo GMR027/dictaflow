@@ -1,0 +1,9 @@
+/dist/
+/ui-dist/
+/src-tauri/target/
+/src-tauri/pruebas/target/
+/src-tauri/gen/schemas/
+# Llaves de firma: nunca en el repositorio (viven en ~/.config/dictaflow-android/)
+*.jks
+*.keystore
+keystore.properties
