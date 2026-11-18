@@ -19,7 +19,8 @@ const sums = {}
 if (existsSync(sumsFile)) for (const l of readFileSync(sumsFile, 'utf8').split('\n')) { const [h, f] = l.trim().split(/\s+/); if (h && f) sums[f.replace(/^\*/, '')] = h }
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const dl = (f) => `${REPO}/releases/latest/download/${f}`
+// Los instaladores los sirve el propio servidor (deploy/publicar-escritorio.sh), no GitHub.
+const dl = (f) => `/app/linux/${f}`
 
 function picture(prefix, name, alt, up) {
   const p = `${up}img/${name}`
@@ -111,7 +112,7 @@ ${t.lang === 'es' ? '' : `<script>try{if(/^es/i.test(navigator.language)&&!/lang
   </script>
   <article class="card verify"><h3>${esc(t.verifyTitle)}</h3><p>${esc(t.verify)}</p>
     <pre><code>sha256sum -c SHA256SUMS.txt</code></pre>
-    <p><a href="${REPO}/releases/latest/download/SHA256SUMS.txt" rel="noopener">${esc(t.sums)}</a></p></article>
+    <p><a href="/app/linux/SHA256SUMS.txt">${esc(t.sums)}</a></p></article>
   <div class="grid two">
     <article class="card"><h3>${esc(t.reqTitle)}</h3><ul>${t.req.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></article>
     <article class="card"><h3>${esc(t.limitsTitle)}</h3><ul>${t.limits.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></article>

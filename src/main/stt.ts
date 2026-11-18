@@ -5,7 +5,9 @@ import { TRANS_LANGS, type Segment, type SttStatus, type TransLang } from '@shar
 import { netFetch } from './netlog'
 import { getSecret, getSettings, modelsDir } from './store'
 import { encodeWav } from './wav'
-import { CppServer, GGML_MODELS, findServerBinary, ggmlUrl } from './whispercpp'
+import { CppServer, GGML_MODELS, findServerBinary, ggmlUrl, supportsVad } from './whispercpp'
+import { whisperPrompt } from '@shared/whisper-prompt'
+import { bundled } from './sherpa'
 import { PriorityQueue, type SttPriority } from './stt-queue'
 import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'fs'
 import { Readable } from 'stream'
@@ -119,7 +121,10 @@ export async function downloadGgml(id: string, progress: (p: Progress) => void):
 async function ensureCpp(): Promise<boolean> {
   const { bin, model } = cppConfig()
   try {
-    await cpp.ensure(bin, model)
+    // El VAD de Silero va con la app (el mismo del teléfono); solo si este whisper-server lo admite.
+    const silero = bundled('ggml-silero-v5.1.2.bin')
+    const vad = existsSync(silero) && (await supportsVad(bin)) ? silero : ''
+    await cpp.ensure(bin, model, undefined, vad)
     fallbackReason = null
     return true
   } catch (e) {
@@ -152,6 +157,7 @@ async function cloudTranscribe(pcm: Float32Array, lang: TransLang | 'auto'): Pro
   form.append('model', s.cloudAudio.sttModel)
   form.append('response_format', 'verbose_json')
   if (lang !== 'auto') form.append('language', lang)
+  form.append('prompt', whisperPrompt(lang === 'auto' ? s.primaryLang : lang, s.dictionary.map((d) => d.to || d.from)))
   const res = await netFetch('openai:stt', `${s.cloudAudio.baseUrl}/audio/transcriptions`, { method: 'POST', headers: { authorization: `Bearer ${key}` }, body: form })
   if (!res.ok) throw new Error(`STT ${res.status}: ${await res.text()}`)
   const j = (await res.json()) as { text: string; segments?: { start: number; end: number; text: string }[] }
@@ -194,7 +200,9 @@ export async function transcribeDetailed(
       if (getSettings().sttEngine === 'whispercpp' && cpp.running && !fallbackReason) {
         const lg = lang === 'auto' ? undefined : lang
         try {
-          const r = await cpp.infer(pcm, lg, timestamps)
+          const s = getSettings()
+          const prompt = whisperPrompt(lg ?? s.primaryLang, s.dictionary.map((d) => d.to || d.from))
+          const r = await cpp.infer(pcm, lg, timestamps, { prompt, draft: priority === 'draft' })
           return { text: applyDictionary(r.text), segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text) })) }
         } catch (e) {
           fallbackReason = (e as Error).message

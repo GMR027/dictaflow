@@ -3,19 +3,44 @@ import { existsSync, readFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { promisify } from 'util'
 import type { Lang, TtsStatus } from '@shared/types'
+import type { VoiceStatus } from '@shared/voice'
+import { KOKORO_MODEL, KOKORO_VOICES, kokoroId, kokoroLabel } from '@shared/kokoro'
+import { totalBytes } from '@shared/local-models'
+import { kokoroReady, synthesizeKokoro } from './sherpa'
+import { downloadLocal } from './local-models'
 import { dataDir, getSecret, getSettings } from './store'
 import { downloadFile } from './download'
 import { netFetch } from './netlog'
 import {
   installedVoiceIds, piperBin, piperDir, piperInstalled, piperManifest, removeVoice,
-  voiceConfigPath, voiceManifest, voiceModelPath, voicesDir
+  voiceConfigPath, voiceManifest, voiceModelPath, voiceStatus, voicesDir
 } from './catalog/voices'
 
 const run = promisify(execFile)
 
-/** Estado del motor de voz local y de las voces descargadas. */
-export function ttsStatus(): TtsStatus {
-  return { piperInstalled: piperInstalled(), voices: installedVoiceIds() }
+/** Las voces de Kokoro: un solo modelo (sherpa-onnx) con 31 voces en español e inglés. */
+function kokoroCatalog(installed: boolean): VoiceStatus[] {
+  return KOKORO_VOICES.map((v): VoiceStatus => ({
+    id: kokoroId(v), engine: 'kokoro', langs: [v.lang], variant: v.accent, speaker: v.name, label: kokoroLabel(v),
+    quality: 'high', sizeBytes: totalBytes(KOKORO_MODEL), license: 'Apache-2.0', usage: 'libre',
+    source: 'hexgrad/Kokoro-82M · csukuangfj/kokoro-int8-multi-lang-v1_0', sampleUrl: 'local', installed
+  }))
+}
+
+/** Estado del motor de voz local y de las voces descargadas, con el catálogo (Kokoro y Piper). */
+export function ttsStatus(): TtsStatus & { catalog: VoiceStatus[] } {
+  const kokoro = kokoroCatalog(kokoroReady())
+  return {
+    piperInstalled: piperInstalled(),
+    voices: [...installedVoiceIds(), ...kokoro.filter((v) => v.installed).map((v) => v.id)],
+    catalog: [...voiceStatus(), ...kokoro]
+  }
+}
+
+/** Frase con la que se presenta una voz que no tiene muestra publicada (Kokoro). */
+const SAMPLE_TEXT: Record<Lang, string> = {
+  es: 'Hola, soy una de las voces de DictaFlow. Así sonarán tus textos y tus libros.',
+  en: 'Hi, I am one of the DictaFlow voices. This is how your texts and books will sound.'
 }
 
 /**
@@ -45,6 +70,10 @@ export async function installPiper(onPct: (what: string, pct: number) => void, s
  * Si se interrumpe, no queda nada a medias: los ficheros se renombran al final.
  */
 export async function installVoice(id: string, onPct: (what: string, pct: number) => void, signal?: AbortSignal): Promise<void> {
+  if (id.startsWith('kokoro:')) {
+    await downloadLocal(KOKORO_MODEL, (p) => { if (p.state === 'downloading') onPct(p.id, p.total ? Math.floor((p.received / p.total) * 100) : 0) })
+    return
+  }
   if (getSettings().strictOffline) throw new Error('Modo offline estricto activo: desactívalo en Privacidad para descargar.')
   const m = voiceManifest(id)
   if (!m) throw new Error(`Voz desconocida: ${id}`)
@@ -75,6 +104,8 @@ export { removeVoice }
  * directamente a la fuente oficial; no se guarda en el equipo.
  */
 export async function fetchVoiceSample(id: string): Promise<Uint8Array> {
+  const k = KOKORO_VOICES.find((v) => kokoroId(v) === id)
+  if (k) return new Uint8Array(await synthesizeKokoro(id, SAMPLE_TEXT[k.lang], getSettings().ttsSpeed))
   const m = voiceManifest(id)
   if (!m?.sample) throw new Error('Esta voz no tiene muestra de audio.')
   const res = await netFetch('piper:sample', m.sample)
@@ -98,6 +129,7 @@ export async function synthesize(text: string, lang: Lang, voiceId?: string): Pr
   }
 
   const voice = voiceId ?? s.ttsVoice[lang]
+  if (voice.startsWith('kokoro:')) return synthesizeKokoro(voice, text, s.ttsSpeed)
   const model = voiceModelPath(voice)
   if (!existsSync(piperBin)) throw new Error('Falta instalar el motor de voz local (Audio → Texto a voz).')
   if (!existsSync(model)) throw new Error(`La voz ${voice} no está descargada (Audio → Texto a voz).`)

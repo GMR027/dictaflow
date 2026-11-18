@@ -9,7 +9,8 @@
 #   ./deploy/deploy.sh --rollback  # vuelve a la revisión anterior
 #
 # Si la página no cambió, el hash es el mismo y los pods no se reinician.
-# El APK de Android va aparte (android/publicar.sh), en el volumen del servicio <release>-android.
+# El APK de Android (android/publicar.sh) y los instaladores de escritorio (deploy/publicar-escritorio.sh)
+# van aparte, en el volumen del servicio <release>-android.
 #
 # Variables (todas opcionales):
 #   NAMESPACE=dictaflow  RELEASE=dictaflow-site  HOST=dictaflow.iguzman.com.mx
@@ -25,8 +26,6 @@ INGRESS_CLASS=${INGRESS_CLASS:-nginx}
 CLUSTER_ISSUER=${CLUSTER_ISSUER:-letsencrypt-prod}
 REPLICAS=${REPLICAS:-2}
 CHART=deploy/helm/dictaflow-site
-# Las sumas de las descargas de escritorio (solo lectura, para mostrarlas en la página).
-REPO_SLUG=GMR027/dictaflow
 # Trozos de 600 KB: en base64 quedan ~800 KB, por debajo del límite de 1 MiB por ConfigMap.
 PART_BYTES=600000
 
@@ -64,7 +63,8 @@ fi
 WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 
 say "Generando la página"
-curl -fsSL -o "$WORK/SHA256SUMS.txt" "https://github.com/$REPO_SLUG/releases/latest/download/SHA256SUMS.txt" || : > "$WORK/SHA256SUMS.txt"
+# Las sumas de los instaladores publicados en esta misma web (deploy/publicar-escritorio.sh).
+curl -fsSL -o "$WORK/SHA256SUMS.txt" "https://$HOST/app/linux/SHA256SUMS.txt" || : > "$WORK/SHA256SUMS.txt"
 CHECKSUMS="$WORK/SHA256SUMS.txt" node site/build.mjs
 mkdir -p "$WORK/web/conf"
 cp -r site/dist "$WORK/web/html"

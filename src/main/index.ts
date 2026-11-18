@@ -12,7 +12,8 @@ import { PROVIDERS } from '@shared/providers'
 import { clearNetEvents, getNetEvents } from './netlog'
 import { exportNote, launchAgent, openFileDialog, pickDir, readProjectContext, saveFileDialog } from './tools'
 import { fetchVoiceSample, installPiper, installVoice, removeVoice, synthesize, ttsStatus } from './tts'
-import { voiceStatus } from './catalog/voices'
+import { cancelLocal, deviceInfo, downloadLocal, listLocalFiles, removeLocal } from './local-models'
+import { liveFeed, liveReset, liveStart, liveStop, stopSherpa } from './sherpa'
 import { startSystemAudio, stopSystemAudio } from './sysaudio'
 import { runUninstall, uninstallInfo } from './uninstall'
 import { applyUpdate, checkUpdate } from './updater'
@@ -185,8 +186,17 @@ function registerIpc(): void {
   handle('stt:status', () => sttStatus())
   handle('stt:bench', () => benchStt())
   handle('stt:download-ggml', (e, req) => downloadGgml(req.id, (p) => e.sender.send('stt:progress', p)))
-  // El texto en vivo con modelo streaming es de Android; en escritorio se usan los borradores de Whisper.
-  handle('stt:live-start', () => null)
+  // Texto en vivo (Kroko, sherpa-onnx). Sin el modelo descargado, null: se usan los borradores de Whisper.
+  handle('stt:live-start', (_e, req) => liveStart(req.lang))
+  handle('stt:live-feed', (_e, req) => liveFeed(req.session, req.pcm))
+  handle('stt:live-reset', (_e, req) => liveReset(req.session))
+  handle('stt:live-stop', (_e, req) => liveStop(req.session))
+  // Modelos de sherpa-onnx (texto en vivo y Kokoro), con el mismo catálogo que el teléfono.
+  handle('models:device', () => deviceInfo())
+  handle('models:list', () => listLocalFiles())
+  handle('models:download', (e, req) => downloadLocal(req.model, (p) => e.sender.send('models:progress', p)))
+  handle('models:cancel', (_e, req) => cancelLocal(req.id))
+  handle('models:remove', (_e, req) => removeLocal(req.id))
   handle('stt:transcribe', (_e, req) => transcribe(req.pcm, req.lang, req.priority))
   handle('stt:detailed', (_e, req) => transcribeDetailed(req.pcm, req.lang, req.timestamps, req.priority))
   handle('dict:apply', (_e, { text }) => applyDictionary(text))
@@ -326,7 +336,7 @@ function registerIpc(): void {
     return { path, durationSec }
   })
 
-  handle('tts:status', () => ({ ...ttsStatus(), catalog: voiceStatus() }))
+  handle('tts:status', () => ttsStatus())
   handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))
   handle('tts:install-voice', (e, req) => installVoice(req.id, (what, pct) => e.sender.send('tts:progress', { what, pct })))
   handle('tts:remove-voice', (_e, req) => removeVoice(req.id))
@@ -420,7 +430,7 @@ function startReminderWatcher(): void {
   setInterval(check, 30_000)
 }
 
-app.on('before-quit', () => { quitting = true; flushSettings(); stopStt(); stopSystemAudio() })
+app.on('before-quit', () => { quitting = true; flushSettings(); stopStt(); stopSherpa(); stopSystemAudio() })
 app.on('window-all-closed', () => { if (!tray) app.quit() })
 
 export type { HardwareInfo }

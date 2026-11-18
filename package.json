@@ -1,6 +1,6 @@
 {
   "name": "dictaflow",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Voice dictation with AI rewriting, text-to-speech, reader and meeting transcription. Local-first. / Dictado por voz con redacción por IA, lector y reuniones. Local primero.",
   "main": "out/main/index.js",
   "type": "commonjs",
@@ -40,7 +40,8 @@
     "@huggingface/transformers": "^4.3.1",
     "ical-generator": "^11.1.2",
     "node-ical": "^0.27.3",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "sherpa-onnx-node": "1.13.8"
   },
   "license": "MIT",
   "author": {

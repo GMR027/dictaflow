@@ -54,7 +54,7 @@ const TOPICS: Topic[] = [
       <p>El botón redondo del micrófono es la acción principal: su anillo se mueve con tu voz para que sepas que te escucha. El micrófono se elige en <b>Opciones del micrófono</b>, bajo el botón.</p>
       <p>Mientras se transcribe aparece un bot escribiendo y el borde del texto se anima; cuando la redacción con IA está lista, su borde queda en verde.</p>
       <h4>Texto en vivo</h4>
-      <p>En el teléfono, con el modelo «Texto en vivo» descargado (Ajustes → Servicios de IA), ves lo que dices palabra a palabra mientras hablas. Al cerrarse la frase, Whisper pone el texto definitivo con puntuación.</p>
+      <p>Con el modelo «Texto en vivo» descargado (en el teléfono, Ajustes → Servicios de IA; en el equipo, Ajustes → Audio → Modelos de voz) ves lo que dices palabra a palabra mientras hablas, en Dictado, Reuniones y Traducción. Al cerrarse la frase, Whisper pone el texto definitivo con puntuación. Sin ese modelo, el texto provisional lo da Whisper cada pocos segundos.</p>
       <h4>Parlante controlado</h4>
       <p>Pulsas <b>Pulsar para hablar</b>, hablas todo lo que quieras y pulsas <b>Detener y transcribir</b>. El micrófono solo está abierto entre esos dos clics.</p>
       <h4>Parlante activo</h4>
@@ -148,7 +148,12 @@ const TOPICS: Topic[] = [
       <p>Arrastra un archivo (mp3, wav, ogg, flac, m4a, webm…) o graba con el micrófono. Transcribe con marcas de tiempo y exporta .txt, .srt o .vtt. <b>💾 Guardar audio</b> conserva el audio original.</p>
       <p>Con IA puedes generar resumen, capítulos con tiempos, post para redes, notas o apuntes de estudio, y traducir.</p>
       <h4>🔊 Texto → Voz</h4>
-      <p>Escribe o pega texto, elige idioma, voz y velocidad, escucha y descarga en <b>WAV o MP3</b>. La voz local (Piper) se descarga una vez desde la propia pantalla; también puedes usar un servicio en la nube en Ajustes → Audio.</p>
+      <p>Escribe o pega texto, elige idioma, voz y velocidad, escucha y descarga en <b>WAV o MP3</b>. También puedes usar un servicio en la nube en Ajustes → Audio.</p>
+      <p>Hay dos tipos de voz local, agrupados en el selector:</p>
+      <ul>
+        <li><b>Kokoro:</b> las más naturales (3 en español y 28 en inglés), en una sola descarga de unos 155 MB en Ajustes → Audio → Modelos de voz o con ⬇ Descargar en el selector.</li>
+        <li><b>Piper:</b> una descarga por voz (60–120 MB), muy rápidas. El motor (~25 MB) se instala solo la primera vez.</li>
+      </ul>
     </>),
     android: (<>
       <h4>🎧 Voz → Texto</h4>

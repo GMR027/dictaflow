@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
-import { CppServer, findServerBinary, parseInference, serverArgs } from './whispercpp'
+import { CppServer, findServerBinary, inferFields, parseInference, serverArgs } from './whispercpp'
 
 const dir = mkdtempSync(join(tmpdir(), 'dfcpp-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -107,5 +107,31 @@ describe('CppServer', () => {
     const hang = fakeServer('hang', 'setInterval(() => {}, 1000); return')
     await expect(server.ensure(hang, model, 800)).rejects.toThrow(/no respondió a tiempo/)
     expect(server.running).toBe(false)
+  })
+})
+
+describe('inferFields (mismo plan que el teléfono)', () => {
+  const get = (f: [string, string][], k: string): string | undefined => f.find(([n]) => n === k)?.[1]
+  it('la definitiva corta usa beam search y el texto de arranque', () => {
+    const f = inferFields(5, 'es', false, { prompt: 'Hola, ¿qué tal?' })
+    expect(get(f, 'beam_size')).toBe('3')
+    expect(get(f, 'prompt')).toBe('Hola, ¿qué tal?')
+    expect(get(f, 'suppress_nst')).toBe('true')
+  })
+  it('el borrador va rápido y sin texto de arranque', () => {
+    const f = inferFields(5, 'es', false, { prompt: 'x', draft: true })
+    expect(get(f, 'beam_size')).toBeUndefined()
+    expect(get(f, 'prompt')).toBeUndefined()
+  })
+  it('con marcas de tiempo no hay texto de arranque (devolvería solo el primer segmento)', () => {
+    const f = inferFields(60, undefined, true, { prompt: 'x' })
+    expect(get(f, 'prompt')).toBeUndefined()
+    expect(get(f, 'beam_size')).toBeUndefined()
+    expect(get(f, 'language')).toBe('auto')
+    expect(get(f, 'response_format')).toBe('verbose_json')
+  })
+  it('serverArgs añade el VAD solo si se indica', () => {
+    expect(serverArgs('m', 1, 4)).not.toContain('--vad')
+    expect(serverArgs('m', 1, 4, '/s.bin')).toEqual(expect.arrayContaining(['--vad', '--vad-model', '/s.bin']))
   })
 })

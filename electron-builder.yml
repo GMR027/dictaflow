@@ -18,10 +18,17 @@ files:
   # carga y la inferencia funciona sin él (tools/check-package.mjs lo verifica).
   - "!node_modules/onnxruntime-web/**"
 
+# Lo mismo que lleva el APK: datos de pronunciación de espeak-ng (Kokoro) y el VAD de Silero (whisper.cpp).
+extraResources:
+  - { from: android/src-tauri/recursos/espeak-ng-data.tar, to: espeak-ng-data.tar }
+  - { from: android/src-tauri/recursos/ggml-silero-v5.1.2.bin, to: ggml-silero-v5.1.2.bin }
+
 asar: true
 # Los módulos nativos y el worker de voz (proceso Node aparte) no pueden vivir dentro del asar
 asarUnpack:
   - node_modules/onnxruntime-node/**
+  - node_modules/sherpa-onnx-node/**
+  - node_modules/sherpa-onnx-linux-x64/**
   - node_modules/sharp/**
   - node_modules/@img/**
 

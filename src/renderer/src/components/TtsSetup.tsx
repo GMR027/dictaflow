@@ -27,7 +27,8 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
 
   if (!info || settings.ttsProvider !== 'piper') return null
   const voice = settings.ttsVoice[lang]
-  const needEngine = !info.piperInstalled
+  // Kokoro corre con sherpa-onnx dentro de la app: no necesita el motor Piper.
+  const needEngine = !info.piperInstalled && !voice.startsWith('kokoro:')
   const needVoice = !info.voices.includes(voice)
   if (!needEngine && !needVoice) return null
 
@@ -59,7 +60,7 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
   )
 }
 
-/** Grupos del selector: voces del teléfono, Kokoro y Piper (en escritorio, solo Piper/nube). */
+/** Grupos del selector: voces del teléfono (solo Android), Kokoro, Piper y nube. */
 const GROUPS: [string[], string][] = [
   [['sistema'], 'Voces del teléfono (sin descargas)'],
   [['kokoro'], 'Kokoro · más naturales'],
@@ -105,7 +106,7 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
     setBusy(id)
     setError('')
     try {
-      if (!info?.piperInstalled) await window.api.installPiper()
+      if (!info?.piperInstalled && !id.startsWith('kokoro:')) await window.api.installPiper()
       await window.api.installVoice(id)
       onChanged()
     } catch (e) {

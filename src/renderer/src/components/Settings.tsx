@@ -158,9 +158,11 @@ function General(): JSX.Element {
               </div>
             </>
           )}
+          <h3>Modelos de voz (sherpa-onnx)</h3>
+          <LocalModels kinds={['live', 'tts']} pick={(m) => m.kind === 'live' || !m.voice} />
           <h3>Voces locales (Piper)</h3>
           <p className="muted">Todas las funciones que leen en voz alta (texto a voz, lector, resúmenes) usan este mismo catálogo. Puedes escuchar la muestra antes de descargar.</p>
-          {tts?.catalog.map((v) => (
+          {tts?.catalog.filter((v) => v.engine === 'piper').map((v) => (
             <div key={v.id} className="rec ok">
               <span>
                 <b>{v.label}</b> <small>· {v.variant} · {v.quality} · ~{mb(v.sizeBytes)} MB</small><br />

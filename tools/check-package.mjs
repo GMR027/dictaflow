@@ -65,6 +65,15 @@ for (const n of native) {
   }
 }
 
+// 5. sherpa-onnx (texto en vivo y Kokoro): su worker, su módulo nativo fuera del asar y los datos que lleva la app.
+if (!files.some((f) => f.path.endsWith('/out/main/sherpa-worker.js'))) problems.push('Falta out/main/sherpa-worker.js: no habría texto en vivo ni Kokoro.')
+for (const n of ['sherpa-onnx.node', 'libsherpa-onnx-c-api.so']) {
+  if (!files.some((f) => f.path.endsWith(n) && f.unpacked)) problems.push(`${n} no está descomprimido (unpacked): sherpa-onnx no cargaría.`)
+}
+for (const n of ['espeak-ng-data.tar', 'ggml-silero-v5.1.2.bin']) {
+  if (!existsSync(join(resources, n))) problems.push(`Falta resources/${n}.`)
+}
+
 const sizeOf = (p) => (existsSync(p) ? statSync(p).size : 0)
 const unpackedSize = existsSync(unpacked) ? dirSize(unpacked) : 0
 function dirSize(dir) {

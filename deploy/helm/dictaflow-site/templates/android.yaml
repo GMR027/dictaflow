@@ -1,6 +1,6 @@
 {{- if .Values.android.enabled }}
 {{- /*
-  App de Android: el APK y su version.json no van con la página (ConfigMaps de deploy.sh) ni en GitHub.
+  App de Android y de escritorio: el APK, los instaladores de Linux y sus version.json no van con la página (ConfigMaps de deploy.sh) ni en GitHub.
   Viven en un volumen del clúster que llena android/publicar.sh con `kubectl cp`, y los sirve este
   nginx (imagen oficial de Docker Hub). El Ingress le manda todo /app/android/.
 */}}
@@ -46,6 +46,16 @@ data:
         try_files /dictaflow-android.apk =404;
       }
       location = /app/android/dictaflow-android.apk { return 301 /app/android/descargar; }
+      # Instaladores de escritorio (Linux), en /srv/linux/: los sube deploy/publicar-escritorio.sh.
+      location = /app/linux/version.json { alias /srv/linux/version.json; }
+      location = /app/linux/SHA256SUMS.txt { alias /srv/linux/SHA256SUMS.txt; }
+      location ~ ^/app/linux/(dictaflow-linux-[A-Za-z0-9_.-]+)$ {
+        alias /srv/linux/$1;
+        default_type application/octet-stream;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "no-cache" always;
+        add_header Content-Disposition 'attachment; filename="$1"' always;
+      }
       location / { return 404; }
     }
 ---

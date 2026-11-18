@@ -17,8 +17,34 @@ interface Release { tag_name: string; body?: string; html_url: string; assets: {
 const cache: { at: number; info: UpdateInfo | null } = { at: 0, info: null }
 const CACHE_MS = 5 * 60 * 1000
 
+/** La web de DictaFlow publica los instaladores (deploy/publicar-escritorio.sh); GitHub queda de reserva. */
+const SITE = 'https://dictaflow.iguzman.com.mx'
+interface SiteVersion { version: string; notes?: string; files: Record<string, { sha256: string; size: number }> }
+
+async function checkSite(): Promise<UpdateInfo> {
+  const res = await netFetch('site:update-check', `${SITE}/app/linux/version.json`, { cache: 'no-cache', signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) throw new Error(`La web respondió ${res.status}.`)
+  const v = (await res.json()) as SiteVersion
+  if (!/^\d+\.\d+\.\d+$/.test(v.version) || !v.files) throw new Error('version.json no válido.')
+  const kind = await detectKind()
+  const current = app.getVersion()
+  const name = ASSET_BY_KIND[kind]
+  const file = name ? v.files[name] : undefined
+  return {
+    current, latest: v.version, available: isNewer(v.version, current), notes: (v.notes ?? '').trim().slice(0, 2000),
+    pageUrl: `${SITE}/#install`, kind, asset: file && name ? { name, url: `${SITE}/app/linux/${name}` } : null,
+    sha256: file && /^[0-9a-f]{64}$/.test(file.sha256) ? file.sha256 : null
+  }
+}
+
 export async function checkUpdate(): Promise<UpdateInfo> {
   if (cache.info && Date.now() - cache.at < CACHE_MS) return cache.info
+  try {
+    const info = await checkSite()
+    cache.info = info
+    cache.at = Date.now()
+    return info
+  } catch { /* sin conexión con la web: se pregunta a GitHub */ }
   const res = await netFetch('github:update-check', `https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: 'application/vnd.github+json' } })
   if (res.status === 403 || res.status === 429) {
     throw new Error('GitHub está limitando las consultas desde esta conexión (60 por hora). Inténtalo más tarde o descarga la versión desde la página de la aplicación.')
@@ -46,7 +72,7 @@ export async function checkUpdate(): Promise<UpdateInfo> {
 }
 
 async function download(info: UpdateInfo, dest: string, sender: WebContents): Promise<void> {
-  const res = await netFetch('github:update-download', info.asset!.url)
+  const res = await netFetch(info.asset!.url.startsWith(SITE) ? 'site:update-download' : 'github:update-download', info.asset!.url)
   if (!res.ok || !res.body) throw new Error(`No se pudo descargar la actualización (${res.status}).`)
   const total = Number(res.headers.get('content-length') ?? 0)
   const hash = createHash('sha256')

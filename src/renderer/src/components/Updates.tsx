@@ -96,7 +96,7 @@ export function Updates(): JSX.Element {
       <h2>Actualizaciones</h2>
       <p className="muted">Versión instalada: <b>{version || '…'}</b>. {ANDROID
         ? 'Se consulta la web de DictaFlow al abrir la app y cuando pulsas el botón (no con el modo offline estricto).'
-        : 'Solo se consulta GitHub cuando pulsas el botón (no funciona con el modo offline estricto).'}</p>
+        : 'Solo se consulta la web de DictaFlow (o GitHub, si no responde) cuando pulsas el botón (no funciona con el modo offline estricto).'}</p>
       <div className="row">
         <button onClick={() => void check()} disabled={busy !== ''}>{busy === 'check' ? 'Buscando…' : 'Buscar actualizaciones'}</button>
         {info?.available && (

@@ -5,13 +5,16 @@ import {
 } from '@shared/local-models'
 import { useApp } from '../store'
 
-const BADGE = { recommended: '★ Recomendado', ok: 'Compatible', slow: '⚠ Pesado para este teléfono' } as const
+const ANDROID = window.api.platform === 'android'
+const BADGE = { recommended: '★ Recomendado', ok: 'Compatible', slow: ANDROID ? '⚠ Pesado para este teléfono' : '⚠ Pesado para este equipo' } as const
 const TITLE: Record<LocalModelKind, [string, string]> = {
   stt: ['Voz → texto (Whisper)', 'Transcribe lo que dictas. Funciona sin conexión.'],
   live: ['Texto en vivo', 'Muestra lo que dices palabra a palabra mientras hablas (Dictado, Reuniones, Traducción). Se usa solo el del idioma en que hablas; Whisper sigue poniendo el texto definitivo.'],
   llm: ['Redacción con IA', 'Pule, reescribe, traduce y resume tus textos dentro del teléfono, sin enviarlos a ningún servidor.'],
   tts: ['Lectura en voz alta (voces)', 'Lee tus textos, documentos y traducciones sin conexión. Elige una voz por idioma; con ▶ la escuchas antes de descargarla.']
 }
+
+const DESKTOP_TTS: [string, string] = ['Voces Kokoro', 'Un solo modelo con 31 voces más naturales que Piper (3 en español). Tras descargarlo, elígelas en el selector de voz de Lector, Audio o Mis voces.']
 
 /** Reproduce un audio (WAV o MP3) y espera a que termine. */
 function play(bytes: Uint8Array, type: string): Promise<void> {
@@ -28,7 +31,12 @@ function play(bytes: Uint8Array, type: string): Promise<void> {
  * Android: descarga, elige y borra los modelos de IA que corren dentro del teléfono.
  * Se usa en Ajustes → Servicios de IA y en el asistente inicial (`only` limita a un tipo).
  */
-export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
+export function LocalModels({ only, kinds: shownKinds, pick }: {
+  only?: LocalModelKind
+  /** Escritorio: qué tipos se muestran y qué modelos de cada uno (texto en vivo y Kokoro). */
+  kinds?: LocalModelKind[]
+  pick?: (m: LocalModel) => boolean
+}): JSX.Element {
   const { settings, patchSettings } = useApp()
   const [device, setDevice] = useState<DeviceInfo | null>(null)
   const [files, setFiles] = useState<LocalModelFile[]>([])
@@ -121,20 +129,20 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
     }
   }
 
-  const kinds: LocalModelKind[] = only ? [only] : ['stt', 'live', 'llm', 'tts']
+  const kinds: LocalModelKind[] = only ? [only] : shownKinds ?? ['stt', 'live', 'llm', 'tts']
   const used = files.filter((f) => !f.partial).reduce((a, f) => a + f.bytes, 0)
 
   return (
     <>
       <p className="muted">
-        {device ? `Este teléfono: ${device.ramGB} GB de RAM · ${device.cores} núcleos · ${device.freeGB} GB libres` : 'Revisando el teléfono…'}
+        {device ? `${ANDROID ? 'Este teléfono' : 'Este equipo'}: ${device.ramGB} GB de RAM · ${device.cores} núcleos · ${device.freeGB} GB libres` : 'Revisando…'}
         {used > 0 && ` · modelos: ${formatBytes(used)}`}
       </p>
       {kinds.map((kind) => (
         <div key={kind}>
-          <h3>{TITLE[kind][0]}</h3>
-          <p className="muted">{TITLE[kind][1]}</p>
-          {LOCAL_MODELS.filter((m) => m.kind === kind).map((m) => {
+          <h3>{(!ANDROID && kind === 'tts' ? DESKTOP_TTS : TITLE[kind])[0]}</h3>
+          <p className="muted">{(!ANDROID && kind === 'tts' ? DESKTOP_TTS : TITLE[kind])[1]}</p>
+          {LOCAL_MODELS.filter((m) => m.kind === kind && (!pick || pick(m))).map((m) => {
             const f = file(m.id)
             const ready = modelReady(m, files)
             const extra = companions(m).map((x) => progress[x.id]).find((x) => x?.state === 'error')
@@ -179,7 +187,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
           )}
         </div>
       ))}
-      <p className="muted">Usa Wi-Fi para descargar y deja la app abierta hasta que termine; si se interrumpe, la descarga continúa donde se quedó.</p>
+      {ANDROID && <p className="muted">Usa Wi-Fi para descargar y deja la app abierta hasta que termine; si se interrumpe, la descarga continúa donde se quedó.</p>}
     </>
   )
 }

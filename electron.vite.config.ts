@@ -8,7 +8,7 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: shared },
-    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), 'stt-worker': resolve('src/main/stt-worker.ts') } } }
+    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), 'stt-worker': resolve('src/main/stt-worker.ts'), 'sherpa-worker': resolve('src/main/sherpa-worker.ts') } } }
   },
   preload: { plugins: [externalizeDepsPlugin()], resolve: { alias: shared } },
   renderer: {

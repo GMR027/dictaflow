@@ -28,6 +28,9 @@ spec:
           - path: /app/android
             pathType: Prefix
             backend: { service: { name: {{ .Release.Name }}-android, port: { name: http } } }
+          - path: /app/linux
+            pathType: Prefix
+            backend: { service: { name: {{ .Release.Name }}-android, port: { name: http } } }
           {{- end }}
           - path: /
             pathType: Prefix
