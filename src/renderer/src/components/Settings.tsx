@@ -199,7 +199,7 @@ function General(): JSX.Element {
         </section>
       )}
 
-      {!ANDROID && <Updates />}
+      <Updates />
 
       {ANDROID ? <BackupCard /> : <DiagnosticsPanel />}
 

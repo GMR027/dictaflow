@@ -1,4 +1,4 @@
-export type InstallKind = 'appimage' | 'deb' | 'rpm' | 'pacman' | 'portable' | 'dev'
+export type InstallKind = 'appimage' | 'deb' | 'rpm' | 'pacman' | 'portable' | 'dev' | 'android'
 
 export interface UpdateInfo {
   current: string

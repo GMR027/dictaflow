@@ -266,3 +266,8 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
   .rec em { margin-left: auto; }
   .rec progress { width: 100%; }
 }
+
+/* Aviso de versión nueva (Android): tapa la app hasta que se elige «Actualizar» o «Ahora no». */
+.update-prompt { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 0.45); }
+.update-prompt .card { width: min(480px, 100%); max-height: 100%; overflow: auto; }
+.update-prompt h2 { margin-top: 0; }

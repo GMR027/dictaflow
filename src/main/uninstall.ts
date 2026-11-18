@@ -56,6 +56,7 @@ function commandFor(kind: InstallKind): string {
     case 'appimage': return `rm "${process.env.APPIMAGE}"`
     case 'portable': return `rm -rf "${process.execPath.replace(/\/[^/]+$/, '')}"`
     case 'dev': return 'Versión de desarrollo: borra la carpeta del proyecto.'
+    case 'android': return 'Desinstala DictaFlow desde los ajustes de Android.'
   }
 }
 

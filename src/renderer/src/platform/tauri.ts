@@ -19,6 +19,7 @@ import { createLlmTasks, type ContentAction, type LlmLimits } from '@shared/llm-
 import { LOCAL_MODELS, localVoice, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
 import { VOICE_META } from '@shared/voice-catalog'
 import type { VoiceStatus } from '@shared/voice'
+import type { UpdateInfo } from '@shared/update'
 import { createApi, type Invoke, type On } from '../../../preload/api'
 import { createDataHandlers, netGuard } from './android-datos'
 
@@ -148,6 +149,21 @@ async function synthesize(text: string, lang: Lang, voiceId?: string): Promise<U
   if (!modelReady(m, files)) throw new Error(`Falta descargar la voz ${m.label} (Ajustes → Servicios de IA).`)
   const wav = await tauriInvoke<ArrayBuffer>('tts_synth', { voice: m.voice, text, speed: s.ttsSpeed })
   return new Uint8Array(wav)
+}
+
+// ── Actualizaciones (la web de DictaFlow publica /app/android/version.json) ─────────────────
+interface Actualizacion { actual: string; version: string; disponible: boolean; notas: string; bytes: number; sha256: string; fecha: string; url: string }
+let lastUpdate: UpdateInfo | null = null
+
+async function checkUpdate(): Promise<UpdateInfo> {
+  const server = await tauriInvoke<string>('servidor')
+  await netGuard(await getSettings(), 'Buscar actualizaciones', server)
+  const a = await tauriInvoke<Actualizacion>('buscar_actualizacion')
+  lastUpdate = {
+    current: a.actual, latest: a.version, available: a.disponible, notes: a.notas, pageUrl: server, kind: 'android',
+    asset: { name: `dictaflow-android_${a.version}.apk`, url: a.url }, sha256: a.sha256 || null
+  }
+  return lastUpdate
 }
 
 // ── Eventos que nacen en la propia interfaz (en escritorio los manda el proceso principal) ────
@@ -290,6 +306,19 @@ const handlers: Handlers = {
   }),
 
   'app:version': () => getVersion(),
+  'update:check': () => checkUpdate(),
+  'update:apply': async () => {
+    // Rust descarga el APK del servidor de confianza, verifica tamaño y SHA-256 y abre el instalador.
+    const r = await tauriInvoke<'instalador' | 'permiso'>('instalar_actualizacion')
+    if (r === 'permiso') {
+      throw new Error('Android pide permitir que DictaFlow instale actualizaciones: activa «Permitir de esta fuente» en la pantalla que se abrió, vuelve y toca «Reintentar».')
+    }
+    return 'downloaded' as const
+  },
+  'update:server': async ({ url }) => {
+    if (url !== undefined) { lastUpdate = null; return tauriInvoke<string>('fijar_servidor', { url }) }
+    return tauriInvoke<string>('servidor')
+  },
   'clipboard:write': ({ text }) => navigator.clipboard.writeText(text),
   'notify': () => undefined,
   'pill:set': () => undefined
@@ -317,7 +346,14 @@ const DESKTOP_ONLY: Partial<Record<IpcChannel, string>> = {
 
 const invoke: Invoke = async <K extends IpcChannel>(channel: K, req?: IpcReq<K>): Promise<IpcRes<K>> => {
   const h = handlers[channel] as Handler<K> | undefined
-  if (h) return h(req as IpcReq<K>)
+  if (h) {
+    try {
+      return await h(req as IpcReq<K>)
+    } catch (e) {
+      // Rust rechaza con el texto del error, no con un Error: la interfaz lee `e.message`.
+      throw e instanceof Error ? e : new Error(typeof e === 'string' ? e : JSON.stringify(e))
+    }
+  }
   if (DESKTOP_ONLY[channel]) throw new NoDisponible(DESKTOP_ONLY[channel])
   throw new Error(`Esta función todavía no está lista en Android (${channel}).`)
 }

@@ -14,6 +14,7 @@ import { MyVoices } from './components/MyVoices'
 import { Onboarding } from './components/Onboarding'
 import { Privacy } from './components/Privacy'
 import { Settings } from './components/Settings'
+import { UpdatePrompt } from './components/Updates'
 import type { Theme } from '@shared/types'
 import { useApp, type View } from './store'
 
@@ -44,7 +45,7 @@ export function App(): JSX.Element | null {
     else root.setAttribute('data-theme', settings.theme)
   }, [settings.theme])
   if (!ready) return null
-  if (!settings.onboarded) return <Onboarding />
+  if (!settings.onboarded) return <><Onboarding /><UpdatePrompt /></>
 
   // Nube = cualquier proveedor que no sea un servidor en este mismo equipo. En Android la IA
   // corre siempre dentro del teléfono.
@@ -87,6 +88,7 @@ export function App(): JSX.Element | null {
         {view === 'privacidad' && <Privacy />}
         {view === 'manual' && <Manual />}
       </main>
+      <UpdatePrompt />
     </div>
   )
 }

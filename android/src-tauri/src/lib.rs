@@ -14,7 +14,8 @@
 //!   • se guardan los archivos propios (audio de reuniones, audiolibros…) y se exportan con el
 //!     selector de archivos de Android (archivos.rs);
 //!   • se programan los avisos de la agenda como notificaciones de Android;
-//!   • se fija el servidor de actualizaciones y se abre la descarga del APK nuevo.
+//!   • se fija el servidor de actualizaciones, se descarga y verifica el APK nuevo y se abre el
+//!     instalador de Android (InstaladorPlugin.kt).
 //! Ninguna página remota tiene acceso a estos comandos (capabilities/default.json, `local: true`).
 
 use std::sync::{Arc, Mutex};
@@ -42,7 +43,7 @@ use descargas::{espacio_libre, ArchivoModelo, Descargas};
 use llm::{Llm, Mensaje, Respuesta};
 use stt::{Stt, Transcripcion};
 use tts::Tts;
-use politica::{descarga_permitida, navegacion_interna, origen_valido, SERVIDOR_PREDETERMINADO};
+use politica::{descarga_permitida, leer_version, navegacion_interna, origen_valido, Actualizacion, RUTA_VERSION, SERVIDOR_PREDETERMINADO};
 
 /// Datos de la app (ajustes, colecciones…) en la carpeta privada de la app.
 struct Datos(Almacen);
@@ -383,13 +384,112 @@ fn servidor(estado: tauri::State<'_, Servidor>) -> String {
     estado.0.lock().unwrap().clone()
 }
 
-/// Abre la descarga del APK nuevo con el navegador del sistema (Android pide confirmar la
-/// instalación). Solo acepta la ruta de descarga del servidor de confianza.
+/// Consulta la última versión publicada en el servidor de confianza (`/app/android/version.json`).
 #[tauri::command]
-fn abrir_actualizacion(url: String, app: tauri::AppHandle, estado: tauri::State<'_, Servidor>) -> Result<(), String> {
+async fn buscar_actualizacion(app: tauri::AppHandle, estado: tauri::State<'_, Servidor>) -> Result<Actualizacion, String> {
     let servidor = estado.0.lock().unwrap().clone();
-    let destino = descarga_permitida(&url, &servidor)?;
-    app.opener().open_url(destino.as_str(), None::<&str>).map_err(|e| e.to_string())
+    let actual = app.package_info().version.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = format!("{servidor}{RUTA_VERSION}");
+        let agente: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
+        let mut r = agente.get(&url).header("Cache-Control", "no-cache").call().map_err(|e| match e {
+            ureq::Error::StatusCode(404) => "El servidor todavía no tiene publicada la app de Android.".to_string(),
+            e => format!("No se pudo consultar {servidor}: {e}"),
+        })?;
+        let texto = r.body_mut().with_config().limit(64 * 1024).read_to_string().map_err(|e| format!("Respuesta no válida del servidor: {e}"))?;
+        leer_version(&texto, &actual, &servidor)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Plugin propio (gen/android/…/InstaladorPlugin.kt) que abre el instalador de Android.
+struct Instalador(tauri::plugin::PluginHandle<tauri::Wry>);
+
+fn plugin_instalador() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("instalador")
+        .setup(|app, api| {
+            #[cfg(target_os = "android")]
+            app.manage(Instalador(api.register_android_plugin("mx.com.iguzman.dictaflow", "InstaladorPlugin")?));
+            #[cfg(not(target_os = "android"))]
+            let _ = (app, api);
+            Ok(())
+        })
+        .build()
+}
+
+#[derive(serde::Deserialize)]
+struct EstadoInstalador {
+    estado: String,
+}
+
+/// Descarga la versión nueva del servidor de confianza, comprueba su tamaño y su SHA-256 (los del
+/// `version.json`) y abre el instalador de Android, que conserva datos y modelos porque la firma es
+/// la misma. Todo se decide aquí: la interfaz no puede elegir qué se descarga ni qué se instala.
+/// Devuelve `instalador` o `permiso` (falta permitir que DictaFlow instale apps; se abrió Ajustes).
+#[tauri::command]
+async fn instalar_actualizacion(app: tauri::AppHandle, estado: tauri::State<'_, Servidor>) -> Result<String, String> {
+    let servidor = estado.0.lock().unwrap().clone();
+    let actual = app.package_info().version.to_string();
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("actualizacion");
+    let ruta = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        move || -> Result<std::path::PathBuf, String> {
+            use sha2::{Digest, Sha256};
+            use std::io::{Read, Write};
+            use tauri::Emitter;
+            let agente: ureq::Agent = ureq::Agent::config_builder().timeout_connect(Some(std::time::Duration::from_secs(15))).build().into();
+            let json = agente
+                .get(&format!("{servidor}{RUTA_VERSION}"))
+                .call()
+                .and_then(|mut r| r.body_mut().with_config().limit(64 * 1024).read_to_string())
+                .map_err(|e| format!("No se pudo consultar {servidor}: {e}"))?;
+            let a = leer_version(&json, &actual, &servidor)?;
+            if !a.disponible {
+                return Err("Ya tienes la última versión.".into());
+            }
+            if a.sha256.is_empty() || a.bytes == 0 {
+                return Err("El servidor no publica la huella del APK: no se puede verificar la descarga.".into());
+            }
+            let url = descarga_permitida(&a.url, &servidor)?;
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let destino = dir.join(format!("dictaflow-{}.apk", a.version));
+            let mut r = agente.get(url.as_str()).call().map_err(|e| format!("No se pudo descargar la actualización: {e}"))?;
+            let mut cuerpo = r.body_mut().with_config().limit(a.bytes + 1).reader();
+            let mut archivo = std::fs::File::create(&destino).map_err(|e| e.to_string())?;
+            let (mut hash, mut leidos, mut buf, mut ultimo) = (Sha256::new(), 0u64, vec![0u8; 256 * 1024], -1i64);
+            loop {
+                let n = cuerpo.read(&mut buf).map_err(|e| format!("La descarga se interrumpió: {e}"))?;
+                if n == 0 {
+                    break;
+                }
+                hash.update(&buf[..n]);
+                archivo.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                leidos += n as u64;
+                let pct = (leidos * 100 / a.bytes) as i64;
+                if pct != ultimo {
+                    ultimo = pct;
+                    let _ = app.emit("update:progress", pct.min(100));
+                }
+            }
+            archivo.sync_all().map_err(|e| e.to_string())?;
+            let huella = format!("{:x}", hash.finalize());
+            if leidos != a.bytes || huella != a.sha256 {
+                let _ = std::fs::remove_dir_all(&dir);
+                return Err("El APK descargado no coincide con el publicado (tamaño o SHA-256): no se instala.".into());
+            }
+            Ok(destino)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let instalador = app.try_state::<Instalador>().ok_or("El instalador solo existe en Android.")?;
+    let r: EstadoInstalador = instalador
+        .0
+        .run_mobile_plugin("instalar", serde_json::json!({ "ruta": ruta.to_string_lossy() }))
+        .map_err(|e| format!("No se pudo abrir el instalador: {e}"))?;
+    Ok(r.estado)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -399,6 +499,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(plugin_instalador())
         .invoke_handler(tauri::generate_handler![
             doc_get,
             doc_set,
@@ -431,7 +532,8 @@ pub fn run() {
             notice_cancel,
             fijar_servidor,
             servidor,
-            abrir_actualizacion
+            buscar_actualizacion,
+            instalar_actualizacion
         ])
         .setup(|app| {
             let base = app.path().app_data_dir()?;

@@ -151,6 +151,8 @@ export interface IpcContract {
   'app:open-data-dir': { req: void; res: string }
   'update:check': { req: void; res: UpdateInfo }
   'update:apply': { req: void; res: 'relaunching' | 'downloaded' | 'opened' | 'cancelled' }
+  /** Solo Android: servidor de actualizaciones (la web de DictaFlow); con `url`, lo cambia. */
+  'update:server': { req: { url?: string }; res: string }
   'uninstall:info': { req: void; res: { kind: string; command: string; runnable: boolean; dataPaths: string[]; dataSizeMB: number } }
   'uninstall:run': { req: { removeData: boolean }; res: 'done' | 'cancelled' }
 

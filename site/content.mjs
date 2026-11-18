@@ -43,6 +43,7 @@ export const T = {
       ['Strict offline mode', 'One switch blocks every connection that is not to your own machine.'],
       ['You choose the AI', 'Ollama locally, or your Claude, opencode or OpenAI-compatible subscription. Keys are stored encrypted by your system keyring.']
     ],
+    android: ['Android', 'APK for phones (arm64, Android 8+). Speech, writing and voices run on the phone; the app offers updates by itself.', 'Download APK'],
     installTitle: 'Install',
     installSub: 'Pick your distribution. Each download is a single file; the app downloads speech models on first run (about 0.5–1.5 GB, only once).',
     distros: {
@@ -99,6 +100,7 @@ export const T = {
       ['Modo offline estricto', 'Un interruptor bloquea toda conexión que no sea a tu propio equipo.'],
       ['Tú eliges la IA', 'Ollama en local, o tu suscripción de Claude, opencode o compatible con OpenAI. Las claves se guardan cifradas con el llavero del sistema.']
     ],
+    android: ['Android', 'APK para teléfonos (arm64, Android 8+). La voz, la redacción y las voces corren en el teléfono; la app avisa sola de las actualizaciones.', 'Descargar APK'],
     installTitle: 'Instalar',
     installSub: 'Elige tu distribución. Cada descarga es un solo archivo; la app descarga los modelos de voz al primer uso (0,5–1,5 GB, una sola vez).',
     distros: {

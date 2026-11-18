@@ -8,6 +8,9 @@
     <!-- Agenda: los avisos suenan a su hora exacta aunque la app esté cerrada (el plugin de
          notificaciones añade POST_NOTIFICATIONS, que Android pide al usuario la primera vez). -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Actualizaciones: la app abre el instalador con el APK que descargó y verificó. Android pide
+         al usuario permitirlo la primera vez («Instalar apps desconocidas»). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

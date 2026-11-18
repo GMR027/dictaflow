@@ -149,6 +149,7 @@ export function createApi(invoke: Invoke, on: On, platform: Platform) {
     clearNetEvents: (): Promise<void> => invoke('net:clear'),
     launchCmd: (): Promise<string> => invoke('app:launch-cmd'),
     checkUpdate: (): Promise<UpdateInfo> => invoke('update:check'),
+    updateServer: (url?: string): Promise<string> => invoke('update:server', { url }),
     applyUpdate: (): Promise<'relaunching' | 'downloaded' | 'opened' | 'cancelled'> => invoke('update:apply'),
     onUpdateProgress: (cb: (pct: number) => void) => on('update:progress', cb),
     appVersion: (): Promise<string> => invoke('app:version'),

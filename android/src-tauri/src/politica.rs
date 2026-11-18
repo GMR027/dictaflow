@@ -4,7 +4,8 @@
 //!   • qué servidor de actualizaciones se acepta (`origen_valido`);
 //!   • qué se abre dentro de la app y qué con la aplicación del sistema (`navegacion_interna`);
 //!   • de dónde se puede descargar una actualización (`descarga_permitida`);
-//!   • cómo se compara una versión (`version_code`).
+//!   • cómo se compara una versión (`version_code`);
+//!   • qué dice el `version.json` del servidor (`leer_version`).
 
 use url::Url;
 
@@ -57,6 +58,67 @@ pub fn version_code(version: &str) -> Option<u64> {
         [mayor, menor, parche] if *menor < 1000 && *parche < 1000 => Some(mayor * 1_000_000 + menor * 1_000 + parche),
         _ => None,
     }
+}
+
+/// Ruta pública del manifiesto de la última versión.
+pub const RUTA_VERSION: &str = "/app/android/version.json";
+
+/// Lo que publica el servidor en `version.json` (android/publicar.sh).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Manifiesto {
+    version: String,
+    version_code: u64,
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(default)]
+    sha256: String,
+    #[serde(default)]
+    date: String,
+}
+
+/// Una actualización según el servidor, comparada con la versión instalada.
+#[derive(Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Actualizacion {
+    pub actual: String,
+    pub version: String,
+    pub disponible: bool,
+    pub notas: String,
+    pub bytes: u64,
+    pub sha256: String,
+    pub fecha: String,
+    /// Dirección de descarga (siempre la del servidor de confianza).
+    pub url: String,
+}
+
+/// Lee el `version.json` del servidor. Se rechaza si la versión y su versionCode no coinciden
+/// (un manifiesto mal hecho no debe ofrecer como «nueva» una versión que no lo es).
+pub fn leer_version(json: &str, actual: &str, servidor: &str) -> Result<Actualizacion, String> {
+    let m: Manifiesto = serde_json::from_str(json).map_err(|_| "El servidor devolvió una respuesta de versión no válida.".to_string())?;
+    let codigo = version_code(&m.version).ok_or_else(|| format!("Versión no válida en el servidor: «{}».", m.version))?;
+    if codigo != m.version_code {
+        return Err(format!("El servidor anuncia {} con un versionCode que no le corresponde ({}).", m.version, m.version_code));
+    }
+    let instalado = version_code(actual).ok_or_else(|| format!("Versión instalada no válida: «{actual}»."))?;
+    let sha256 = m.sha256.to_ascii_lowercase();
+    if !sha256.is_empty() && (sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit())) {
+        return Err("La huella SHA-256 del servidor no es válida.".into());
+    }
+    let mut url = Url::parse(servidor).map_err(|e| e.to_string())?.join(RUTA_DESCARGA).map_err(|e| e.to_string())?;
+    url.query_pairs_mut().append_pair("v", &m.version);
+    Ok(Actualizacion {
+        actual: actual.to_string(),
+        disponible: codigo > instalado,
+        version: m.version,
+        notas: m.notes.chars().take(4000).collect(),
+        bytes: m.size,
+        sha256,
+        fecha: m.date.chars().take(40).collect(),
+        url: url.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -114,5 +176,23 @@ mod pruebas {
         assert_eq!(version_code("1.2"), None);
         assert_eq!(version_code("1.1000.0"), None);
         assert_eq!(version_code("1.2.x"), None);
+    }
+
+    #[test]
+    fn manifiesto_de_version() {
+        let s = SERVIDOR_PREDETERMINADO;
+        let j = r#"{"version":"0.2.0","versionCode":2000,"notes":"Novedades","size":42,"sha256":"AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12","date":"2026-11-18"}"#;
+        let a = leer_version(j, "0.1.0", s).unwrap();
+        assert!(a.disponible);
+        assert_eq!(a.url, "https://dictaflow.iguzman.com.mx/app/android/descargar?v=0.2.0");
+        assert!(descarga_permitida(&a.url, s).is_ok());
+        assert_eq!(a.sha256, "ab12".repeat(16));
+        assert!(!leer_version(j, "0.2.0", s).unwrap().disponible);
+        assert!(!leer_version(j, "1.0.0", s).unwrap().disponible);
+        assert!(leer_version(r#"{"version":"0.2.0","versionCode":3000}"#, "0.1.0", s).is_err());
+        assert!(leer_version(r#"{"version":"0.2","versionCode":2000}"#, "0.1.0", s).is_err());
+        assert!(leer_version(r#"{"version":"0.2.0","versionCode":2000,"sha256":"xyz"}"#, "0.1.0", s).is_err());
+        assert!(leer_version("<html>", "0.1.0", s).is_err());
+        assert!(leer_version(r#"{"version":"0.2.0","versionCode":2000}"#, "0.1.0", s).unwrap().notas.is_empty());
     }
 }
