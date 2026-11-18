@@ -7,6 +7,8 @@ import { splitText } from '../textutil'
 import { useApp } from '../store'
 import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
 import { ToolIcon } from './ToolIcon'
+import { BotTyping } from './BotTyping'
+import { MoreMenu } from './MoreMenu'
 
 export function Reader(): JSX.Element {
   const { settings, flash, notice } = useApp()
@@ -110,16 +112,19 @@ export function Reader(): JSX.Element {
 
       <section className="card wide">
         {notice && <div className="notice" role="status">{notice}</div>}
-        {!doc || !chapter ? <p className="muted">Elige un documento de la izquierda.</p> : (
+        {!doc || !chapter ? <p className="muted">{window.api.platform === 'android' ? 'Elige un documento de la biblioteca (arriba).' : 'Elige un documento de la izquierda.'}</p> : (
           <>
             <TtsSetup lang={lang} info={info} onChanged={refresh} />
-            <div className="row">
+            <div className="reader-pick">
               <select value={doc.progress.chapter} onChange={(e) => { stop(); setActive(-1); setProgress({ chapter: Number(e.target.value), paragraph: 0 }) }} aria-label="Capítulo">
                 {doc.chapters.map((c, i) => <option key={i} value={i}>{i + 1}. {c.title.slice(0, 60)}</option>)}
               </select>
               <select value={lang} onChange={(e) => setLang(e.target.value as Lang)} aria-label="Idioma de lectura">
                 <option value="es">Leer en español</option><option value="en">Read in English</option>
               </select>
+            </div>
+            <details className="opts">
+              <summary>Voz, tamaño del texto y velocidad</summary>
               <VoicePicker
                 lang={lang}
                 value={settings.ttsVoice[lang]}
@@ -127,27 +132,36 @@ export function Reader(): JSX.Element {
                 info={info}
                 onChanged={refresh}
               />
-              <label className="inline">Texto <input type="range" min="13" max="26" value={font} onChange={(e) => setFont(Number(e.target.value))} /></label>
-              <label className="inline">Velocidad {settings.ttsSpeed.toFixed(1)}× <input type="range" min="0.6" max="1.6" step="0.1" value={settings.ttsSpeed} onChange={(e) => void useApp.getState().patchSettings({ ttsSpeed: Number(e.target.value) })} /></label>
-            </div>
-            <div className="row">
+              <div className="form-grid">
+                <label>Tamaño del texto <input type="range" min="13" max="26" value={font} onChange={(e) => setFont(Number(e.target.value))} /></label>
+                <label>Velocidad {settings.ttsSpeed.toFixed(1)}× <input type="range" min="0.6" max="1.6" step="0.1" value={settings.ttsSpeed} onChange={(e) => void useApp.getState().patchSettings({ ttsSpeed: Number(e.target.value) })} /></label>
+              </div>
+            </details>
+            <div className="player">
               {playing
-                ? <><button onClick={() => speaker.current.pause()}>⏸ Pausa</button><button onClick={() => speaker.current.resume()}>▶ Seguir</button><button onClick={stop}>■ Parar</button></>
+                ? <>
+                  <button className="round" onClick={() => speaker.current.pause()} aria-label="Pausa" title="Pausa">⏸</button>
+                  <button className="round primary" onClick={() => speaker.current.resume()} aria-label="Seguir" title="Seguir">▶</button>
+                  <button className="round" onClick={stop} aria-label="Parar" title="Parar">■</button>
+                </>
                 : <button className="primary" onClick={() => void play(Math.max(active, doc.progress.paragraph, 0))}>▶ Leer en voz alta</button>}
-              <button onClick={() => void audiobook()} disabled={!!busy}>⬇ Audiolibro (en segundo plano)</button>
-              <span className="muted">{busy}</span>
+              <MoreMenu items={[{ label: '⬇ Crear audiolibro (en segundo plano)', onClick: () => void audiobook(), disabled: !!busy }]} />
             </div>
+            {busy && <BotTyping small label={busy.replace(/…$/, '')} />}
             {error && <p className="warn" role="alert">{error}</p>}
             <article className="page" style={{ fontSize: font }}>
               {units.map((u, i) => (
-                <p key={i} ref={i === active ? activeEl : null} className={i === active ? 'hl' : ''} onClick={() => void play(i)} title="Clic para leer desde aquí">{u}</p>
+                <p key={i} ref={i === active ? activeEl : null} className={i === active ? 'hl' : ''} onClick={() => void play(i)} title="Toca para leer desde aquí">{u}</p>
               ))}
             </article>
-            <div className="row">
-              <button onClick={() => void ask('summary')} disabled={!!busy}>Resumir capítulo</button>
-              <button onClick={() => void ask('translate')} disabled={!!busy}>Traducir párrafo</button>
-              <input className="grow" placeholder="Pregunta sobre este capítulo…" value={question} onChange={(e) => setQuestion(e.target.value)} />
-              <button onClick={() => void ask('ask')} disabled={!!busy || !question.trim()}>Preguntar</button>
+            <h3>Con IA</h3>
+            <div className="actions">
+              <button onClick={() => void ask('summary')} disabled={!!busy}>📝 Resumir capítulo</button>
+              <button onClick={() => void ask('translate')} disabled={!!busy}>🌐 Traducir párrafo</button>
+            </div>
+            <div className="ask-row">
+              <input placeholder="Pregunta sobre este capítulo…" value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && question.trim() && !busy) void ask('ask') }} />
+              <button className="primary" onClick={() => void ask('ask')} disabled={!!busy || !question.trim()}>Preguntar</button>
             </div>
             {ai && <pre className="ai">{ai}</pre>}
           </>

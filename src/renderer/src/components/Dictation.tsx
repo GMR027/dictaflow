@@ -144,7 +144,7 @@ export function Dictation(): JSX.Element {
               onChange={(e) => void s.patchSettings({ autoRewrite: e.target.checked })} /> Automática
           </label>
         </header>
-        <div className="chips scroll" role="radiogroup" aria-label="Tono">
+        <div className="tones" role="radiogroup" aria-label="Tono">
           {(Object.entries(TONES) as [Tone, string][]).map(([k, v]) => (
             <button key={k} role="radio" aria-checked={st.tone === k} className={`chip ${st.tone === k ? 'on' : ''}`}
               onClick={() => void s.patchSettings({ tone: k })}>{v}</button>
