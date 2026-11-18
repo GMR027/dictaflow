@@ -20,6 +20,13 @@ describe('numberValues', () => {
   it('separa horas escritas con dos puntos', () => {
     expect(numberValues('a las 5:30')).toEqual([5, 30])
   })
+  it('«y media», «y cuarto» y «menos cuarto» son minutos de una hora', () => {
+    expect(numberValues('a las diez y media')).toEqual([10, 30])
+    expect(numberValues('a las 10 y cuarto')).toEqual([10, 15])
+    expect(numberValues('a las diez menos cuarto')).toEqual([9, 45])
+    expect(numberValues('a la una menos cuarto')).toEqual([12, 45])
+    expect(numberValues('treinta y media docena')).toEqual([30])
+  })
 })
 
 describe('numbersPreserved', () => {
@@ -27,8 +34,15 @@ describe('numbersPreserved', () => {
     expect(numbersPreserved('contrato de veinte mil euros', 'Contrato por 20.000 euros.')).toBe(true)
     expect(numbersPreserved('veinte mil', '20 mil')).toBe(true)
   })
+  it('acepta horas con «y media» o «y cuarto» escritas con dos puntos', () => {
+    expect(numbersPreserved('a las cinco y media', 'A las 5:30.')).toBe(true)
+    expect(numbersPreserved('mañana a las 10 y media', 'Mañana a las 10:30.')).toBe(true)
+    expect(numbersPreserved('a las diez y cuarto', 'A las 10:15.')).toBe(true)
+    expect(numbersPreserved('a las once menos cuarto', 'A las 10:45.')).toBe(true)
+  })
   it('detecta cifras cambiadas, perdidas o inventadas', () => {
-    expect(numbersPreserved('a las cinco y media', 'A las 5:30.')).toBe(false)
+    expect(numbersPreserved('a las cinco y media', 'A las 6:30.')).toBe(false)
+    expect(numbersPreserved('a las cinco y media', 'A las 5:15.')).toBe(false)
     expect(numbersPreserved('somos tres', 'Somos cuatro.')).toBe(false)
     expect(numbersPreserved('llama a las nueve', 'Llama.')).toBe(false)
     expect(numbersPreserved('hola qué tal', 'Hola, son las 10.')).toBe(false)
@@ -38,7 +52,9 @@ describe('numbersPreserved', () => {
   })
   it('cubre los casos medidos con qwen2.5:7b', () => {
     expect(numbersPreserved('a las cinco y media nos vemos en la oficina de Juan Pérez para revisar el contrato de veinte mil euros',
-      'Mañana a las 5:30 nos encontramos en la oficina de Juan Pérez para revisar el contrato por 20,000 euros.')).toBe(false)
+      'Mañana a las 5:30 nos encontramos en la oficina de Juan Pérez para revisar el contrato por 20,000 euros.')).toBe(true)
+    expect(numbersPreserved('a las cinco y media nos vemos para revisar el contrato de veinte mil euros',
+      'A las 5:30 nos vemos para revisar el contrato por 2,000 euros.')).toBe(false)
     expect(numbersPreserved('hay más de cien conexiones', 'Hay más de cien conexiones.')).toBe(true)
   })
 })

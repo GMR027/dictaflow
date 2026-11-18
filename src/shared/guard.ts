@@ -13,6 +13,9 @@ const TENS: Record<string, number> = { treinta: 30, cuarenta: 40, cincuenta: 50,
 /** «un/uno/una» solos son artículos casi siempre: solo cuentan dentro de un número («treinta y uno», «un millón»). */
 const ONE = new Set(['un', 'uno', 'una'])
 
+/** «y media», «y cuarto» y «menos cuarto» tras una hora equivalen a sus minutos (10 y media = 10:30). */
+const FRACTIONS: Record<string, number> = { media: 30, cuarto: 15 }
+
 const strip = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
 function digitValue(raw: string): number {
@@ -25,14 +28,22 @@ export function numberValues(text: string): number[] {
   const tokens = strip(text).match(/\d+(?:[.,]\d+)*|[a-zñ]+|[^\sa-zñ\d]/g) ?? []
   const out: number[] = []
   let i = 0
+  /** Guarda una cifra; si es una hora seguida de «y media/y cuarto/menos cuarto», también sus minutos. */
+  const push = (v: number): void => {
+    const [a, b] = [tokens[i], tokens[i + 1]]
+    if (Number.isInteger(v) && v >= 1 && v <= 24 && b in FRACTIONS && (a === 'y' || (a === 'menos' && b === 'cuarto'))) {
+      out.push(a === 'y' ? v : v === 1 ? 12 : v - 1, a === 'y' ? FRACTIONS[b] : 45)
+      i += 2
+    } else out.push(v)
+  }
   while (i < tokens.length) {
     const t = tokens[i]
     if (/^\d/.test(t)) {
       let v = digitValue(t)
       const next = tokens[i + 1]
       if (next === 'mil') { v *= 1000; i++ } else if (next === 'millon' || next === 'millones') { v *= 1e6; i++ }
-      out.push(v)
       i++
+      push(v)
       continue
     }
     const isWord = (w: string | undefined): boolean => !!w && (w in UNITS || w in TENS || ONE.has(w) || w === 'mil' || w === 'millon' || w === 'millones')
@@ -49,9 +60,9 @@ export function numberValues(text: string): number[] {
       else break
       words++
     }
-    // un «un/una» suelto (sin más palabras numéricas) es un artículo
-    if (words === 1 && cur === 1 && total === 0 && big === 0) continue
-    out.push(big + total + cur)
+    // un «un/una» suelto (sin más palabras numéricas) es un artículo, salvo en «la una y media»
+    if (words === 1 && cur === 1 && total === 0 && big === 0 && !(tokens[i + 1] in FRACTIONS)) continue
+    push(big + total + cur)
   }
   return out.filter((v) => v !== 1)
 }
