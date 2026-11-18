@@ -14,12 +14,6 @@ const sumsFile = process.env.CHECKSUMS || join(root, 'release', 'SHA256SUMS.txt'
 const sums = {}
 if (existsSync(sumsFile)) for (const l of readFileSync(sumsFile, 'utf8').split('\n')) { const [h, f] = l.trim().split(/\s+/); if (h && f) sums[f.replace(/^\*/, '')] = h }
 
-// App de Android: android/publicar.sh deja el APK y su version.json en site/app/android/ (fuera de git).
-const androidDir = join(here, 'app', 'android')
-const android = existsSync(join(androidDir, 'version.json')) && existsSync(join(androidDir, 'dictaflow-android.apk'))
-  ? JSON.parse(readFileSync(join(androidDir, 'version.json'), 'utf8'))
-  : null
-
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const dl = (f) => `${REPO}/releases/latest/download/${f}`
 
@@ -95,12 +89,22 @@ ${t.lang === 'es' ? '' : `<script>try{if(/^es/i.test(navigator.language)&&!/lang
 
 <section id="install" class="wrap">
   <h2>${esc(t.installTitle)}</h2><p class="muted">${esc(t.installSub)}</p>
-  <div class="grid">${distroCards}${android ? `
-    <article class="card distro">
+  <div class="grid">${distroCards}
+    <article class="card distro" id="android" hidden>
       <h3>${esc(t.android[0])}</h3><p class="muted">${esc(t.android[1])}</p>
-      <a class="btn primary" href="/app/android/descargar">${esc(t.android[2])} <span class="file">v${esc(android.version)} · ${Math.round(android.size / 1e6)} MB</span></a>
-      <p class="sum"><span class="muted">SHA-256</span> <code>${esc(android.sha256)}</code></p>
-    </article>` : ''}</div>
+      <a class="btn primary" href="/app/android/descargar">${esc(t.android[2])} <span class="file" id="android-file"></span></a>
+      <p class="sum"><span class="muted">SHA-256</span> <code id="android-sum"></code></p>
+    </article></div>
+  <script>
+  // El APK no va en esta web ni en GitHub: lo sirve el propio servidor en /app/android/ (android/publicar.sh).
+  // La tarjeta solo aparece si hay una versión publicada.
+  fetch('/app/android/version.json', { cache: 'no-cache' }).then((r) => r.ok ? r.json() : null).then((v) => {
+    if (!v || !/^\\d+\\.\\d+\\.\\d+$/.test(v.version)) return
+    document.getElementById('android-file').textContent = 'v' + v.version + ' · ' + Math.round(v.size / 1e6) + ' MB'
+    document.getElementById('android-sum').textContent = String(v.sha256 || '')
+    document.getElementById('android').hidden = false
+  }).catch(() => {})
+  </script>
   <article class="card verify"><h3>${esc(t.verifyTitle)}</h3><p>${esc(t.verify)}</p>
     <pre><code>sha256sum -c SHA256SUMS.txt</code></pre>
     <p><a href="${REPO}/releases/latest/download/SHA256SUMS.txt" rel="noopener">${esc(t.sums)}</a></p></article>
@@ -137,7 +141,6 @@ writeFileSync(join(dist, 'index.html'), page(T.en))
 writeFileSync(join(dist, 'es', 'index.html'), page(T.es))
 copyFileSync(join(here, 'style.css'), join(dist, 'style.css'))
 cpSync(join(here, 'img'), join(dist, 'img'), { recursive: true })
-if (android) cpSync(androidDir, join(dist, 'app', 'android'), { recursive: true })
 writeFileSync(join(dist, '.nojekyll'), '')
 writeFileSync(join(dist, 'robots.txt'), 'User-agent: *\nAllow: /\n')
-console.log(`site built: v${version}, ${Object.keys(sums).length} checksums${android ? `, Android ${android.version}` : ''} → ${dist}`)
+console.log(`site built: v${version}, ${Object.keys(sums).length} checksums → ${dist}`)

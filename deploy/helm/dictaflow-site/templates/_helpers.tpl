@@ -9,3 +9,8 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/name: {{ include "dictaflow-site.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+{{/* APK de Android: pods propios (otro nombre), para que el Service de la web no los seleccione. */}}
+{{- define "dictaflow-site.androidSelector" -}}
+app.kubernetes.io/name: {{ include "dictaflow-site.name" . }}-android
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

@@ -26,3 +26,11 @@ resources:
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
+
+# App de Android (APK + version.json) en un volumen del clúster, fuera de la imagen de la web:
+# el APK no se sube a ningún registro. Lo publica android/publicar.sh.
+android:
+  enabled: true
+  image: nginxinc/nginx-unprivileged:1.27-alpine
+  storage: 1Gi
+  storageClass: ""        # vacío = la predeterminada del clúster

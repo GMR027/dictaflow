@@ -1,0 +1,104 @@
+{{- if .Values.android.enabled }}
+{{- /*
+  App de Android: el APK y su version.json NO van en la imagen de la web (que se sube a ghcr.io).
+  Viven en un volumen del clúster que llena android/publicar.sh con `kubectl cp`, y los sirve este
+  nginx (imagen oficial de Docker Hub). El Ingress le manda todo /app/android/.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-android
+  labels: {{- include "dictaflow-site.androidSelector" . | nindent 4 }}
+  annotations:
+    # Si se desinstala el chart, el APK publicado no se borra.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.android.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources: { requests: { storage: {{ .Values.android.storage }} } }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-android
+  labels: {{- include "dictaflow-site.androidSelector" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      server_name _;
+      root /srv;
+      server_tokens off;
+      add_header X-Content-Type-Options nosniff always;
+      add_header Cache-Control "no-cache" always;
+
+      location = /healthz { access_log off; return 200 "ok\n"; }
+      # La app lo lee desde Rust (sin CORS); la web, con fetch desde el mismo dominio.
+      location = /app/android/version.json { try_files /version.json =404; }
+      location = /app/android/descargar {
+        # mime.types de nginx no trae .apk.
+        types { application/vnd.android.package-archive apk; }
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "no-cache" always;
+        add_header Content-Disposition 'attachment; filename="dictaflow-android.apk"' always;
+        try_files /dictaflow-android.apk =404;
+      }
+      location = /app/android/dictaflow-android.apk { return 301 /app/android/descargar; }
+      location / { return 404; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-android
+  labels: {{- include "dictaflow-site.androidSelector" . | nindent 4 }}
+spec:
+  # Un solo pod: el volumen es de un nodo (hostpath). Recreate para no tener dos pods con el mismo volumen.
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "dictaflow-site.androidSelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "dictaflow-site.androidSelector" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.android | toJson | sha256sum }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: {{ .Values.android.image | quote }}
+          ports: [{ name: http, containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 5, periodSeconds: 20 }
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: apk, mountPath: /srv }
+            - { name: conf, mountPath: /etc/nginx/conf.d, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: apk, persistentVolumeClaim: { claimName: {{ .Release.Name }}-android } }
+        - { name: conf, configMap: { name: {{ .Release.Name }}-android } }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-android
+  labels: {{- include "dictaflow-site.androidSelector" . | nindent 4 }}
+spec:
+  selector: {{- include "dictaflow-site.androidSelector" . | nindent 4 }}
+  ports:
+    - { name: http, port: 80, targetPort: http }
+{{- end }}

@@ -12,5 +12,3 @@ site/dist/
 .local/
 # caché de la herramienta de manifiesto (ficheros ya descargados)
 tools/.cache/
-# APK publicado en la web (android/publicar.sh): va en la imagen del sitio, no en git
-site/app/

@@ -24,6 +24,11 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
+          {{- if .Values.android.enabled }}
+          - path: /app/android
+            pathType: Prefix
+            backend: { service: { name: {{ .Release.Name }}-android, port: { name: http } } }
+          {{- end }}
           - path: /
             pathType: Prefix
             backend: { service: { name: {{ .Release.Name }}, port: { name: http } } }
