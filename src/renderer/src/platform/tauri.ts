@@ -12,9 +12,10 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getVersion } from '@tauri-apps/api/app'
 import type { IpcChannel, IpcContract, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
-import { DEFAULT_SETTINGS, type HistoryItem, type Settings, type SttStatus } from '@shared/types'
+import { DEFAULT_SETTINGS, type ChatMsg, type HistoryItem, type Settings, type SttStatus } from '@shared/types'
 import { normalizeModel } from '@shared/providers'
 import { applyDictionary } from '@shared/dictionary'
+import { createLlmTasks, type ContentAction, type LlmLimits } from '@shared/llm-tasks'
 import { LOCAL_MODELS, type DeviceInfo, type LocalModelFile } from '@shared/local-models'
 import { createApi, type Invoke, type On } from '../../../preload/api'
 
@@ -74,6 +75,32 @@ async function transcribe(pcm: Float32Array, lang: string, timestamps: boolean, 
     segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text, s.dictionary) })),
     ms: r.ms
   }
+}
+
+// ── Redacción con IA ───────────────────────────────────────────────────────────────────────
+/**
+ * El modelo GGUF corre en Rust (llama.cpp); los prompts son los de escritorio (@shared/llm-tasks).
+ * Límites más cortos que en escritorio: el contexto del teléfono es de 8 K tokens (≈ 4 caracteres
+ * por token, dejando sitio a la respuesta) y leer un texto largo tarda.
+ */
+const ANDROID_LIMITS: LlmLimits = { chunkChars: 8_000, maxChars: 8_000, minutesChars: 14_000 }
+
+interface LlmRespuesta { text: string; prompt_tokens: number; reused_tokens: number; tokens: number; prompt_ms: number; ms: number }
+
+async function localComplete(system: string, msgs: ChatMsg[], temperature = 0.4): Promise<string> {
+  const model = (await getSettings()).localLlm
+  if (!model) throw new Error('Descarga un modelo de redacción en Ajustes → Servicios de IA.')
+  const r = await tauriInvoke<LlmRespuesta>('llm_complete', { model, system, msgs, temperature })
+  console.debug(`[llm] ${r.prompt_tokens} tokens (${r.reused_tokens} ya leídos) en ${r.prompt_ms} ms · ${r.tokens} generados · ${r.ms} ms en total`)
+  return r.text
+}
+
+const llm = createLlmTasks({ complete: localComplete, settings: getSettings, limits: ANDROID_LIMITS })
+
+// ── Eventos que nacen en la propia interfaz (en escritorio los manda el proceso principal) ────
+const localListeners = new Map<string, Set<(payload: never) => void>>()
+function emitLocal<K extends IpcEvent>(channel: K, payload: IpcEvents[K]): void {
+  localListeners.get(channel)?.forEach((cb) => (cb as (p: IpcEvents[K]) => void)(payload))
 }
 
 // ── Tabla de canales ───────────────────────────────────────────────────────────────────────
@@ -147,9 +174,22 @@ const handlers: Handlers = {
   'history:get': () => docGet<HistoryItem[]>('history', []),
   'history:save': ({ items }) => docSet('history', items),
 
-  // La redacción con IA local (llama.cpp) llega en la siguiente fase.
-  'llm:warm': () => undefined,
-  'llm:rewrite': () => { throw new Error('La redacción con IA en el teléfono llega en la próxima versión. Mientras, desactiva «Redactar automáticamente».') },
+  'llm:warm': async () => {
+    const model = (await getSettings()).localLlm
+    if (model) await tauriInvoke('llm_load', { model }).catch(() => undefined)
+  },
+  'llm:rewrite': async (req) => {
+    // Modo programador: el destino sale de los ajustes; en el teléfono no hay carpeta de proyecto.
+    if (req.mode !== 'rewrite') req = { ...req, target: (await getSettings()).promptTarget }
+    const r = await llm.rewriteGuarded(req)
+    if (r.reverted) emitLocal('llm:notice', 'La redacción cambiaba cifras u horas: se conservó el texto dictado.')
+    return r.text
+  },
+  'llm:chat': ({ system, msgs }) => localComplete(system, msgs, 0.6),
+  'llm:translate': ({ text, to }) => llm.translate(text, to),
+  'llm:generate': ({ action, text, lang }) => llm.generate(action as ContentAction, text, lang),
+  'llm:minutes': ({ text, lang }) => llm.generateMinutes(text, lang),
+  'llm:test': () => llm.testLLM(),
 
   'app:version': () => getVersion(),
   'clipboard:write': ({ text }) => navigator.clipboard.writeText(text),
@@ -181,6 +221,9 @@ const invoke: Invoke = async <K extends IpcChannel>(channel: K, req?: IpcReq<K>)
 
 /** Eventos emitidos desde Rust con el mismo nombre de canal que en escritorio. */
 const on: On = <K extends IpcEvent>(channel: K, cb: (payload: IpcEvents[K]) => void): (() => void) => {
+  const locals = localListeners.get(channel) ?? new Set()
+  localListeners.set(channel, locals)
+  locals.add(cb as (payload: never) => void)
   let off: (() => void) | null = null
   let cancelled = false
   void listen<IpcEvents[K]>(channel, (e) => cb(e.payload)).then((un) => {
@@ -188,6 +231,7 @@ const on: On = <K extends IpcEvent>(channel: K, cb: (payload: IpcEvents[K]) => v
     else off = un
   })
   return () => {
+    locals.delete(cb as (payload: never) => void)
     cancelled = true
     off?.()
   }

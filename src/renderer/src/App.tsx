@@ -46,9 +46,10 @@ export function App(): JSX.Element | null {
   if (!ready) return null
   if (!settings.onboarded) return <Onboarding />
 
-  // Nube = cualquier proveedor que no sea un servidor en este mismo equipo
+  // Nube = cualquier proveedor que no sea un servidor en este mismo equipo. En Android la IA
+  // corre siempre dentro del teléfono.
   const isLoopback = /^https?:\/\/(127\.0\.0\.1|localhost)/.test(settings.llm.baseUrl ?? '')
-  const cloud = (settings.llm.kind === 'ollama' || settings.llm.kind === 'openai-compat') && isLoopback ? null : settings.llm.kind
+  const cloud = window.api.platform === 'android' || ((settings.llm.kind === 'ollama' || settings.llm.kind === 'openai-compat') && isLoopback) ? null : settings.llm.kind
   const cloudAudio = settings.sttProvider === 'openai' || settings.ttsProvider === 'openai'
   const local = !cloud && !cloudAudio
 

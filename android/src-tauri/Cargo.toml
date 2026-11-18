@@ -12,6 +12,11 @@ publish = false
 name = "dictaflow_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# APK de pruebas (compilar.sh --depurar): misma firma que el de publicación, pero con el WebView
+# inspeccionable desde la PC. No se publica.
+depuracion = ["tauri/devtools"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -27,10 +32,18 @@ sha2 = "0.10"
 libc = "0.2"
 # Whisper (whisper.cpp) dentro del proceso: transcripción sin conexión.
 whisper-rs = "0.16"
+# Redacción con IA (llama.cpp, modelos GGUF) dentro del proceso. Sin OpenMP (hilos propios de ggml)
+# ni `common`; con la libc++ compartida del NDK, igual que whisper.cpp.
+llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["android-shared-stdcxx"] }
+
+# whisper.cpp y llama.cpp traen cada uno su ggml. Esta copia de whisper-rs-sys compila whisper.cpp
+# con el ggml de llama.cpp, para que la app lleve una sola copia (ver vendor/whisper-rs-sys/build.rs).
+[patch.crates-io]
+whisper-rs-sys = { path = "../vendor/whisper-rs-sys" }
 
 [profile.release]
-# APK pequeño: optimiza tamaño, sin símbolos y con LTO. (La inferencia de Whisper/LLM, que llega
-# en fases posteriores, se compila en C/C++ con sus propias optimizaciones.)
+# APK pequeño: optimiza tamaño, sin símbolos y con LTO. (La inferencia de Whisper y del LLM se
+# compila en C/C++ con sus propias optimizaciones.)
 opt-level = "s"
 lto = true
 codegen-units = 1
@@ -40,4 +53,6 @@ panic = "abort"
 # whisper.cpp (C++) siempre optimizado, también en el APK de depuración: sin esto es decenas de
 # veces más lento y no sirve para probar en el teléfono.
 [profile.dev.package.whisper-rs-sys]
+opt-level = 3
+[profile.dev.package.llama-cpp-sys-2]
 opt-level = 3

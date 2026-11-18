@@ -20,6 +20,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
   const [device, setDevice] = useState<DeviceInfo | null>(null)
   const [files, setFiles] = useState<LocalModelFile[]>([])
   const [progress, setProgress] = useState<Record<string, LocalModelProgress>>({})
+  const [test, setTest] = useState<string | null>(null)
 
   const refresh = (): void => {
     void window.api.listLocalModels().then(setFiles)
@@ -61,6 +62,17 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
     if (active(m)) await patchSettings(m.kind === 'stt' ? { sttModel: '' } : { localLlm: '' })
     setProgress((x) => ({ ...x, [m.id]: { id: m.id, state: 'cancelled', received: 0, total: m.bytes } }))
     refresh()
+  }
+
+  const runTest = async (): Promise<void> => {
+    setTest('Redactando… (la primera vez el modelo tarda unos segundos en cargar)')
+    const t0 = performance.now()
+    try {
+      const out = await window.api.testLLM()
+      setTest(`✓ «${out}» · ${((performance.now() - t0) / 1000).toFixed(1)} s`)
+    } catch (e) {
+      setTest(`✗ ${(e as Error).message}`)
+    }
   }
 
   const kinds: LocalModelKind[] = only ? [only] : ['stt', 'llm']
@@ -108,6 +120,12 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
               </div>
             )
           })}
+          {kind === 'llm' && files.some((f) => f.id === settings.localLlm && !f.partial) && (
+            <p>
+              <button onClick={() => void runTest()} disabled={test?.startsWith('Redactando') ?? false}>Probar redacción</button>{' '}
+              {test && <small className={test.startsWith('✗') ? 'warn' : 'muted'}>{test}</small>}
+            </p>
+          )}
         </div>
       ))}
       <p className="muted">Usa Wi-Fi para descargar y deja la app abierta hasta que termine; si se interrumpe, la descarga continúa donde se quedó.</p>

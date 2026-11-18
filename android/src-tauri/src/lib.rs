@@ -9,6 +9,7 @@
 //!   • se guardan los documentos (ajustes, historial, prompts…) y las claves de API;
 //!   • se descargan, verifican y borran los modelos de IA locales (descargas.rs);
 //!   • se transcribe la voz con Whisper dentro del teléfono (stt.rs);
+//!   • se redacta con un LLM (llama.cpp) dentro del teléfono (llm.rs);
 //!   • se fija el servidor de actualizaciones y se abre la descarga del APK nuevo.
 //! Ninguna página remota tiene acceso a estos comandos (capabilities/default.json, `local: true`).
 
@@ -20,12 +21,14 @@ use tauri_plugin_opener::OpenerExt;
 
 mod almacen;
 mod descargas;
+mod llm;
 mod modelos;
 mod politica;
 mod stt;
 
 use almacen::{Almacen, Documento};
 use descargas::{espacio_libre, ArchivoModelo, Descargas};
+use llm::{Llm, Mensaje, Respuesta};
 use stt::{Stt, Transcripcion};
 use politica::{descarga_permitida, navegacion_interna, origen_valido, SERVIDOR_PREDETERMINADO};
 
@@ -156,6 +159,34 @@ async fn stt_transcribe(request: tauri::ipc::Request<'_>, stt: tauri::State<'_, 
         .map_err(|e| e.to_string())?
 }
 
+/// Precarga el modelo de redacción (cargar 1–2 GB tarda unos segundos la primera vez).
+#[tauri::command]
+async fn llm_load(model: String, llm: tauri::State<'_, Arc<Llm>>) -> Result<(), String> {
+    let llm = llm.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || llm.cargar(&model)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn llm_loaded(llm: tauri::State<'_, Arc<Llm>>) -> Option<String> {
+    llm.cargado()
+}
+
+/// Respuesta del modelo local a una conversación. Los prompts los arma la interfaz
+/// (`src/shared/llm-tasks.ts`, los mismos que en escritorio).
+#[tauri::command]
+async fn llm_complete(
+    model: String,
+    system: String,
+    msgs: Vec<Mensaje>,
+    temperature: f32,
+    llm: tauri::State<'_, Arc<Llm>>,
+) -> Result<Respuesta, String> {
+    let llm = llm.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || llm.completar(&model, &system, &msgs, temperature))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Cambia el servidor de actualizaciones (se valida aquí, no en JavaScript) y lo recuerda.
 #[tauri::command]
 fn fijar_servidor(url: String, estado: tauri::State<'_, Servidor>, datos: tauri::State<'_, Datos>) -> Result<String, String> {
@@ -196,6 +227,9 @@ pub fn run() {
             stt_load,
             stt_loaded,
             stt_transcribe,
+            llm_load,
+            llm_loaded,
+            llm_complete,
             fijar_servidor,
             servidor,
             abrir_actualizacion
@@ -209,6 +243,7 @@ pub fn run() {
             app.manage(Secretos(Almacen::new(base.join("privado"))));
             app.manage(Arc::new(Descargas::new(base.join("modelos"))));
             app.manage(Arc::new(Stt::new(base.join("modelos"))));
+            app.manage(Arc::new(Llm::new(base.join("modelos"))?));
             app.manage(Servidor(Mutex::new(origen)));
 
             let handle = app.handle().clone();
@@ -231,6 +266,8 @@ pub fn run() {
                 });
             #[cfg(desktop)]
             let builder = builder.title("DictaFlow").inner_size(420.0, 860.0);
+            #[cfg(feature = "depuracion")]
+            let builder = builder.devtools(true);
             builder.build()?;
             Ok(())
         })

@@ -12,6 +12,8 @@ export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--target=aarch64-linux-an
 # lentos. dotprod + fp16 los tienen los teléfonos de los últimos ~6 años (Cortex-A55/A76 en
 # adelante); en uno más antiguo la app no podría ejecutar la IA local.
 export GGML_NATIVE=OFF GGML_CPU_ARM_ARCH="armv8.2-a+dotprod+fp16"
+# llama.cpp: mismo nivel de API que minSdk (26) y siempre optimizado, también en el APK de depuración.
+export ANDROID_API_LEVEL=26 LLAMA_LIB_PROFILE=Release
 # Flags del sistema pensadas para compilar en la PC (p. ej. librerías de cursos) no deben colarse
 # en la compilación para el teléfono.
 unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS

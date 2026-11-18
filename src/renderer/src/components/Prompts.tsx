@@ -117,7 +117,7 @@ export function Prompts(): JSX.Element {
           <h2>🏗 Prompt Architect</h2>
           <span className="muted">{refs.size ? `${refs.size} referencias elegidas` : 'Referencias automáticas (las 4 más relevantes)'}</span>
         </header>
-        <p className="muted">Marca prompts de la biblioteca (☑) como referencia o deja que se elijan solos. Pide uno nuevo hablando o escribiendo. Modelo: {settings.llm.kind} · {settings.llm.model || 'por defecto'}</p>
+        <p className="muted">Marca prompts de la biblioteca (☑) como referencia o deja que se elijan solos. Pide uno nuevo hablando o escribiendo. Modelo: {window.api.platform === 'android' ? (settings.localLlm || 'ninguno (descárgalo en Ajustes → Servicios de IA)') : `${settings.llm.kind} · ${settings.llm.model || 'por defecto'}`}</p>
         <div className="chat">
           {chat.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>

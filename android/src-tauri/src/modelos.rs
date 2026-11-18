@@ -99,6 +99,47 @@ pub fn contexto_audio(muestras: usize) -> i32 {
     if posiciones >= 1500 { 0 } else { posiciones.max(384) }
 }
 
+/// Contexto máximo del LLM en el teléfono: 8 K tokens (la caché ocupa RAM y el prompt tarda en leerse).
+const CTX_MAX: u32 = 8192;
+/// Respuesta más larga que se genera (un acta o unas notas caben de sobra).
+const RESPUESTA_MAX: usize = 2048;
+
+/// Tamaño del contexto y máximo de tokens a generar para un prompt de `prompt` tokens, en un
+/// modelo entrenado con `entrenado` tokens de contexto. Error si el texto no cabe.
+pub fn contexto_llm(prompt: usize, entrenado: u32) -> Result<(u32, usize), String> {
+    let limite = if entrenado == 0 { CTX_MAX } else { entrenado.min(CTX_MAX) } as usize;
+    // Hace falta sitio para al menos una respuesta corta.
+    if prompt + 256 > limite {
+        return Err(format!(
+            "El texto es demasiado largo para el modelo del teléfono ({prompt} tokens; caben unos {}). Divídelo en partes.",
+            limite - 256
+        ));
+    }
+    let nuevos = RESPUESTA_MAX.min(limite - prompt);
+    // Se reserva solo lo necesario, redondeado a 256: menos RAM para textos cortos.
+    let ctx = (prompt + nuevos).div_ceil(256) * 256;
+    Ok((ctx.min(limite) as u32, nuevos))
+}
+
+/// Cuántos tokens del principio de `nuevo` ya están leídos en la caché del modelo. Siempre deja
+/// al menos uno sin reutilizar: hace falta leerlo para obtener la primera palabra de la respuesta.
+pub fn prefijo_comun<T: PartialEq>(cache: &[T], nuevo: &[T]) -> usize {
+    let comun = cache.iter().zip(nuevo).take_while(|(a, b)| a == b).count();
+    comun.min(nuevo.len().saturating_sub(1))
+}
+
+/// Quita el razonamiento (`<think>…</think>`) que algunos modelos escriben antes de responder.
+pub fn limpiar_respuesta(texto: &str) -> String {
+    let mut t = texto.to_string();
+    while let Some(i) = t.find("<think>") {
+        match t[i..].find("</think>") {
+            Some(f) => t.replace_range(i..i + f + "</think>".len(), ""),
+            None => t.truncate(i),
+        }
+    }
+    t.trim().to_string()
+}
+
 #[cfg(test)]
 mod pruebas {
     use super::*;
@@ -155,6 +196,30 @@ mod pruebas {
         assert_eq!(contexto_audio(16_000 * 27), 1350 + 128);
         assert_eq!(contexto_audio(16_000 * 29), 0); // casi 30 s: ventana completa
         assert_eq!(contexto_audio(16_000 * 120), 0);
+    }
+
+    #[test]
+    fn contexto_del_llm() {
+        assert_eq!(contexto_llm(300, 32768).unwrap(), (2560, 2048));
+        assert_eq!(contexto_llm(7000, 32768).unwrap(), (8192, 1192));
+        assert_eq!(contexto_llm(300, 2048).unwrap(), (2048, 1748));
+        assert_eq!(contexto_llm(300, 0).unwrap(), (2560, 2048));
+        assert!(contexto_llm(8000, 32768).is_err());
+    }
+
+    #[test]
+    fn prefijo_reutilizable() {
+        assert_eq!(prefijo_comun(&[1, 2, 3, 9, 9], &[1, 2, 3, 4]), 3);
+        assert_eq!(prefijo_comun(&[1, 2, 3], &[1, 2, 3]), 2); // el último se vuelve a leer
+        assert_eq!(prefijo_comun(&[5], &[1, 2]), 0);
+        assert_eq!(prefijo_comun::<u8>(&[], &[]), 0);
+    }
+
+    #[test]
+    fn respuesta_sin_razonamiento() {
+        assert_eq!(limpiar_respuesta("<think>\nmm\n</think>\n\nHola."), "Hola.");
+        assert_eq!(limpiar_respuesta("  Hola.  "), "Hola.");
+        assert_eq!(limpiar_respuesta("Hola.<think>sin cerrar"), "Hola.");
     }
 
     #[test]
