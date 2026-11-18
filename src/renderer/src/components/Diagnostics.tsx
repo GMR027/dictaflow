@@ -8,29 +8,9 @@ import type { BackupInfo, Diagnostics } from '@shared/diagnostics'
 export function DiagnosticsPanel(): JSX.Element {
   const [d, setD] = useState<Diagnostics | null>(null)
   const [msg, setMsg] = useState('')
-  const [busy, setBusy] = useState('')
 
   const load = (): void => void window.api.diagnostics().then(setD).catch((e) => setMsg((e as Error).message))
   useEffect(load, [])
-
-  const backup = async (): Promise<void> => {
-    setBusy('backup'); setMsg('')
-    try {
-      const r: BackupInfo = await window.api.createBackup()
-      setMsg(`Copia guardada: ${r.file} (${r.sizeMB} MB, ${r.contents.length} ficheros)`)
-    } catch (e) { setMsg((e as Error).message) } finally { setBusy('') }
-  }
-
-  const restore = async (f: File | undefined): Promise<void> => {
-    if (!f) return
-    setBusy('restore'); setMsg('')
-    try {
-      const bytes = new Uint8Array(await f.arrayBuffer())
-      const r = await window.api.restoreBackup(bytes)
-      setMsg(`Restaurados ${r.restored.length} ficheros${r.skipped.length ? `; sin claves: ${r.skipped.join(', ')}` : ''}. Reinicia la aplicación.`)
-      load()
-    } catch (e) { setMsg((e as Error).message) } finally { setBusy('') }
-  }
 
   const copy = (): void => {
     if (!d) return
@@ -51,7 +31,7 @@ export function DiagnosticsPanel(): JSX.Element {
     <section className="card">
       <h2>Diagnóstico</h2>
       <div className="row">
-        <button onClick={load} disabled={!!busy}>Actualizar</button>
+        <button onClick={load}>Actualizar</button>
         <button onClick={() => void copy()}>📋 Copiar informe</button>
         <span className="muted">{msg}</span>
       </div>
@@ -78,11 +58,47 @@ export function DiagnosticsPanel(): JSX.Element {
         </tbody>
       </table>
 
-      <h3>Copia de seguridad</h3>
+      <BackupCard embedded />
+    </section>
+  )
+}
+
+const ANDROID = window.api.platform === 'android'
+
+/**
+ * Copia de seguridad y restauración. En escritorio va dentro del diagnóstico; en Android es su
+ * propia tarjeta (la copia se guarda donde elijas con el selector de archivos).
+ */
+export function BackupCard({ embedded = false }: { embedded?: boolean }): JSX.Element {
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState('')
+
+  const backup = async (): Promise<void> => {
+    setBusy('backup'); setMsg('')
+    try {
+      const r: BackupInfo = await window.api.createBackup()
+      setMsg(`Copia guardada: ${r.file} (${r.sizeMB} MB, ${r.contents.length} ficheros)`)
+    } catch (e) { setMsg((e as Error).message) } finally { setBusy('') }
+  }
+
+  const restore = async (f: File | undefined): Promise<void> => {
+    if (!f) return
+    setBusy('restore'); setMsg('')
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer())
+      const r = await window.api.restoreBackup(bytes)
+      setMsg(`Restaurados ${r.restored.length} ficheros${r.skipped.length ? `; no se restauran: ${r.skipped.join(', ')}` : ''}. Reinicia la aplicación.`)
+    } catch (e) { setMsg((e as Error).message) } finally { setBusy('') }
+  }
+
+  const body = (
+    <>
       <p className="muted">
-        Se guarda todo lo que has creado: ajustes, biblioteca, reuniones, prompts, historial, las voces
-        descargadas y los modelos. <b>Las claves de los servicios en la nube no se copian</b> (van cifradas
-        con el llavero de tu sistema y no se pueden llevar a otro equipo): al restaurar, vuelve a escribirlas.
+        {ANDROID
+          ? <>Se guarda todo lo que has creado: ajustes, biblioteca, reuniones, prompts, historial, agenda, automatizaciones y «Mis voces». Los modelos de IA no se copian (se vuelven a descargar). Sirve también para pasar tus datos del escritorio al teléfono y al revés. <b>Las claves de los servicios en la nube no se copian.</b></>
+          : <>Se guarda todo lo que has creado: ajustes, biblioteca, reuniones, prompts, historial, las voces
+            descargadas y los modelos. <b>Las claves de los servicios en la nube no se copian</b> (van cifradas
+            con el llavero de tu sistema y no se pueden llevar a otro equipo): al restaurar, vuelve a escribirlas.</>}
       </p>
       <div className="row">
         <button onClick={() => void backup()} disabled={!!busy}>{busy === 'backup' ? 'Guardando…' : '⬇ Crear copia de seguridad'}</button>
@@ -90,6 +106,8 @@ export function DiagnosticsPanel(): JSX.Element {
           <input type="file" accept=".zip" hidden onChange={(e) => { void restore(e.target.files?.[0]); e.target.value = '' }} />
         </label>
       </div>
-    </section>
+      {msg && <p className="muted" role="status">{msg}</p>}
+    </>
   )
+  return embedded ? <><h3>Copia de seguridad</h3>{body}</> : <section className="card"><h2>Copia de seguridad</h2>{body}</section>
 }

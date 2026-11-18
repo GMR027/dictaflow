@@ -7,6 +7,8 @@ import { useApp } from '../store'
 
 type Source = 'mic' | 'system' | 'both'
 const SRC: Record<Source, string> = { mic: '🎤 Micrófono', system: '🔊 Audio del sistema', both: '🎤+🔊 Ambos' }
+/** Android no deja captar el audio de otras apps: en el teléfono las reuniones son por micrófono. */
+const SOURCES = (Object.keys(SRC) as Source[]).filter((k) => window.api.platform !== 'android' || k === 'mic')
 
 const toMarkdown = (m: Meeting): string =>
   `# ${m.title}\n\n_${new Date(m.createdAt).toLocaleString()} · ${fmtTime(m.durationSec)}_\n\n${m.summary ? m.summary + '\n\n---\n\n' : ''}## Transcripción\n\n` +
@@ -200,7 +202,7 @@ export function Meetings(): JSX.Element {
         {notice && <div className="notice" role="status">{notice}</div>}
         <div className="row">
           <select value={source} onChange={(e) => setSource(e.target.value as Source)} disabled={recording} aria-label="Fuente de audio">
-            {Object.entries(SRC).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            {SOURCES.map((k) => <option key={k} value={k}>{SRC[k]}</option>)}
           </select>
           <button className={`mic ${recording ? 'rec' : ''}`} onClick={() => void (recording ? stop() : start())}>
             {recording ? '■ Terminar y guardar' : '● Empezar a transcribir'}

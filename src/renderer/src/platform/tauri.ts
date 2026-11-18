@@ -20,6 +20,7 @@ import { LOCAL_MODELS, localVoice, localVoiceSample, modelReady, type DeviceInfo
 import { VOICE_META } from '@shared/voice-catalog'
 import type { VoiceStatus } from '@shared/voice'
 import { createApi, type Invoke, type On } from '../../../preload/api'
+import { createDataHandlers, netGuard } from './android-datos'
 
 /** Error para lo que aún no existe en Android (o no existirá). */
 class NoDisponible extends Error {
@@ -104,6 +105,7 @@ const listModels = (): Promise<LocalModelFile[]> => tauriInvoke<LocalModelFile[]
 
 /** Empieza (o reanuda) la descarga de un modelo del catálogo y de su archivo acompañante. */
 async function startDownload(m: LocalModel): Promise<void> {
+  await netGuard(await getSettings(), `Descargar ${m.label}`, m.url)
   // Rust vuelve a validar dirección, nombre y huella.
   if (m.extra) await tauriInvoke('models_download', { url: m.extra.url, id: m.extra.id, bytes: m.extra.bytes, sha256: m.extra.sha256 })
   await tauriInvoke('models_download', { url: m.url, id: m.id, bytes: m.bytes, sha256: m.sha256 })
@@ -206,6 +208,7 @@ const handlers: Handlers = {
   },
   'tts:sample': async ({ id }) => {
     if (!localVoice(id)) throw new Error(`La voz ${id} no está disponible en Android.`)
+    await netGuard(await getSettings(), 'Muestra de voz', localVoiceSample(id))
     return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_sample', { url: localVoiceSample(id) }))
   },
   'tts:synth': ({ text, lang, voice }) => synthesize(text, lang, voice),
@@ -274,6 +277,18 @@ const handlers: Handlers = {
   'llm:minutes': ({ text, lang }) => llm.generateMinutes(text, lang),
   'llm:test': () => llm.testLLM(),
 
+  ...createDataHandlers({
+    docGet,
+    docSet,
+    getSettings,
+    forgetSettings: () => { settings = null },
+    synthesize,
+    generate: (action, text, lang) => llm.generate(action, text, lang),
+    listModels,
+    notice: (msg) => emitLocal('llm:notice', msg),
+    onJobs: (list) => emitLocal('jobs:changed', list)
+  }),
+
   'app:version': () => getVersion(),
   'clipboard:write': ({ text }) => navigator.clipboard.writeText(text),
   'notify': () => undefined,
@@ -292,7 +307,12 @@ const DESKTOP_ONLY: Partial<Record<IpcChannel, string>> = {
   'uninstall:info': 'Desinstalar desde la app',
   'uninstall:run': 'Desinstalar desde la app',
   'app:launch-cmd': 'El atajo de teclado global',
-  'app:open-data-dir': 'Abrir la carpeta de datos'
+  'app:open-data-dir': 'Abrir la carpeta de datos',
+  'vault:pick': 'Elegir la carpeta de notas (al guardar una nota eliges dónde)',
+  'stt:bench': 'La prueba de rendimiento de Whisper',
+  'stt:download-ggml': 'Descargar modelos de Whisper de escritorio',
+  'pv:engine-url': 'La clonación de voz',
+  'diagnostics:report': 'El informe de diagnóstico'
 }
 
 const invoke: Invoke = async <K extends IpcChannel>(channel: K, req?: IpcReq<K>): Promise<IpcRes<K>> => {

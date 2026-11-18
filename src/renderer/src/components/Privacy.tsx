@@ -27,7 +27,7 @@ export function Privacy(): JSX.Element {
           Modo offline estricto: bloquea cualquier conexión que no sea a tu propio equipo
         </label>
         <p className="muted">La transcripción de voz siempre se hace en tu equipo. Solo el texto de redacción sale si eliges un servicio en la nube.</p>
-        <p>Tus datos están en <code>{dir}</code> <button onClick={() => void window.api.openDataDir()}>Abrir carpeta</button></p>
+        <p>Tus datos están en <code>{dir}</code> {window.api.platform !== 'android' && <button onClick={() => void window.api.openDataDir()}>Abrir carpeta</button>}</p>
       </section>
       <section className="card grow">
         <header>

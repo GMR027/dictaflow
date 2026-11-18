@@ -11,16 +11,24 @@
 //!   • se transcribe la voz con Whisper dentro del teléfono (stt.rs);
 //!   • se redacta con un LLM (llama.cpp) dentro del teléfono (llm.rs);
 //!   • se leen textos en voz alta con voces Piper (sherpa-onnx) dentro del teléfono (tts.rs);
+//!   • se guardan los archivos propios (audio de reuniones, audiolibros…) y se exportan con el
+//!     selector de archivos de Android (archivos.rs);
+//!   • se programan los avisos de la agenda como notificaciones de Android;
 //!   • se fija el servidor de actualizaciones y se abre la descarga del APK nuevo.
 //! Ninguna página remota tiene acceso a estos comandos (capabilities/default.json, `local: true`).
 
 use std::sync::{Arc, Mutex};
 
+use base64::Engine as _;
 use serde_json::Value;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_fs::FsExt;
+use tauri_plugin_notification::{NotificationExt, PermissionState, Schedule};
 use tauri_plugin_opener::OpenerExt;
 
 mod almacen;
+mod archivos;
 mod descargas;
 mod llm;
 mod modelos;
@@ -29,6 +37,7 @@ mod stt;
 mod tts;
 
 use almacen::{Almacen, Documento};
+use archivos::{Archivos, Entrada};
 use descargas::{espacio_libre, ArchivoModelo, Descargas};
 use llm::{Llm, Mensaje, Respuesta};
 use stt::{Stt, Transcripcion};
@@ -52,6 +61,16 @@ fn doc_get(name: String, datos: tauri::State<'_, Datos>) -> Result<Option<Docume
 #[tauri::command]
 fn doc_set(name: String, data: Value, datos: tauri::State<'_, Datos>) -> Result<(), String> {
     datos.0.escribir(&name, data)
+}
+
+#[tauri::command]
+fn doc_remove(name: String, datos: tauri::State<'_, Datos>) -> Result<(), String> {
+    datos.0.borrar(&name)
+}
+
+#[tauri::command]
+fn doc_list(datos: tauri::State<'_, Datos>) -> Vec<String> {
+    datos.0.listar()
 }
 
 #[tauri::command]
@@ -216,6 +235,140 @@ async fn tts_sample(url: String) -> Result<tauri::ipc::Response, String> {
     Ok(tauri::ipc::Response::new(mp3))
 }
 
+// ── Archivos propios de la app ─────────────────────────────────────────────────────────────
+/// Lo que llega de la interfaz va en base64: con el IPC de Android, los datos binarios viajan como
+/// una lista JSON de números, mucho más lenta.
+fn base64(datos: &str) -> Result<Vec<u8>, String> {
+    base64::engine::general_purpose::STANDARD.decode(datos).map_err(|_| "Datos dañados.".to_string())
+}
+
+#[tauri::command]
+fn file_write(path: String, data: String, append: bool, archivos: tauri::State<'_, Arc<Archivos>>) -> Result<(), String> {
+    archivos.escribir(&path, &base64(&data)?, append)
+}
+
+#[tauri::command]
+async fn file_read(path: String, archivos: tauri::State<'_, Arc<Archivos>>) -> Result<tauri::ipc::Response, String> {
+    let archivos = archivos.inner().clone();
+    let datos = tauri::async_runtime::spawn_blocking(move || archivos.leer(&path)).await.map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(datos))
+}
+
+#[tauri::command]
+fn file_remove(path: String, archivos: tauri::State<'_, Arc<Archivos>>) -> Result<(), String> {
+    archivos.borrar(&path)
+}
+
+#[tauri::command]
+fn file_list(dir: String, archivos: tauri::State<'_, Arc<Archivos>>) -> Result<Vec<Entrada>, String> {
+    archivos.listar(&dir)
+}
+
+#[tauri::command]
+async fn file_join(parts: Vec<String>, dest: String, archivos: tauri::State<'_, Arc<Archivos>>) -> Result<(), String> {
+    let archivos = archivos.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || archivos.unir(&parts, &dest)).await.map_err(|e| e.to_string())?
+}
+
+/// Termina un WAV escrito por partes (grabación de una reunión) y devuelve su duración.
+#[tauri::command]
+fn wav_close(path: String, archivos: tauri::State<'_, Arc<Archivos>>) -> Result<f64, String> {
+    archivos.cerrar_wav(&path)
+}
+
+/// Guarda en el teléfono (Descargas, Drive…, lo que elija el usuario en el selector de Android)
+/// unos datos (`data`, base64) o un archivo propio de la app (`path`). Devuelve el nombre con que
+/// se ofreció, o `None` si el usuario canceló.
+#[tauri::command]
+async fn save_as(
+    name: String,
+    ext: String,
+    data: Option<String>,
+    path: Option<String>,
+    app: tauri::AppHandle,
+    archivos: tauri::State<'_, Arc<Archivos>>,
+) -> Result<Option<String>, String> {
+    if ext.is_empty() || ext.len() > 8 || !ext.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err(format!("Extensión no válida: «{ext}»."));
+    }
+    let sugerido = archivos::nombre_sugerido(&name, &ext);
+    let origen = match (data, path) {
+        (Some(d), None) => Ok(base64(&d)?),
+        (None, Some(p)) => Err(archivos.ruta(&p)?),
+        _ => return Err("Indica qué guardar.".into()),
+    };
+    tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, String> {
+        let Some(destino) = app.dialog().file().set_file_name(&sugerido).add_filter(ext.to_uppercase(), &[&ext]).blocking_save_file() else {
+            return Ok(None);
+        };
+        let mut opciones = tauri_plugin_fs::OpenOptions::new();
+        opciones.write(true).truncate(true).create(true);
+        let mut salida = app.fs().open(destino, opciones).map_err(|e| format!("No se pudo guardar: {e}"))?;
+        match origen {
+            Ok(bytes) => std::io::Write::write_all(&mut salida, &bytes),
+            Err(ruta) => std::fs::File::open(&ruta).and_then(|mut f| std::io::copy(&mut f, &mut salida).map(|_| ())),
+        }
+        .and_then(|_| salida.sync_all())
+        .map_err(|e| format!("No se pudo guardar: {e}"))?;
+        Ok(Some(sugerido))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Espacio que ocupa cada parte de los datos de la app, en bytes.
+#[derive(serde::Serialize)]
+struct Uso {
+    datos: u64,
+    modelos: u64,
+    archivos: u64,
+    libres: u64,
+}
+
+#[tauri::command]
+fn storage_usage(app: tauri::AppHandle) -> Result<Uso, String> {
+    let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(Uso {
+        datos: archivos::tamano(&base.join("datos")),
+        modelos: archivos::tamano(&base.join("modelos")),
+        archivos: archivos::tamano(&base.join("archivos")),
+        libres: espacio_libre(&base).unwrap_or(0),
+    })
+}
+
+// ── Avisos de la agenda ────────────────────────────────────────────────────────────────────
+/// Programa un aviso (recordatorio o evento) como notificación de Android: suena aunque la app
+/// esté cerrada. Pide el permiso de notificaciones la primera vez; devuelve `false` si se niega.
+#[tauri::command]
+async fn notice_schedule(id: i32, title: String, body: String, at: i64, app: tauri::AppHandle) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
+        let n = app.notification();
+        let mut estado = n.permission_state().map_err(|e| e.to_string())?;
+        if estado != PermissionState::Granted {
+            estado = n.request_permission().map_err(|e| e.to_string())?;
+        }
+        if estado != PermissionState::Granted {
+            return Ok(false);
+        }
+        let fecha = time::OffsetDateTime::from_unix_timestamp_nanos(at as i128 * 1_000_000).map_err(|e| e.to_string())?;
+        n.builder()
+            .id(id)
+            .title(title)
+            .body(body)
+            .schedule(Schedule::At { date: fecha, repeating: false, allow_while_idle: true })
+            .show()
+            .map_err(|e| e.to_string())?;
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn notice_cancel(ids: Vec<i32>, app: tauri::AppHandle) -> Result<(), String> {
+    app.notification().cancel(ids).map_err(|e| e.to_string())
+}
+
 /// Cambia el servidor de actualizaciones (se valida aquí, no en JavaScript) y lo recuerda.
 #[tauri::command]
 fn fijar_servidor(url: String, estado: tauri::State<'_, Servidor>, datos: tauri::State<'_, Datos>) -> Result<String, String> {
@@ -243,9 +396,14 @@ fn abrir_actualizacion(url: String, app: tauri::AppHandle, estado: tauri::State<
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             doc_get,
             doc_set,
+            doc_remove,
+            doc_list,
             secret_set,
             secret_has,
             device_info,
@@ -261,6 +419,16 @@ pub fn run() {
             llm_complete,
             tts_synth,
             tts_sample,
+            file_write,
+            file_read,
+            file_remove,
+            file_list,
+            file_join,
+            wav_close,
+            save_as,
+            storage_usage,
+            notice_schedule,
+            notice_cancel,
             fijar_servidor,
             servidor,
             abrir_actualizacion
@@ -276,6 +444,7 @@ pub fn run() {
             app.manage(Arc::new(Stt::new(base.join("modelos"))));
             app.manage(Arc::new(Llm::new(base.join("modelos"))?));
             app.manage(Arc::new(Tts::new(base.join("modelos"), base.join("voz"))));
+            app.manage(Arc::new(Archivos::new(base.join("archivos"))));
             app.manage(Servidor(Mutex::new(origen)));
 
             let handle = app.handle().clone();

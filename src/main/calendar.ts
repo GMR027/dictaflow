@@ -9,10 +9,10 @@
 // equipo.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import ical, { ICalAlarmType } from 'ical-generator'
 import nodeIcal from 'node-ical'
 import { dataDir } from './paths'
 import type { CalendarEvent, Reminder } from '@shared/calendar'
+import { toIcs } from '@shared/ics'
 
 export type { CalendarEvent, Reminder }
 
@@ -55,29 +55,7 @@ export const saveReminder = (r: Reminder): void => {
 }
 export const removeReminder = (id: string): void => writeJson(remindersFile, listReminders().filter((r) => r.id !== id))
 
-/** Convierte los eventos de DictaFlow en un calendario ICS. */
-export function toIcs(events: CalendarEvent[], name = 'DictaFlow'): string {
-  const cal = ical({
-    name,
-    prodId: '-//DictaFlow//ES'
-  })
-  for (const e of events) {
-    // createEvent ya añade el evento al calendario: calling events() otra vez lo duplicaría.
-    const ev = cal.createEvent({
-      summary: e.title,
-      start: new Date(e.start),
-      end: new Date(e.start + Math.max(1, e.durationMin) * 60000),
-      description: e.notes || undefined,
-      location: e.location || undefined
-    })
-    ev.uid(`${e.id}@dictaflow`)
-    if (e.reminder && e.remindBeforeMin > 0) {
-      // El disparador en segundos: 15 minutos son 900.
-      ev.alarms([{ type: ICalAlarmType.display, triggerBefore: e.remindBeforeMin * 60, description: e.title }])
-    }
-  }
-  return cal.toString()
-}
+export { toIcs }
 
 /** Lee un calendario ICS y devuelve sus eventos. */
 export function fromIcs(text: string): { title: string; notes: string; start: number; durationMin: number; location: string }[] {

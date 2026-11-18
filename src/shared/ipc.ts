@@ -134,6 +134,9 @@ export interface IpcContract {
   'note:export': { req: { title: string; body: string; tags: string[] }; res: string }
   'file:save': { req: { name: string; data: Uint8Array | string }; res: string }
   'file:open': { req: { title: string; exts: string[] }; res: { name: string; data: Uint8Array } | null }
+  /** Un archivo que produjo la app (audiolibro, resultado de una automatización): en escritorio se
+   *  muestra en su carpeta; en Android se guarda donde elija el usuario. Devuelve dónde quedó. */
+  'file:export': { req: { path: string }; res: string }
 
   'sysaudio:start': { req: void; res: void }
   'sysaudio:stop': { req: void; res: void }

@@ -132,6 +132,7 @@ export function createApi(invoke: Invoke, on: On, platform: Platform) {
     exportNote: (title: string, body: string, tags: string[]): Promise<string> => invoke('note:export', { title, body, tags }),
     saveFile: (name: string, data: Uint8Array | string): Promise<string> => invoke('file:save', { name, data }),
     openFile: (title: string, exts: string[]): Promise<{ name: string; data: Uint8Array } | null> => invoke('file:open', { title, exts }),
+    exportFile: (path: string): Promise<string> => invoke('file:export', { path }),
     startSystemAudio: (): Promise<void> => invoke('sysaudio:start'),
     stopSystemAudio: (): Promise<void> => invoke('sysaudio:stop'),
     onSystemAudio: (cb: (pcm: Float32Array) => void) => on('sysaudio:chunk', cb),

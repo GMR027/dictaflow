@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Agenda: los avisos suenan a su hora exacta aunque la app esté cerrada (el plugin de
+         notificaciones añade POST_NOTIFICATIONS, que Android pide al usuario la primera vez). -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

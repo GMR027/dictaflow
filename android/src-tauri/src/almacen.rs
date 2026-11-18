@@ -61,6 +61,24 @@ impl Almacen {
         let doc = Documento { version: VERSION_FORMATO, data };
         escribir_atomico(&ruta, serde_json::to_vec_pretty(&doc).map_err(|e| e.to_string())?.as_slice())
     }
+
+    /// Borra un documento. Si no existe, no pasa nada.
+    pub fn borrar(&self, nombre: &str) -> Result<(), String> {
+        match fs::remove_file(self.ruta(nombre)?) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("No se pudo borrar {nombre}: {e}")),
+            _ => Ok(()),
+        }
+    }
+
+    /// Nombres de los documentos guardados (para la copia de seguridad), ordenados.
+    pub fn listar(&self) -> Vec<String> {
+        let mut nombres: Vec<String> = fs::read_dir(&self.dir)
+            .map(|l| l.flatten().filter_map(|e| e.file_name().into_string().ok()?.strip_suffix(".json").map(String::from)).collect())
+            .unwrap_or_default();
+        nombres.retain(|n| nombre_valido(n).is_ok());
+        nombres.sort();
+        nombres
+    }
 }
 
 /// Escribe en `<ruta>.tmp`, sincroniza y renombra: el archivo final está completo o no cambia.
@@ -117,6 +135,23 @@ mod pruebas {
         assert_eq!(a.leer("history").unwrap().unwrap(), Documento { version: 1, data: json!([1, 2]) });
         assert_eq!(a.leer("prompts").unwrap(), None);
         assert!(a.leer("../fuera").is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn listar_y_borrar() {
+        let dir = temporal("lista");
+        let a = Almacen::new(&dir);
+        assert!(a.listar().is_empty());
+        a.escribir("settings", json!({})).unwrap();
+        a.escribir("library-0a1b", json!(null)).unwrap();
+        fs::write(dir.join("otro.txt"), "x").unwrap();
+        fs::write(dir.join("Mal.json"), "{}").unwrap();
+        assert_eq!(a.listar(), ["library-0a1b", "settings"]);
+        a.borrar("library-0a1b").unwrap();
+        a.borrar("library-0a1b").unwrap();
+        assert_eq!(a.listar(), ["settings"]);
+        assert!(a.borrar("../x").is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 }

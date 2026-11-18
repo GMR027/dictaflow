@@ -5,3 +5,5 @@ pub mod almacen;
 pub mod politica;
 #[path = "../../src/modelos.rs"]
 pub mod modelos;
+#[path = "../../src/archivos.rs"]
+pub mod archivos;

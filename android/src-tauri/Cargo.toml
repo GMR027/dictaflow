@@ -23,6 +23,14 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+# Guardar y abrir archivos con el selector del sistema (content://); se usan solo desde Rust, la
+# interfaz no recibe permisos de estos plugins.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+# Recordatorios y avisos de la agenda programados en Android: suenan aunque la app esté cerrada.
+tauri-plugin-notification = "2"
+base64 = "0.22"
+time = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"

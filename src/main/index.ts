@@ -345,6 +345,10 @@ function registerIpc(): void {
   handle('agent:launch', (_e, req) => launchAgent(req.agent, getSettings().projectDir, req.prompt))
   handle('note:export', (_e, req) => exportNote(req.title, req.body, req.tags))
   handle('file:save', (_e, req) => saveFileDialog(req.name, typeof req.data === 'string' ? req.data : Buffer.from(req.data)))
+  handle('file:export', (_e, req) => {
+    shell.showItemInFolder(req.path)
+    return req.path
+  })
   handle('file:open', async (_e, req) => {
     const f = await openFileDialog(req.title, req.exts)
     return f ? { name: f.name, data: new Uint8Array(f.data) } : null

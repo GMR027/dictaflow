@@ -4,7 +4,7 @@ import { mb } from '@shared/voice'
 import { useApp } from '../store'
 import { AIServices } from './AIServices'
 import { LocalModels } from './LocalModels'
-import { DiagnosticsPanel } from './Diagnostics'
+import { BackupCard, DiagnosticsPanel } from './Diagnostics'
 import { Performance } from './Performance'
 import { Updates } from './Updates'
 import { useTtsStatus } from './TtsSetup'
@@ -201,7 +201,7 @@ function General(): JSX.Element {
 
       {!ANDROID && <Updates />}
 
-      {!ANDROID && <DiagnosticsPanel />}
+      {ANDROID ? <BackupCard /> : <DiagnosticsPanel />}
 
       {!ANDROID && (
         <section className="card">

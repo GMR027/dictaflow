@@ -168,7 +168,7 @@ export function MyVoices(): JSX.Element {
           <label>Motor
             <select value={engineKind} onChange={(e) => setEngineKind(e.target.value as 'piper' | 'servicio-local')}>
               <option value="piper">Voz local (Piper)</option>
-              <option value="servicio-local">Clonación (servicio local)</option>
+              {window.api.platform !== 'android' && <option value="servicio-local">Clonación (servicio local)</option>}
             </select>
           </label>
         </div>
