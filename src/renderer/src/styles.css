@@ -519,3 +519,4 @@ blockquote.script { margin: 6px 0 10px; padding: 12px 14px; background: var(--fi
 .step-tile-n { position: absolute; left: 10px; top: 10px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--btn-active); font-weight: 700; font-size: .85rem; }
 .step-tile.on .step-tile-n { background: var(--accent); color: var(--accent-ink); }
 @media (max-width: 600px) { .step-grid { grid-template-columns: 1fr 1fr; } .step-tile small { display: none; } }
+.chips + .form-grid, .chips + label { margin-top: 10px; }

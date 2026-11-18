@@ -140,7 +140,9 @@ impl Stt {
         p.set_temperature(0.0);
         p.set_temperature_inc(if borrador { 0.0 } else { 0.2 });
         p.set_no_speech_thold(0.6);
-        if !prompt.is_empty() && !borrador {
+        // Con marcas de tiempo el texto de arranque (que no las lleva) hace que Whisper junte todo en
+        // un segmento y se salte el resto del audio (medido en el teléfono): solo sin marcas.
+        if !prompt.is_empty() && !borrador && !marcas {
             p.set_initial_prompt(prompt);
         }
         if let (true, Some(ruta)) = (plan.vad, vad.as_deref()) {

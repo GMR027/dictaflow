@@ -175,16 +175,17 @@ pub struct PlanWhisper {
     pub vad: bool,
 }
 
-/// Frases de dictado (hasta 15 s): búsqueda en haz de 3, más precisa y aún rápida. Audios largos
-/// (reuniones, archivos): voraz, porque ahí importa no acumular atraso, y con el detector de voz,
-/// que quita los silencios (menos trabajo y sin texto inventado en los huecos). Los borradores,
-/// siempre lo más rápido.
+/// Frases de dictado (hasta 15 s): búsqueda en haz de 3, más precisa y aún rápida (medido en el
+/// teléfono: +36 % de tiempo, menos errores). Audios largos (reuniones, archivos): voraz, porque ahí
+/// importa no acumular atraso, y con el detector de voz, que quita los silencios (menos trabajo y
+/// sin texto inventado en los huecos). Con marcas de tiempo (subtítulos) no se usa el detector, por
+/// prudencia: no se ha medido con ellas. Los borradores, siempre lo más rápido.
 pub fn plan_whisper(muestras: usize, marcas: bool, borrador: bool, hay_vad: bool) -> PlanWhisper {
     let segundos = muestras as f64 / 16_000.0;
     PlanWhisper {
         ventana: if marcas { 0 } else { contexto_audio(muestras) },
         haz: if !borrador && segundos <= 15.0 { 3 } else { 1 },
-        vad: !borrador && hay_vad && segundos >= 8.0,
+        vad: !borrador && !marcas && hay_vad && segundos >= 8.0,
     }
 }
 
@@ -278,7 +279,8 @@ mod pruebas_motor {
         let largo = plan_whisper(16_000 * 25, false, false, true);
         assert_eq!((largo.haz, largo.vad), (1, true));
         assert!(!plan_whisper(16_000 * 25, false, false, false).vad);
-        assert_eq!(plan_whisper(16_000 * 25, true, false, true).ventana, 0);
+        let subtitulos = plan_whisper(16_000 * 25, true, false, true);
+        assert_eq!((subtitulos.ventana, subtitulos.vad), (0, false));
     }
 
     #[test]

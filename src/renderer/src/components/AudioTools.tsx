@@ -132,7 +132,7 @@ function SpeechToText(): JSX.Element {
           <span className="muted">o</span>
           <RecButton recording={recording} level={level} onClick={() => void toggleRec()} idle="Grabar" active="Detener grabación" disabled={busy} />
         </div>
-        <p className="muted">{status || 'Arrastra aquí un audio (mp3, wav, ogg, flac, m4a…), elige un archivo o graba con el micrófono.'}</p>
+        <p className="muted">{status || (window.api.platform === 'android' ? 'Elige un audio (mp3, wav, ogg, m4a…) o graba con el micrófono.' : 'Arrastra aquí un audio (mp3, wav, ogg, flac, m4a…), elige un archivo o graba con el micrófono.')}</p>
       </div>
 
       {settings.sttProvider === 'local' && settings.sttEngine === 'transformers' && modelReady === false && (
