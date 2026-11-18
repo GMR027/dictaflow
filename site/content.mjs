@@ -10,7 +10,7 @@ export const DOWNLOADS = [
   { id: 'tar', file: 'dictaflow-linux-x64.tar.gz', cmd: 'tar xzf dictaflow-linux-x64.tar.gz\n./dictaflow-linux-x64/dictaflow' }
 ]
 
-const featureIcons = ['🎤', '✍️', '📚', '🎧', '📖', '🗂', '🌐', '🔒']
+const featureIcons = ['🎤', '✍️', '📚', '🎧', '📖', '🗂', '🌐', '🗓', '📄', '🩺', '🔒']
 
 export const T = {
   en: {

@@ -3,6 +3,10 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writ
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { DOWNLOADS, REPO, T, featureIcons } from './content.mjs'
+// Un icono por herramienta: si falta uno, la web mostraría «undefined».
+for (const t of Object.values(T)) {
+  if (t.features.length !== featureIcons.length) throw new Error(`${t.lang}: ${t.features.length} herramientas y ${featureIcons.length} iconos en site/content.mjs`)
+}
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
