@@ -10,6 +10,7 @@
 //!   • se descargan, verifican y borran los modelos de IA locales (descargas.rs);
 //!   • se transcribe la voz con Whisper dentro del teléfono (stt.rs);
 //!   • se redacta con un LLM (llama.cpp) dentro del teléfono (llm.rs);
+//!   • se leen textos en voz alta con voces Piper (sherpa-onnx) dentro del teléfono (tts.rs);
 //!   • se fija el servidor de actualizaciones y se abre la descarga del APK nuevo.
 //! Ninguna página remota tiene acceso a estos comandos (capabilities/default.json, `local: true`).
 
@@ -25,11 +26,13 @@ mod llm;
 mod modelos;
 mod politica;
 mod stt;
+mod tts;
 
 use almacen::{Almacen, Documento};
 use descargas::{espacio_libre, ArchivoModelo, Descargas};
 use llm::{Llm, Mensaje, Respuesta};
 use stt::{Stt, Transcripcion};
+use tts::Tts;
 use politica::{descarga_permitida, navegacion_interna, origen_valido, SERVIDOR_PREDETERMINADO};
 
 /// Datos de la app (ajustes, colecciones…) en la carpeta privada de la app.
@@ -119,7 +122,10 @@ fn models_cancel(id: String, descargas: tauri::State<'_, Arc<Descargas>>) {
 }
 
 #[tauri::command]
-fn models_remove(id: String, descargas: tauri::State<'_, Arc<Descargas>>) -> Result<(), String> {
+fn models_remove(id: String, descargas: tauri::State<'_, Arc<Descargas>>, tts: tauri::State<'_, Arc<Tts>>) -> Result<(), String> {
+    if let Some(voz) = id.strip_suffix(".onnx.json").or_else(|| id.strip_suffix(".onnx")) {
+        tts.olvidar(voz);
+    }
     descargas.borrar(&id)
 }
 
@@ -187,6 +193,29 @@ async fn llm_complete(
         .map_err(|e| e.to_string())?
 }
 
+/// Lee un texto con una voz descargada. Devuelve un WAV como datos binarios (no como lista JSON).
+#[tauri::command]
+async fn tts_synth(voice: String, text: String, speed: f32, tts: tauri::State<'_, Arc<Tts>>) -> Result<tauri::ipc::Response, String> {
+    let tts = tts.inner().clone();
+    let wav = tauri::async_runtime::spawn_blocking(move || tts.sintetizar(&voice, &text, speed))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(wav))
+}
+
+/// Muestra oficial de una voz (MP3 corto), para escucharla antes de descargarla. No se guarda.
+#[tauri::command]
+async fn tts_sample(url: String) -> Result<tauri::ipc::Response, String> {
+    let url = modelos::url_muestra(&url)?;
+    let mp3 = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let mut r = ureq::get(url.as_str()).call().map_err(|e| format!("No se pudo descargar la muestra: {e}"))?;
+        r.body_mut().with_config().limit(5 * 1024 * 1024).read_to_vec().map_err(|e| format!("No se pudo descargar la muestra: {e}"))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(mp3))
+}
+
 /// Cambia el servidor de actualizaciones (se valida aquí, no en JavaScript) y lo recuerda.
 #[tauri::command]
 fn fijar_servidor(url: String, estado: tauri::State<'_, Servidor>, datos: tauri::State<'_, Datos>) -> Result<String, String> {
@@ -230,6 +259,8 @@ pub fn run() {
             llm_load,
             llm_loaded,
             llm_complete,
+            tts_synth,
+            tts_sample,
             fijar_servidor,
             servidor,
             abrir_actualizacion
@@ -244,6 +275,7 @@ pub fn run() {
             app.manage(Arc::new(Descargas::new(base.join("modelos"))));
             app.manage(Arc::new(Stt::new(base.join("modelos"))));
             app.manage(Arc::new(Llm::new(base.join("modelos"))?));
+            app.manage(Arc::new(Tts::new(base.join("modelos"), base.join("voz"))));
             app.manage(Servidor(Mutex::new(origen)));
 
             let handle = app.handle().clone();

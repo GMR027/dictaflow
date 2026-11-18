@@ -4,8 +4,18 @@
 // Ollama, así que la app trae los motores (whisper.cpp y llama.cpp) y el usuario descarga aquí los
 // modelos. Cada archivo lleva su tamaño y SHA-256 (los de Hugging Face): Rust rechaza una descarga
 // que no coincida, y solo acepta direcciones de huggingface.co.
+import type { Lang } from './types'
+import { VOICE_META, voiceSampleUrl } from './voice-catalog'
 
-export type LocalModelKind = 'stt' | 'llm'
+export type LocalModelKind = 'stt' | 'llm' | 'tts'
+
+/** Un archivo que acompaña al modelo (la configuración de una voz). */
+export interface LocalModelExtra {
+  id: string
+  url: string
+  bytes: number
+  sha256: string
+}
 
 export interface LocalModel {
   /** Nombre del archivo en el teléfono; también es su identificador. */
@@ -19,9 +29,30 @@ export interface LocalModel {
   sha256: string
   /** RAM mínima (GB) con la que funciona con holgura. */
   minRamGB: number
+  /** Voces: identificador de la voz (el de escritorio, sin «.onnx»), su idioma y su configuración. */
+  voice?: string
+  lang?: Lang
+  extra?: LocalModelExtra
 }
 
 const hf = (repo: string, file: string): string => `https://huggingface.co/${repo}/resolve/main/${file}`
+
+/**
+ * Voz Piper en la copia preparada para sherpa-onnx (csukuangfj/vits-piper-*): el modelo .onnx lleva
+ * los metadatos que necesita sherpa-onnx y el .onnx.json la tabla de fonemas. La ficha (nombre,
+ * licencia) es la de escritorio.
+ */
+function voice(id: string, bytes: number, sha256: string, configBytes: number, configSha256: string): LocalModel {
+  const meta = VOICE_META[id]
+  const repo = `csukuangfj/vits-piper-${id}`
+  const calidad = { x_low: 'muy ligera', low: 'ligera', medium: 'calidad media', high: 'alta calidad' }[meta.quality]
+  const uso = meta.usage === 'no-comercial' ? ' · solo uso no comercial' : meta.usage === 'terminos-propios' ? ' · con sus propias condiciones' : ''
+  return {
+    id: `${id}.onnx`, kind: 'tts', label: meta.label, note: `Voz de ${calidad} · licencia ${meta.license}${uso}.`,
+    url: hf(repo, `${id}.onnx`), bytes, sha256, minRamGB: 2, voice: id, lang: meta.langs[0],
+    extra: { id: `${id}.onnx.json`, url: hf(repo, `${id}.onnx.json`), bytes: configBytes, sha256: configSha256 }
+  }
+}
 
 export const LOCAL_MODELS: LocalModel[] = [
   // ── Voz → texto (whisper.cpp, formato GGML) ──
@@ -65,8 +96,26 @@ export const LOCAL_MODELS: LocalModel[] = [
     id: 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf', kind: 'llm', label: 'Qwen3 4B', note: 'La mejor calidad: actas, prompts y textos largos. El más lento.',
     url: hf('unsloth/Qwen3-4B-Instruct-2507-GGUF', 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'), bytes: 2497281120,
     sha256: '3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597', minRamGB: 7
-  }
+  },
+  // ── Lectura en voz alta (voces Piper con sherpa-onnx). Las mismas de escritorio salvo
+  //    es_MX-ald-x_low, que no tiene copia para sherpa-onnx. ──
+  voice('es_MX-claude-high', 63122441, 'f5eceb904655a60141037d957f21e6257efa93b8c8b7b818c0c57396217bcb1c', 4963, '1afc81f703c0e4cb3b4d7c0dca096b8b54a98806807f0170cf5eb5557723c12d'),
+  voice('es_MX-ald-medium', 63201426, 'b5e77074846d97651421244167a11d53c762fa41f953de98ab21957a6036eab4', 4889, 'efab736e62e5321dd5d063d1b46e63c59ce655419816355b81d025c1a8d6b03c'),
+  voice('es_ES-davefx-medium', 63201422, '329fc723ef304f8688df9ef819eea169a4181f60a77f53e087b19dbca07b09f8', 4817, '0e0dda87c732f6f38771ff274a6380d9252f327dca77aa2963d5fbdf9ec54842'),
+  voice('es_ES-sharvard-medium', 76733743, 'f26006cd03e2d558966fa3c49cfa9361dfa22d72197d74b6b50437cb02b8faaf', 4903, '7438c9b699c72b0c3388dae1b68d3f364dc66a2150fe554a1c11f03372957b2c'),
+  voice('en_US-lessac-medium', 63201425, 'ea793a648ce0370665f99fbf891eae3b3a973565c72b08534bb5b2c04e8f2332', 4885, 'efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0'),
+  voice('en_US-amy-medium', 63201425, 'fbaa8e36d8f26fe6f3ebb65cab461e629d8b37a5b7c5fb78fb64317db73e1c25', 4882, '95a23eb4d42909d38df73bb9ac7f45f597dbfcde2d1bf9526fdeaf5466977d77'),
+  voice('en_US-kristin-medium', 63531507, 'f9a5c375c70ddc33ccdb3969c76a4d7cc5255ac08119a312b0034a1d07041be6', 4968, '5681426d4aead22195de70531eeeeddb46493cfaffc5764b2ea3db73428b651c'),
+  voice('en_US-hfc_female-medium', 63201425, '6d8b3711715f17f29b9f0ded97571924ead9a06e300bfdf3680b014a51ddc9e5', 5033, '03f1fa0622b80463283592d97aca9f6e89aec345a5c56b7257723e0093c58b6c'),
+  voice('en_US-ryan-high', 120786923, '4343c10fd88301574d2012b3d006fa5fc8fdf18d04ca9564ef399eed180d8788', 4166, 'c6d3b98f08315cb4bebf0d49d50fc4ff491b503c64b940cd3d5ca28543b48011'),
+  voice('en_GB-alan-medium', 63201430, 'd907c48857000940104a9ad3248a94617df917d1a525c9495490fdbf87fd54b2', 4888, 'c0f0d124e5895c00e7c03b35dcc8287f319a6998a365b182deb5c8e752ee8c1e')
 ]
+
+/** Voz del catálogo de Android por su identificador de escritorio («es_MX-claude-high»). */
+export const localVoice = (voiceId: string): LocalModel | undefined => LOCAL_MODELS.find((m) => m.kind === 'tts' && m.voice === voiceId)
+
+/** Muestra de audio de una voz del catálogo. */
+export const localVoiceSample = (voiceId: string): string => voiceSampleUrl(voiceId)
 
 /** Estado de un modelo según lo que hay en el teléfono. */
 export interface LocalModelFile {
@@ -75,6 +124,12 @@ export interface LocalModelFile {
   bytes: number
   /** true si la descarga quedó a medias y se puede reanudar. */
   partial: boolean
+}
+
+/** ¿Está el modelo completo en el teléfono? (una voz necesita también su configuración). */
+export function modelReady(m: LocalModel, files: LocalModelFile[]): boolean {
+  const has = (id: string): boolean => files.some((f) => f.id === id && !f.partial)
+  return has(m.id) && (!m.extra || has(m.extra.id))
 }
 
 /** Progreso de una descarga, emitido por Rust en el evento `models:progress`. */
@@ -107,7 +162,8 @@ export function modelFit(m: LocalModel, ramGB: number): Fit {
 
 const PREFERRED: Record<LocalModelKind, string[]> = {
   stt: ['ggml-small-q5_1.bin', 'ggml-base-q5_1.bin', 'ggml-tiny-q5_1.bin'],
-  llm: ['qwen2.5-1.5b-instruct-q4_k_m.gguf', 'gemma-3-1b-it-Q4_K_M.gguf']
+  llm: ['qwen2.5-1.5b-instruct-q4_k_m.gguf', 'gemma-3-1b-it-Q4_K_M.gguf'],
+  tts: ['es_MX-claude-high.onnx']
 }
 
 export function recommendedId(kind: LocalModelKind, ramGB: number): string {

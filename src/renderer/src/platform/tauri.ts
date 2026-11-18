@@ -12,11 +12,13 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getVersion } from '@tauri-apps/api/app'
 import type { IpcChannel, IpcContract, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
-import { DEFAULT_SETTINGS, type ChatMsg, type HistoryItem, type Settings, type SttStatus } from '@shared/types'
+import { DEFAULT_SETTINGS, type ChatMsg, type HistoryItem, type Lang, type Settings, type SttStatus } from '@shared/types'
 import { normalizeModel } from '@shared/providers'
 import { applyDictionary } from '@shared/dictionary'
 import { createLlmTasks, type ContentAction, type LlmLimits } from '@shared/llm-tasks'
-import { LOCAL_MODELS, type DeviceInfo, type LocalModelFile } from '@shared/local-models'
+import { LOCAL_MODELS, localVoice, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
+import { VOICE_META } from '@shared/voice-catalog'
+import type { VoiceStatus } from '@shared/voice'
 import { createApi, type Invoke, type On } from '../../../preload/api'
 
 /** Error para lo que aún no existe en Android (o no existirá). */
@@ -97,6 +99,55 @@ async function localComplete(system: string, msgs: ChatMsg[], temperature = 0.4)
 
 const llm = createLlmTasks({ complete: localComplete, settings: getSettings, limits: ANDROID_LIMITS })
 
+// ── Descargas de modelos ────────────────────────────────────────────────────────────────────
+const listModels = (): Promise<LocalModelFile[]> => tauriInvoke<LocalModelFile[]>('models_list')
+
+/** Empieza (o reanuda) la descarga de un modelo del catálogo y de su archivo acompañante. */
+async function startDownload(m: LocalModel): Promise<void> {
+  // Rust vuelve a validar dirección, nombre y huella.
+  if (m.extra) await tauriInvoke('models_download', { url: m.extra.url, id: m.extra.id, bytes: m.extra.bytes, sha256: m.extra.sha256 })
+  await tauriInvoke('models_download', { url: m.url, id: m.id, bytes: m.bytes, sha256: m.sha256 })
+}
+
+/** Descarga un modelo y espera a que esté completo (para «Descargar voz» fuera de Ajustes). */
+async function downloadAndWait(m: LocalModel): Promise<void> {
+  const pending = new Set([m.id, ...(m.extra ? [m.extra.id] : [])])
+  for (const f of await listModels()) if (!f.partial) pending.delete(f.id)
+  if (!pending.size) return
+  let un: (() => void) | null = null
+  const done = new Promise<void>((resolve, reject) => {
+    void listen<LocalModelProgress>('models:progress', ({ payload: p }) => {
+      if (!pending.has(p.id)) return
+      if (p.state === 'downloading') emitLocal('tts:progress', { what: m.label, pct: p.total ? Math.floor((p.received / p.total) * 100) : 0 })
+      else if (p.state === 'done') { pending.delete(p.id); if (!pending.size) resolve() }
+      else if (p.state === 'error') reject(new Error(p.error ?? 'La descarga falló.'))
+      else if (p.state === 'cancelled') reject(new Error('Descarga cancelada.'))
+    }).then((u) => { un = u })
+  })
+  try {
+    await startDownload(m)
+    await done
+  } finally {
+    ;(un as (() => void) | null)?.()
+  }
+}
+
+// ── Texto a voz ────────────────────────────────────────────────────────────────────────────
+/** Voz Piper (sherpa-onnx en Rust). Devuelve un WAV. */
+async function synthesize(text: string, lang: Lang, voiceId?: string): Promise<Uint8Array> {
+  const s = await getSettings()
+  const files = await listModels()
+  let m = localVoice(voiceId ?? s.ttsVoice[lang])
+  // Sin voz pedida y la de Ajustes no está descargada: cualquier otra descargada del mismo idioma.
+  if (!voiceId && (!m || !modelReady(m, files))) {
+    m = LOCAL_MODELS.find((x) => x.kind === 'tts' && x.lang === lang && modelReady(x, files)) ?? m
+  }
+  if (!m) throw new Error(`La voz ${voiceId ?? s.ttsVoice[lang]} no está disponible en Android: elige otra en Ajustes → Servicios de IA.`)
+  if (!modelReady(m, files)) throw new Error(`Falta descargar la voz ${m.label} (Ajustes → Servicios de IA).`)
+  const wav = await tauriInvoke<ArrayBuffer>('tts_synth', { voice: m.voice, text, speed: s.ttsSpeed })
+  return new Uint8Array(wav)
+}
+
 // ── Eventos que nacen en la propia interfaz (en escritorio los manda el proceso principal) ────
 const localListeners = new Map<string, Set<(payload: never) => void>>()
 function emitLocal<K extends IpcEvent>(channel: K, payload: IpcEvents[K]): void {
@@ -117,15 +168,47 @@ const handlers: Handlers = {
     const d = await tauriInvoke<{ ramBytes: number; freeBytes: number; cores: number }>('device_info')
     return { ramGB: Math.ceil(d.ramBytes / 2 ** 30), freeGB: Math.round((d.freeBytes / 1e9) * 10) / 10, cores: d.cores } satisfies DeviceInfo
   },
-  'models:list': () => tauriInvoke<LocalModelFile[]>('models_list'),
+  'models:list': () => listModels(),
   'models:download': ({ model }) => {
-    // Solo modelos del catálogo; Rust vuelve a validar dirección, nombre y huella.
+    // Solo modelos del catálogo.
     const m = LOCAL_MODELS.find((x) => x.id === model.id)
     if (!m) throw new Error(`Modelo desconocido: ${model.id}`)
-    return tauriInvoke('models_download', { url: m.url, id: m.id, bytes: m.bytes, sha256: m.sha256 })
+    return startDownload(m)
   },
-  'models:cancel': ({ id }) => tauriInvoke('models_cancel', { id }),
-  'models:remove': ({ id }) => tauriInvoke('models_remove', { id }),
+  'models:cancel': async ({ id }) => {
+    const extra = LOCAL_MODELS.find((x) => x.id === id)?.extra
+    if (extra) await tauriInvoke('models_cancel', { id: extra.id })
+    await tauriInvoke('models_cancel', { id })
+  },
+  'models:remove': async ({ id }) => {
+    const extra = LOCAL_MODELS.find((x) => x.id === id)?.extra
+    if (extra) await tauriInvoke('models_remove', { id: extra.id })
+    await tauriInvoke('models_remove', { id })
+  },
+
+  'tts:status': async () => {
+    const files = await listModels()
+    const catalog = LOCAL_MODELS.filter((m) => m.kind === 'tts').map((m): VoiceStatus => ({
+      ...VOICE_META[m.voice!], id: m.voice!, engine: 'sherpa-onnx', sizeBytes: m.bytes, sampleUrl: localVoiceSample(m.voice!), installed: modelReady(m, files)
+    }))
+    // El motor va dentro de la app: no hay nada que instalar aparte.
+    return { piperInstalled: true, voices: catalog.filter((v) => v.installed).map((v) => v.id), catalog }
+  },
+  'tts:install-piper': () => undefined,
+  'tts:install-voice': ({ id }) => {
+    const m = localVoice(id)
+    if (!m) throw new Error(`La voz ${id} no está disponible en Android.`)
+    return downloadAndWait(m)
+  },
+  'tts:remove-voice': async ({ id }) => {
+    const m = localVoice(id)
+    if (m) for (const f of [m.id, m.extra!.id]) await tauriInvoke('models_remove', { id: f })
+  },
+  'tts:sample': async ({ id }) => {
+    if (!localVoice(id)) throw new Error(`La voz ${id} no está disponible en Android.`)
+    return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_sample', { url: localVoiceSample(id) }))
+  },
+  'tts:synth': ({ text, lang, voice }) => synthesize(text, lang, voice),
 
   'hw:detect': () => ({
     hw: {

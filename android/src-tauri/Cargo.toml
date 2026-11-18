@@ -35,6 +35,11 @@ whisper-rs = "0.16"
 # Redacción con IA (llama.cpp, modelos GGUF) dentro del proceso. Sin OpenMP (hilos propios de ggml)
 # ni `common`; con la libc++ compartida del NDK, igual que whisper.cpp.
 llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["android-shared-stdcxx"] }
+# Lectura en voz alta: voces Piper con sherpa-onnx (onnxruntime + espeak-ng). En Android usa sus
+# librerías precompiladas (.so); entorno.sh indica dónde están (SHERPA_ONNX_LIB_DIR).
+sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["shared"] }
+# Extrae los datos de pronunciación de espeak-ng que lleva la app (recursos/espeak-ng-data.tar).
+tar = { version = "0.4", default-features = false }
 
 # whisper.cpp y llama.cpp traen cada uno su ggml. Esta copia de whisper-rs-sys compila whisper.cpp
 # con el ggml de llama.cpp, para que la app lleve una sola copia (ver vendor/whisper-rs-sys/build.rs).

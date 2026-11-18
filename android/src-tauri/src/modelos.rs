@@ -21,13 +21,78 @@ pub struct Pedido {
     pub sha256: String,
 }
 
-/// Nombre de modelo: letras, números, `.`, `-` y `_`; con extensión .bin o .gguf; sin rutas.
+/// Nombre de modelo: letras, números, `.`, `-` y `_`; con extensión .bin o .gguf (Whisper y LLM) o
+/// .onnx y .onnx.json (voces); sin rutas.
 pub fn archivo_valido(nombre: &str) -> bool {
     let simple = !nombre.is_empty()
         && nombre.len() <= 128
         && !nombre.starts_with('.')
         && nombre.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
-    simple && (nombre.ends_with(".bin") || nombre.ends_with(".gguf"))
+    simple && [".bin", ".gguf", ".onnx", ".onnx.json"].iter().any(|ext| nombre.ends_with(ext))
+}
+
+/// Voz Piper: el identificador de escritorio («es_MX-claude-high»), con su modelo y su configuración.
+pub fn voz_valida(id: &str) -> bool {
+    !id.is_empty() && !id.contains('.') && archivo_valido(&format!("{id}.onnx"))
+}
+
+/// Muestra de una voz: solo las oficiales de rhasspy/piper-voices en Hugging Face.
+pub fn url_muestra(url: &str) -> Result<Url, String> {
+    let u = Url::parse(url).map_err(|_| "Dirección de muestra inválida.".to_string())?;
+    let ok = u.scheme() == "https"
+        && u.host_str() == Some("huggingface.co")
+        && u.port().is_none()
+        && u.query().is_none()
+        && u.path().starts_with("/rhasspy/piper-voices/resolve/main/")
+        && u.path().ends_with("/speaker_0.mp3")
+        && !u.path().contains("..");
+    if ok { Ok(u) } else { Err("Solo se escuchan muestras oficiales de las voces Piper.".into()) }
+}
+
+/// `tokens.txt` de sherpa-onnx a partir de la configuración Piper (`.onnx.json`): cada símbolo con
+/// su número, uno por línea. Es la misma tabla, en el formato que lee sherpa-onnx.
+pub fn tokens_piper(config: &str) -> Result<String, String> {
+    let v: serde_json::Value = serde_json::from_str(config).map_err(|_| "La configuración de la voz está dañada.".to_string())?;
+    let mapa = v.get("phoneme_id_map").and_then(|m| m.as_object()).ok_or("La configuración de la voz no trae su tabla de fonemas.")?;
+    let mut lineas: Vec<(i64, &str)> = Vec::with_capacity(mapa.len());
+    for (simbolo, ids) in mapa {
+        let id = ids.as_array().and_then(|a| a.first()).and_then(|n| n.as_i64()).ok_or("Tabla de fonemas incompleta.")?;
+        // sherpa-onnx separa símbolo y número por el último espacio: el símbolo puede ser « ».
+        if simbolo.contains('\n') {
+            return Err("Tabla de fonemas no válida.".into());
+        }
+        lineas.push((id, simbolo));
+    }
+    lineas.sort();
+    Ok(lineas.iter().map(|(id, s)| format!("{s} {id}\n")).collect())
+}
+
+/// Velocidad de lectura aceptable (la de Ajustes; 1 = normal).
+pub fn velocidad_voz(v: f32) -> f32 {
+    if v.is_finite() { v.clamp(0.5, 2.0) } else { 1.0 }
+}
+
+/// WAV de 16 bits mono a partir de muestras en [-1, 1].
+pub fn wav_pcm16(muestras: &[f32], frecuencia: u32) -> Vec<u8> {
+    let datos = (muestras.len() * 2) as u32;
+    let mut w = Vec::with_capacity(44 + datos as usize);
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + datos).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    w.extend_from_slice(&1u16.to_le_bytes()); // mono
+    w.extend_from_slice(&frecuencia.to_le_bytes());
+    w.extend_from_slice(&(frecuencia * 2).to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&datos.to_le_bytes());
+    for m in muestras {
+        let v = if m.is_finite() { (m.clamp(-1.0, 1.0) * 32767.0).round() as i16 } else { 0 };
+        w.extend_from_slice(&v.to_le_bytes());
+    }
+    w
 }
 
 pub fn validar_pedido(url: &str, archivo: &str, bytes: u64, sha256: &str) -> Result<Pedido, String> {
@@ -151,6 +216,9 @@ mod pruebas {
     fn nombres_de_archivo() {
         assert!(archivo_valido("ggml-base-q5_1.bin"));
         assert!(archivo_valido("Qwen3-4B-Instruct-2507-Q4_K_M.gguf"));
+        assert!(archivo_valido("es_MX-claude-high.onnx"));
+        assert!(archivo_valido("es_MX-claude-high.onnx.json"));
+        assert!(!archivo_valido("datos.json"));
         assert!(!archivo_valido("../datos/settings.json"));
         assert!(!archivo_valido("a/b.gguf"));
         assert!(!archivo_valido(".gguf"));
@@ -220,6 +288,46 @@ mod pruebas {
         assert_eq!(limpiar_respuesta("<think>\nmm\n</think>\n\nHola."), "Hola.");
         assert_eq!(limpiar_respuesta("  Hola.  "), "Hola.");
         assert_eq!(limpiar_respuesta("Hola.<think>sin cerrar"), "Hola.");
+    }
+
+    #[test]
+    fn voces() {
+        assert!(voz_valida("es_MX-claude-high"));
+        assert!(voz_valida("en_US-hfc_female-medium"));
+        assert!(!voz_valida("../x"));
+        assert!(!voz_valida("x.onnx"));
+        assert!(!voz_valida(""));
+
+        let ok = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/claude/high/samples/speaker_0.mp3";
+        assert!(url_muestra(ok).is_ok());
+        assert!(url_muestra(&ok.replace("https", "http")).is_err());
+        assert!(url_muestra("https://huggingface.co/otro/repo/resolve/main/samples/speaker_0.mp3").is_err());
+        assert!(url_muestra(&format!("{ok}?x=1")).is_err());
+        assert!(url_muestra("https://evil.com/rhasspy/piper-voices/resolve/main/speaker_0.mp3").is_err());
+    }
+
+    #[test]
+    fn tabla_de_fonemas() {
+        let cfg = r#"{"audio":{"sample_rate":22050},"phoneme_id_map":{"_":[0],"^":[1]," ":[3],"a":[14],"ɲ":[120]}}"#;
+        assert_eq!(tokens_piper(cfg).unwrap(), "_ 0\n^ 1\n  3\na 14\nɲ 120\n");
+        assert!(tokens_piper("{}").is_err());
+        assert!(tokens_piper("no es json").is_err());
+        assert!(tokens_piper(r#"{"phoneme_id_map":{"a":[]}}"#).is_err());
+    }
+
+    #[test]
+    fn audio_wav() {
+        let w = wav_pcm16(&[0.0, 1.0, -1.0, 2.0, f32::NAN], 22050);
+        assert_eq!(w.len(), 44 + 10);
+        assert_eq!(&w[0..4], b"RIFF");
+        assert_eq!(u32::from_le_bytes(w[4..8].try_into().unwrap()), 36 + 10);
+        assert_eq!(u32::from_le_bytes(w[24..28].try_into().unwrap()), 22050);
+        assert_eq!(u32::from_le_bytes(w[40..44].try_into().unwrap()), 10);
+        let m: Vec<i16> = w[44..].chunks(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+        assert_eq!(m, vec![0, 32767, -32767, 32767, 0]);
+        assert_eq!(velocidad_voz(1.2), 1.2);
+        assert_eq!(velocidad_voz(9.0), 2.0);
+        assert_eq!(velocidad_voz(f32::NAN), 1.0);
     }
 
     #[test]

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { formatBytes, LOCAL_MODELS, modelFit, recommendedId } from './local-models'
+import { formatBytes, localVoice, LOCAL_MODELS, modelFit, modelReady, recommendedId } from './local-models'
+import { DEFAULT_SETTINGS } from './types'
+import { VOICE_META } from './voice-catalog'
 
 describe('catálogo de modelos locales', () => {
   it('solo descarga de huggingface.co por https, con SHA-256 y nombre de archivo coherente', () => {
@@ -11,10 +13,38 @@ describe('catálogo de modelos locales', () => {
       expect(url.pathname.endsWith(`/${m.id}`)).toBe(true)
       expect(m.sha256).toMatch(/^[0-9a-f]{64}$/)
       expect(m.bytes).toBeGreaterThan(1e6)
-      expect(m.id).toMatch(m.kind === 'stt' ? /^ggml-.*\.bin$/ : /\.gguf$/)
-      expect(ids.has(m.id)).toBe(false)
-      ids.add(m.id)
+      expect(m.id).toMatch({ stt: /^ggml-.*\.bin$/, llm: /\.gguf$/, tts: /\.onnx$/ }[m.kind])
+      for (const id of [m.id, m.extra?.id]) {
+        if (!id) continue
+        expect(ids.has(id)).toBe(false)
+        ids.add(id)
+      }
+      if (m.extra) {
+        expect(new URL(m.extra.url).hostname).toBe('huggingface.co')
+        expect(m.extra.url.endsWith(`/${m.extra.id}`)).toBe(true)
+        expect(m.extra.sha256).toMatch(/^[0-9a-f]{64}$/)
+      }
     }
+  })
+
+  it('las voces son las de escritorio, con su configuración y sus voces por defecto', () => {
+    const voices = LOCAL_MODELS.filter((m) => m.kind === 'tts')
+    expect(voices.length).toBeGreaterThanOrEqual(10)
+    for (const v of voices) {
+      expect(VOICE_META[v.voice!]).toBeDefined()
+      expect(v.id).toBe(`${v.voice}.onnx`)
+      expect(v.extra?.id).toBe(`${v.voice}.onnx.json`)
+      expect(v.lang).toBe(VOICE_META[v.voice!].langs[0])
+    }
+    expect(localVoice(DEFAULT_SETTINGS.ttsVoice.es)).toBeDefined()
+    expect(localVoice(DEFAULT_SETTINGS.ttsVoice.en)).toBeDefined()
+  })
+
+  it('una voz solo está lista con el modelo y su configuración completos', () => {
+    const v = localVoice('es_MX-claude-high')!
+    expect(modelReady(v, [{ id: v.id, bytes: 1, partial: false }])).toBe(false)
+    expect(modelReady(v, [{ id: v.id, bytes: 1, partial: false }, { id: v.extra!.id, bytes: 1, partial: true }])).toBe(false)
+    expect(modelReady(v, [{ id: v.id, bytes: 1, partial: false }, { id: v.extra!.id, bytes: 1, partial: false }])).toBe(true)
   })
 
   it('recomienda según la RAM del teléfono', () => {

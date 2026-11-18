@@ -24,6 +24,12 @@ for arg in "$@"; do
   esac
 done
 
+[[ -f "$SHERPA_ONNX_LIB_DIR/libsherpa-onnx-c-api.so" ]] || ./herramientas/sherpa-onnx.sh
+# Librerías de la voz dentro del APK (la copia automática de sherpa-onnx-sys se salta si la carpeta
+# ya tiene otras .so, como la de la propia app).
+JNI=src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a
+mkdir -p "$JNI" && cp "$SHERPA_ONNX_LIB_DIR"/libsherpa-onnx-c-api.so "$SHERPA_ONNX_LIB_DIR"/libonnxruntime.so "$JNI"/
+
 VERSION=$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
 
 (cd src-tauri && cargo tauri android build --apk --target aarch64 "${FEATURES[@]}")
