@@ -81,7 +81,7 @@ src/main       Electron main process (providers, speech worker, TTS, jobs…)
 src/renderer   React UI
 src/shared     Types shared by both, including the typed IPC contract
 site/          Bilingual static website (node site/build.mjs)
-deploy/        Dockerfile, Helm chart and deploy script for the website
+deploy/        Helm chart and deploy script for the website (no image registry: the page ships as ConfigMaps)
 packaging/aur  PKGBUILD for the AUR
 tools/         Manifest builder and package checker
 .github/       CI, release and site-image workflows

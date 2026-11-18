@@ -1,3 +1,12 @@
+{{- /*
+  Web de DictaFlow sin registro de imágenes: el clúster solo descarga la imagen oficial de nginx
+  (Docker Hub). La página (HTML, imágenes y su nginx.conf) la genera deploy/deploy.sh en tu equipo,
+  la empaqueta en un .tar.gz y la sube como ConfigMaps «<release>-web-<hash>-<n>» (en trozos, por el
+  límite de 1 MiB de cada ConfigMap). Al arrancar, un initContainer une los trozos y los desempaqueta.
+  Cada versión tiene su propio hash: cambiarla rehace los pods de forma gradual y --rollback funciona.
+*/}}
+{{- $hash := required "web.hash: lo pone deploy/deploy.sh" .Values.web.hash }}
+{{- $parts := int (required "web.parts: lo pone deploy/deploy.sh" .Values.web.parts) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,17 +21,37 @@ spec:
   template:
     metadata:
       labels: {{- include "dictaflow-site.selector" . | nindent 8 }}
+      annotations:
+        dictaflow/web: {{ $hash | quote }}
     spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets: {{ toYaml . | nindent 8 }}
-      {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
         seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        - name: unpack
+          image: {{ .Values.web.image | quote }}
+          command: [sh, -ec]
+          args:
+            - |
+              cat /parts/part-* > /tmp/web.tar.gz   # part-000, part-001… (el glob ya los ordena)
+              echo "{{ $hash }}  /tmp/web.tar.gz" | sha256sum -c -
+              tar -xzf /tmp/web.tar.gz -C /work
+              rm /tmp/web.tar.gz
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: parts, mountPath: /parts, readOnly: true }
+            - { name: work, mountPath: /work }
+            - { name: tmp, mountPath: /tmp }
       containers:
         - name: web
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ .Values.web.image | quote }}
           ports: [{ name: http, containerPort: 8080 }]
           readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
           livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 5, periodSeconds: 20 }
@@ -32,6 +61,15 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
           volumeMounts:
+            - { name: work, mountPath: /usr/share/nginx/html, subPath: html, readOnly: true }
+            - { name: work, mountPath: /etc/nginx/conf.d, subPath: conf, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
+        - name: parts
+          projected:
+            sources:
+              {{- range $i := until $parts }}
+              - configMap: { name: {{ printf "%s-web-%s-%d" $.Release.Name (trunc 12 $hash) $i }} }
+              {{- end }}
+        - { name: work, emptyDir: {} }
         - { name: tmp, emptyDir: {} }

@@ -1,10 +1,11 @@
 replicaCount: 2
 
-image:
-  repository: ghcr.io/gmr027/dictaflow-site
-  tag: latest            # el script de despliegue lo sustituye por una etiqueta única en cada release
-  pullPolicy: IfNotPresent
-imagePullSecrets: []     # p. ej. [{ name: ghcr-pull }] si la imagen es privada
+# La página no va en ninguna imagen ni registro: deploy/deploy.sh la sube al clúster como
+# ConfigMaps (ver templates/deployment.yaml) y pone aquí su hash y en cuántos trozos va.
+web:
+  image: nginxinc/nginx-unprivileged:1.27-alpine
+  hash: ""
+  parts: 0
 
 service:
   port: 80

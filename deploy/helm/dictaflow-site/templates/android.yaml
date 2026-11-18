@@ -1,6 +1,6 @@
 {{- if .Values.android.enabled }}
 {{- /*
-  App de Android: el APK y su version.json NO van en la imagen de la web (que se sube a ghcr.io).
+  App de Android: el APK y su version.json no van con la página (ConfigMaps de deploy.sh) ni en GitHub.
   Viven en un volumen del clúster que llena android/publicar.sh con `kubectl cp`, y los sirve este
   nginx (imagen oficial de Docker Hub). El Ingress le manda todo /app/android/.
 */}}
