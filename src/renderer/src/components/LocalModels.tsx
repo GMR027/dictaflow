@@ -67,7 +67,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
 
   const file = (id: string): LocalModelFile | undefined => files.find((f) => f.id === id)
   const active = (m: LocalModel): boolean =>
-    m.kind === 'live' ? modelReady(m, files)
+    m.kind === 'live' || (m.kind === 'tts' && !m.voice) ? modelReady(m, files)
       : m.kind === 'tts' ? !!m.lang && settings.ttsVoice[m.lang] === m.voice : (m.kind === 'stt' ? settings.sttModel : settings.localLlm) === m.id
   const select = (m: LocalModel): Promise<void> =>
     m.kind === 'tts' && m.lang && m.voice
@@ -144,7 +144,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
             const pct = p && p.total ? Math.floor((p.received / p.total) * 100) : 0
             return (
               <div key={m.id} className={`rec ${fit}`}>
-                {ready && m.kind !== 'live' && <input type="radio" name={`local-${kind}${m.lang ? `-${m.lang}` : ''}`} checked={active(m)} onChange={() => void select(m)} aria-label={`Usar ${m.label}`} />}
+                {ready && m.kind !== 'live' && (m.kind !== 'tts' || m.voice) && <input type="radio" name={`local-${kind}${m.lang ? `-${m.lang}` : ''}`} checked={active(m)} onChange={() => void select(m)} aria-label={`Usar ${m.label}`} />}
                 <span>
                   <b>{m.label}</b> <small>{formatBytes(totalBytes(m))}</small><br />
                   <small>{m.note}</small>
@@ -159,7 +159,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
                   {!busy && f?.partial && <><br /><small className="muted">Descarga a medias ({formatBytes(f.bytes)}): continúa donde se quedó.</small></>}
                   {listen?.id === m.id && <><br /><small className={listen.msg.startsWith('✗') ? 'warn' : 'muted'}>{listen.msg}</small></>}
                 </span>
-                {kind === 'tts' && (
+                {kind === 'tts' && m.voice && (
                   <button className="link" onClick={() => void listenVoice(m, ready)} disabled={!!listen && !listen.msg.startsWith('✗')} aria-label={`Escuchar ${m.label}`}>▶</button>
                 )}
                 <em>{ready && active(m) ? '✓ En uso' : BADGE[fit]}</em>

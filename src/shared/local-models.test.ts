@@ -34,7 +34,7 @@ describe('catálogo de modelos locales', () => {
   })
 
   it('las voces son las de escritorio, con su configuración y sus voces por defecto', () => {
-    const voices = LOCAL_MODELS.filter((m) => m.kind === 'tts')
+    const voices = LOCAL_MODELS.filter((m) => m.kind === 'tts' && m.voice)
     expect(voices.length).toBeGreaterThanOrEqual(10)
     for (const v of voices) {
       expect(VOICE_META[v.voice!]).toBeDefined()

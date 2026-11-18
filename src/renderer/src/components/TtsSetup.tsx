@@ -59,6 +59,14 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
   )
 }
 
+/** Grupos del selector: voces del teléfono, Kokoro y Piper (en escritorio, solo Piper/nube). */
+const GROUPS: [string[], string][] = [
+  [['sistema'], 'Voces del teléfono (sin descargas)'],
+  [['kokoro'], 'Kokoro · más naturales'],
+  [['piper', 'sherpa-onnx'], 'Piper'],
+  [['cloud'], 'Nube']
+]
+
 /**
  * Selector de voz del catálogo compartido, con filtro por idioma.
  * Muestra las voces descargadas y deja descargar las que faltan.
@@ -74,13 +82,16 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
   const [error, setError] = useState('')
   const [playing, setPlaying] = useState('')
   const voices = (info?.catalog ?? []).filter((v) => speaks(v, lang))
+  const current = info?.catalog.find((v) => v.id === value)
 
   const playSample = async (id: string): Promise<void> => {
     setError('')
     setPlaying(id)
     try {
       const bytes = await window.api.voiceSample(id)
-      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'audio/mpeg' }))
+      // Las muestras publicadas son MP3; las que dice el teléfono (Kokoro, voces del sistema), WAV.
+      const wav = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: wav ? 'audio/wav' : 'audio/mpeg' }))
       const a = new Audio(url)
       a.onended = a.onerror = () => { URL.revokeObjectURL(url); setPlaying('') }
       await a.play()
@@ -109,16 +120,22 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
       <label>Voz
         <select value={value} onChange={(e) => onChange(e.target.value)} disabled={!voices.length}>
           {!voices.length && <option value="">Sin voces para este idioma</option>}
-          {voices.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.label}{v.installed ? '' : ' (sin descargar)'}
-            </option>
-          ))}
+          {GROUPS.map(([engines, title]) => {
+            const group = voices.filter((v) => engines.includes(v.engine))
+            if (!group.length) return null
+            return (
+              <optgroup key={title} label={title}>
+                {group.map((v) => (
+                  <option key={v.id} value={v.id}>{v.label}{v.installed ? '' : ' (sin descargar)'}</option>
+                ))}
+              </optgroup>
+            )
+          })}
         </select>
       </label>
       {value && (
         <div className="row tight">
-          {info?.catalog.find((v) => v.id === value)?.sampleUrl && (
+          {current?.sampleUrl && (current.installed || current.engine !== 'kokoro') && (
             <button onClick={() => void playSample(value)} disabled={playing === value}>
               {playing === value ? '🔊 Reproduciendo…' : '🔊 Escuchar muestra'}
             </button>

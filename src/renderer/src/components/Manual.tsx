@@ -155,7 +155,13 @@ const TOPICS: Topic[] = [
       <p>Elige un archivo de audio del teléfono o graba con el micrófono. Transcribe con marcas de tiempo y lo puedes guardar como .txt, .srt o .vtt.</p>
       <p>Con IA puedes generar resumen, capítulos, post para redes, notas o apuntes de estudio, y traducir.</p>
       <h4>🔊 Texto → Voz</h4>
-      <p>Escribe o pega texto, elige idioma, voz y velocidad, escúchalo y guárdalo en <b>WAV o MP3</b> donde quieras (Descargas, Drive…). Las voces se descargan en Ajustes → Servicios de IA.</p>
+      <p>Escribe o pega texto, elige idioma, voz y velocidad, escúchalo y guárdalo en <b>WAV o MP3</b> donde quieras (Descargas, Drive…).</p>
+      <p>Hay tres tipos de voz, agrupados en el selector:</p>
+      <ul>
+        <li><b>Voces del teléfono:</b> las del motor de voz de Android (Google, Samsung…), sin descargas. Son rápidas; las encuentras o añades en los ajustes de Android → Texto a voz.</li>
+        <li><b>Kokoro:</b> las más naturales (3 en español y 28 en inglés), en una descarga de unos 155 MB en Ajustes → Servicios de IA. Son más lentas: ideales para el lector y los audiolibros.</li>
+        <li><b>Piper:</b> una descarga por voz (60–120 MB), rápidas y sin conexión.</li>
+      </ul>
     </>)
   },
   {

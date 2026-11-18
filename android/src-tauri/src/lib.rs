@@ -243,9 +243,20 @@ async fn llm_complete(
 
 /// Lee un texto con una voz descargada. Devuelve un WAV como datos binarios (no como lista JSON).
 #[tauri::command]
-async fn tts_synth(voice: String, text: String, speed: f32, tts: tauri::State<'_, Arc<Tts>>) -> Result<tauri::ipc::Response, String> {
+async fn tts_synth(
+    voice: String,
+    text: String,
+    speed: f32,
+    sid: Option<i32>,
+    lang: Option<String>,
+    tts: tauri::State<'_, Arc<Tts>>,
+) -> Result<tauri::ipc::Response, String> {
     let tts = tts.inner().clone();
-    let wav = tauri::async_runtime::spawn_blocking(move || tts.sintetizar(&voice, &text, speed))
+    let wav = tauri::async_runtime::spawn_blocking(move || match sid {
+        // Kokoro: un solo modelo con muchas voces (sid) e idioma de pronunciación.
+        Some(sid) => tts.sintetizar_kokoro(sid, lang.as_deref().unwrap_or("en-us"), &text, speed),
+        None => tts.sintetizar(&voice, &text, speed),
+    })
         .await
         .map_err(|e| e.to_string())??;
     Ok(tauri::ipc::Response::new(wav))
@@ -446,6 +457,57 @@ fn plugin_instalador() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
+/// Plugin propio (gen/android/…/VozSistemaPlugin.kt): voces del motor de texto a voz del teléfono.
+struct VozSistema(tauri::plugin::PluginHandle<tauri::Wry>);
+
+fn plugin_voz_sistema() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("vozsistema")
+        .setup(|app, api| {
+            #[cfg(target_os = "android")]
+            app.manage(VozSistema(api.register_android_plugin("mx.com.iguzman.dictaflow", "VozSistemaPlugin")?));
+            #[cfg(not(target_os = "android"))]
+            let _ = (app, api);
+            Ok(())
+        })
+        .build()
+}
+
+/// Voces instaladas en el teléfono (sin conexión, español e inglés) y el motor que las da.
+#[tauri::command]
+async fn voz_sistema_voces(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let voz = app.try_state::<VozSistema>().ok_or("Las voces del sistema solo existen en Android.")?;
+        voz.0.run_mobile_plugin::<Value>("voces", serde_json::json!({})).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Deserialize)]
+struct AudioSistema {
+    wav: String,
+}
+
+/// Lee un texto con una voz del teléfono y devuelve el WAV.
+#[tauri::command]
+async fn voz_sistema_sintetizar(app: tauri::AppHandle, voice: String, text: String, speed: f32) -> Result<tauri::ipc::Response, String> {
+    let texto = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if texto.is_empty() {
+        return Err("No hay texto que leer.".into());
+    }
+    let wav = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let voz = app.try_state::<VozSistema>().ok_or("Las voces del sistema solo existen en Android.")?;
+        let r: AudioSistema = voz
+            .0
+            .run_mobile_plugin("sintetizar", serde_json::json!({ "voz": voice, "texto": texto, "velocidad": modelos::velocidad_voz(speed) }))
+            .map_err(|e| e.to_string())?;
+        base64(&r.wav)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(wav))
+}
+
 #[derive(serde::Deserialize)]
 struct EstadoInstalador {
     estado: String,
@@ -528,6 +590,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(plugin_instalador())
+        .plugin(plugin_voz_sistema())
         .invoke_handler(tauri::generate_handler![
             doc_get,
             doc_set,
@@ -552,6 +615,8 @@ pub fn run() {
             llm_complete,
             tts_synth,
             tts_sample,
+            voz_sistema_voces,
+            voz_sistema_sintetizar,
             file_write,
             file_read,
             file_remove,

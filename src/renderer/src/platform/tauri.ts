@@ -16,8 +16,9 @@ import { DEFAULT_SETTINGS, type ChatMsg, type HistoryItem, type Lang, type Setti
 import { normalizeModel } from '@shared/providers'
 import { applyDictionary } from '@shared/dictionary'
 import { pcmToB64, whisperPrompt } from './pcm'
+import { KOKORO_MODEL, KOKORO_VOICES, kokoroId, kokoroLabel, kokoroVoice } from '@shared/kokoro'
 import { createLlmTasks, type ContentAction, type LlmLimits } from '@shared/llm-tasks'
-import { companions, liveModelFor, LOCAL_MODELS, localVoice, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
+import { companions, liveModelFor, LOCAL_MODELS, localVoice, totalBytes, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
 import { VOICE_META } from '@shared/voice-catalog'
 import type { VoiceStatus } from '@shared/voice'
 import type { UpdateInfo } from '@shared/update'
@@ -145,19 +146,79 @@ async function downloadAndWait(m: LocalModel): Promise<void> {
 }
 
 // ── Texto a voz ────────────────────────────────────────────────────────────────────────────
-/** Voz Piper (sherpa-onnx en Rust). Devuelve un WAV. */
+// Tres tipos de voz, por el prefijo de su identificador en Ajustes:
+//   • «es_MX-claude-high»: Piper (sherpa-onnx en Rust), una descarga por voz;
+//   • «kokoro:ef_dora»: Kokoro (sherpa-onnx en Rust), un modelo con 31 voces;
+//   • «sistema:<nombre>»: el motor de voz del teléfono (VozSistemaPlugin.kt), sin descargas.
+
+interface VozSistemaInfo { nombre: string; idioma: string; region: string; etiqueta: string; calidad: number }
+let systemVoices: Promise<VozSistemaInfo[]> | null = null
+/** Voces del teléfono (se piden una vez; el motor tarda en arrancar). */
+function listSystemVoices(): Promise<VozSistemaInfo[]> {
+  // «es-US-language» es un alias de la voz predeterminada de ese idioma: se quita para no repetirla.
+  systemVoices ??= tauriInvoke<{ voces: VozSistemaInfo[] }>('voz_sistema_voces').then((r) => r.voces.filter((v) => !v.nombre.endsWith('-language'))).catch(() => {
+    systemVoices = null
+    return []
+  })
+  return systemVoices
+}
+
+/** Nombre legible de una voz del teléfono: «Español (México) · voz 2 (alta)». */
+export function systemVoiceLabel(v: VozSistemaInfo, n: number): string {
+  const calidad = v.calidad >= 400 ? ' (alta)' : ''
+  return `${v.etiqueta.replace(/^./, (c) => c.toUpperCase())} · voz ${n}${calidad} (teléfono)`
+}
+
+async function systemCatalog(): Promise<VoiceStatus[]> {
+  const voces = await listSystemVoices()
+  const cuenta = new Map<string, number>()
+  return voces.map((v): VoiceStatus => {
+    const n = (cuenta.get(v.etiqueta) ?? 0) + 1
+    cuenta.set(v.etiqueta, n)
+    return {
+      id: `sistema:${v.nombre}`, engine: 'sistema', langs: [v.idioma as Lang], variant: `${v.idioma}_${v.region}`, speaker: v.nombre,
+      label: systemVoiceLabel(v, n), quality: v.calidad >= 400 ? 'high' : 'medium', sizeBytes: 0,
+      license: 'La del motor de voz del teléfono', usage: 'terminos-propios', source: 'Motor de texto a voz de Android',
+      sampleUrl: 'local', installed: true
+    }
+  })
+}
+
+function kokoroCatalog(installed: boolean): VoiceStatus[] {
+  return KOKORO_VOICES.map((v): VoiceStatus => ({
+    id: kokoroId(v), engine: 'kokoro', langs: [v.lang], variant: v.accent, speaker: v.name, label: kokoroLabel(v),
+    quality: 'high', sizeBytes: totalBytes(KOKORO_MODEL), license: 'Apache-2.0', usage: 'libre',
+    source: 'hexgrad/Kokoro-82M · csukuangfj/kokoro-int8-multi-lang-v1_0', sampleUrl: 'local', installed
+  }))
+}
+
+/** Lee `text` y devuelve un WAV, con la voz pedida o la de Ajustes para ese idioma. */
 async function synthesize(text: string, lang: Lang, voiceId?: string): Promise<Uint8Array> {
   const s = await getSettings()
+  const id = voiceId ?? s.ttsVoice[lang]
+  const k = kokoroVoice(id)
+  if (k) {
+    if (!modelReady(KOKORO_MODEL, await listModels())) throw new Error('Falta descargar Kokoro (Ajustes → Servicios de IA → Lectura en voz alta).')
+    return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_synth', { voice: 'kokoro', text, speed: s.ttsSpeed, sid: k.sid, lang: k.accent }))
+  }
+  if (id.startsWith('sistema:')) {
+    return new Uint8Array(await tauriInvoke<ArrayBuffer>('voz_sistema_sintetizar', { voice: id.slice(8), text, speed: s.ttsSpeed }))
+  }
   const files = await listModels()
-  let m = localVoice(voiceId ?? s.ttsVoice[lang])
+  let m = localVoice(id)
   // Sin voz pedida y la de Ajustes no está descargada: cualquier otra descargada del mismo idioma.
   if (!voiceId && (!m || !modelReady(m, files))) {
-    m = LOCAL_MODELS.find((x) => x.kind === 'tts' && x.lang === lang && modelReady(x, files)) ?? m
+    m = LOCAL_MODELS.find((x) => x.kind === 'tts' && x.voice && x.lang === lang && modelReady(x, files)) ?? m
   }
-  if (!m) throw new Error(`La voz ${voiceId ?? s.ttsVoice[lang]} no está disponible en Android: elige otra en Ajustes → Servicios de IA.`)
+  if (!m) throw new Error(`La voz ${id} no está disponible en Android: elige otra en Ajustes → Servicios de IA.`)
   if (!modelReady(m, files)) throw new Error(`Falta descargar la voz ${m.label} (Ajustes → Servicios de IA).`)
   const wav = await tauriInvoke<ArrayBuffer>('tts_synth', { voice: m.voice, text, speed: s.ttsSpeed })
   return new Uint8Array(wav)
+}
+
+const SAMPLE_TEXT: Record<Lang, string> = {
+  es: 'Hola. Así suena esta voz en tu teléfono, sin conexión a internet.',
+  en: 'Hello. This is how this voice sounds on your phone, offline.'
 }
 
 // ── Actualizaciones (la web de DictaFlow publica /app/android/version.json) ─────────────────
@@ -215,14 +276,17 @@ const handlers: Handlers = {
 
   'tts:status': async () => {
     const files = await listModels()
-    const catalog = LOCAL_MODELS.filter((m) => m.kind === 'tts').map((m): VoiceStatus => ({
+    const piper = LOCAL_MODELS.filter((m) => m.kind === 'tts' && m.voice).map((m): VoiceStatus => ({
       ...VOICE_META[m.voice!], id: m.voice!, engine: 'sherpa-onnx', sizeBytes: m.bytes, sampleUrl: localVoiceSample(m.voice!), installed: modelReady(m, files)
     }))
+    const catalog = [...piper, ...kokoroCatalog(modelReady(KOKORO_MODEL, files)), ...(await systemCatalog())]
     // El motor va dentro de la app: no hay nada que instalar aparte.
     return { piperInstalled: true, voices: catalog.filter((v) => v.installed).map((v) => v.id), catalog }
   },
   'tts:install-piper': () => undefined,
   'tts:install-voice': ({ id }) => {
+    if (kokoroVoice(id)) return downloadAndWait(KOKORO_MODEL)
+    if (id.startsWith('sistema:')) return undefined
     const m = localVoice(id)
     if (!m) throw new Error(`La voz ${id} no está disponible en Android.`)
     return downloadAndWait(m)
@@ -232,6 +296,12 @@ const handlers: Handlers = {
     if (m) for (const f of [m.id, m.extra!.id]) await tauriInvoke('models_remove', { id: f })
   },
   'tts:sample': async ({ id }) => {
+    // Kokoro y las voces del teléfono no tienen muestra publicada: la dice el propio teléfono.
+    const k = kokoroVoice(id)
+    if (k || id.startsWith('sistema:')) {
+      const lang: Lang = k ? k.lang : (await listSystemVoices()).find((v) => `sistema:${v.nombre}` === id)?.idioma === 'en' ? 'en' : 'es'
+      return synthesize(SAMPLE_TEXT[lang], lang, id)
+    }
     if (!localVoice(id)) throw new Error(`La voz ${id} no está disponible en Android.`)
     await netGuard(await getSettings(), 'Muestra de voz', localVoiceSample(id))
     return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_sample', { url: localVoiceSample(id) }))

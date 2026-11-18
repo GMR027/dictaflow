@@ -29,6 +29,7 @@ Se descargan de su fuente oficial solo cuando tú lo eliges.
 | Piper voices | **Each voice has its own license** — check the voice's `MODEL_CARD` in [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices) before commercial use | Hugging Face |
 | [Ollama](https://ollama.com) | MIT | ollama.com installer (optional) |
 | whisper.cpp models (ggml) | MIT (OpenAI Whisper) | Hugging Face |
+| [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) v1.0 (sherpa-onnx int8 conversion, `csukuangfj/kokoro-int8-multi-lang-v1_0`) | Apache-2.0 | Hugging Face — Android read-aloud voices |
 | [Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR) community streaming models (sherpa-onnx conversion, `csukuangfj/sherpa-onnx-streaming-zipformer-*-kroko-2025-08-06`) | CC-BY-SA (Banafo) | Hugging Face — Android «Texto en vivo» |
 
 Every download is verified with its SHA-256 before it is used, and the expected hashes live in

@@ -28,7 +28,10 @@ pub fn archivo_valido(nombre: &str) -> bool {
         && nombre.len() <= 128
         && !nombre.starts_with('.')
         && nombre.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
-    simple && [".bin", ".gguf", ".onnx", ".onnx.json", ".tokens.txt"].iter().any(|ext| nombre.ends_with(ext))
+    // Las tablas de texto (símbolos, léxicos) siempre llevan el prefijo de su modelo
+    // («kroko-es.tokens.txt», «kokoro.lexicon-us-en.txt»): un «tokens.txt» suelto chocaría entre modelos.
+    let texto = nombre.ends_with(".txt") && nombre.matches('.').count() >= 2;
+    simple && (texto || [".bin", ".gguf", ".onnx", ".onnx.json"].iter().any(|ext| nombre.ends_with(ext)))
 }
 
 /// Archivos de un modelo de texto en vivo (zipformer streaming) a partir de su identificador
@@ -44,6 +47,19 @@ pub fn archivos_vivo(id: &str) -> Option<[String; 4]> {
 /// Voz Piper: el identificador de escritorio («es_MX-claude-high»), con su modelo y su configuración.
 pub fn voz_valida(id: &str) -> bool {
     !id.is_empty() && !id.contains('.') && archivo_valido(&format!("{id}.onnx"))
+}
+
+/// Voces del modelo Kokoro v1.0 de sherpa-onnx (ids 0–53).
+pub const KOKORO_VOCES: i32 = 54;
+
+/// Idioma de pronunciación de Kokoro: inglés de EE. UU. o Reino Unido (con léxico) o español.
+pub fn idioma_kokoro(lang: &str) -> Result<&'static str, String> {
+    match lang {
+        "en-us" => Ok("en-us"),
+        "en-gb" => Ok("en-gb"),
+        "es" => Ok("es"),
+        l => Err(format!("Idioma de Kokoro no válido: «{l}».")),
+    }
 }
 
 /// Muestra de una voz: solo las oficiales de rhasspy/piper-voices en Hugging Face.
@@ -304,6 +320,17 @@ mod pruebas_motor {
         let tokens = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/tokens.txt";
         assert!(validar_pedido(tokens, "kroko-es.tokens.txt", 1, SHA).is_ok());
         assert!(validar_pedido(tokens, "tokens.txt", 1, SHA).is_err()); // sin prefijo no es un nombre válido
+    }
+
+    #[test]
+    fn kokoro() {
+        assert_eq!(idioma_kokoro("es").unwrap(), "es");
+        assert!(idioma_kokoro("fr").is_err());
+        const SHA: &str = "75635ea3b85a32d00094dcdd61a258aba87c160f7c264c304a7b3ae9d734195e";
+        let base = "https://huggingface.co/csukuangfj/kokoro-int8-multi-lang-v1_0/resolve/main/";
+        assert!(validar_pedido(&format!("{base}model.int8.onnx"), "kokoro.model.int8.onnx", 1, SHA).is_ok());
+        assert!(validar_pedido(&format!("{base}lexicon-us-en.txt"), "kokoro.lexicon-us-en.txt", 1, SHA).is_ok());
+        assert!(validar_pedido(&format!("{base}voices.bin"), "kokoro.voices.bin", 1, SHA).is_ok());
     }
 
     #[test]

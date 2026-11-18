@@ -1,7 +1,7 @@
 import type { Lang } from './types'
 
 /** Motor de síntesis que produce la voz. */
-export type VoiceEngine = 'piper' | 'cloud' | 'sherpa-onnx'
+export type VoiceEngine = 'piper' | 'cloud' | 'sherpa-onnx' | 'kokoro' | 'sistema'
 
 /** Calidad del modelo de voz (Piper: x_low, low, medium, high). */
 export type VoiceQuality = 'x_low' | 'low' | 'medium' | 'high'
