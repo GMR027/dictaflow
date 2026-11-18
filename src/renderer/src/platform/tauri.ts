@@ -22,6 +22,7 @@ import type { VoiceStatus } from '@shared/voice'
 import type { UpdateInfo } from '@shared/update'
 import { createApi, type Invoke, type On } from '../../../preload/api'
 import { createDataHandlers, netGuard } from './android-datos'
+import { auraBusy, watchPlayback } from '../aura'
 
 /** Error para lo que aún no existe en Android (o no existirá). */
 class NoDisponible extends Error {
@@ -344,12 +345,28 @@ const DESKTOP_ONLY: Partial<Record<IpcChannel, string>> = {
   'diagnostics:report': 'El informe de diagnóstico'
 }
 
+/**
+ * Aura amarilla mientras se transcribe o se redacta (y verde al terminar). Los borradores del
+ * dictado en vivo no cuentan: ocurren mientras el micrófono sigue escuchando.
+ */
+const AURA_CHANNELS: IpcChannel[] = ['stt:transcribe', 'stt:detailed', 'llm:rewrite', 'llm:translate', 'llm:generate', 'llm:minutes', 'llm:chat', 'tts:synth', 'audio:export', 'pv:synthesize']
+function auraFor(channel: IpcChannel, req: unknown): ((ok: boolean) => void) | null {
+  if (!AURA_CHANNELS.includes(channel)) return null
+  if (channel.startsWith('stt:') && (req as { priority?: SttPriority } | undefined)?.priority === 'draft') return null
+  return auraBusy()
+}
+watchPlayback()
+
 const invoke: Invoke = async <K extends IpcChannel>(channel: K, req?: IpcReq<K>): Promise<IpcRes<K>> => {
   const h = handlers[channel] as Handler<K> | undefined
   if (h) {
+    const aura = auraFor(channel, req)
     try {
-      return await h(req as IpcReq<K>)
+      const res = await h(req as IpcReq<K>)
+      aura?.(channel.startsWith('stt:') ? !!(res as TranscribeResult).text?.trim() : true)
+      return res
     } catch (e) {
+      aura?.(false)
       // Rust rechaza con el texto del error, no con un Error: la interfaz lee `e.message`.
       throw e instanceof Error ? e : new Error(typeof e === 'string' ? e : JSON.stringify(e))
     }

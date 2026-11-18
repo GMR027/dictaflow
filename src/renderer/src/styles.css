@@ -252,11 +252,28 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
 /* Teléfono (Android): el menú pasa a una barra inferior desplazable y el contenido ocupa la pantalla. */
 @media (max-width: 600px) {
   .shell { grid-template-columns: 1fr; grid-template-rows: 1fr auto; height: 100dvh; }
-  aside { grid-row: 2; flex-direction: row; padding: 4px 6px; border-right: 0; border-top: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; }
+  /* Barra inferior compacta: una fila de botones que se desliza a los lados. (Los selectores llevan
+     `.shell > aside`: `.brand` y `.jobs` se declaran después y ganaban a un `aside > :not(nav)`.) */
+  aside { grid-row: 2; flex-direction: row; align-items: center; padding: 4px 6px; border-right: 0; border-top: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  aside::-webkit-scrollbar { display: none; }
   aside nav { flex-direction: row; flex: none; }
-  aside nav button { white-space: nowrap; }
-  aside > :not(nav) { display: none; }
-  main { padding: 12px; }
+  aside nav button { white-space: nowrap; padding: 8px 12px; font-size: .92rem; }
+  .shell > aside > .brand, .shell > aside > .theme, .shell > aside > .badge { display: none; }
+  /* Trabajos en segundo plano: flotan sobre la barra en vez de agrandarla. */
+  .shell > aside > .jobs { position: fixed; left: 8px; right: 8px; bottom: 60px; z-index: 20; margin: 0; max-height: 35dvh; overflow: auto; }
+  .shell > aside > .jobs { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; box-shadow: var(--shadow); gap: 6px; }
+  .shell > aside > .jobs .job { background: var(--field); }
+  main { padding: 12px; overflow-x: hidden; }
+  /* Nada se sale de la pantalla: palabras largas (rutas, direcciones) se parten y las tablas se
+     desplazan dentro de sí mismas. */
+  main p, main li, main td, main th, main code, main pre, main small, main b, main .muted { overflow-wrap: anywhere; }
+  main table { display: block; overflow-x: auto; }
+  main input, main select, main textarea { max-width: 100%; min-width: 0; }
+  .bar label { min-width: 0; flex: 1 1 100%; }
+  /* Manual: desplegable de temas arriba y el texto a lo ancho. */
+  .manual > nav { display: none; }
+  .manual-pick { display: flex !important; }
+  .manual article { line-height: 1.6; }
   .onboard { padding: 8px; min-height: 100dvh; }
   .wizard { padding: 16px; max-height: 98dvh; }
   .card { padding: 12px; }
@@ -267,7 +284,85 @@ th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
   .rec progress { width: 100%; }
 }
 
+/* Manual: el desplegable de temas solo se usa en el teléfono. */
+.manual-pick { display: none; margin: 0; }
+.manual-steps { justify-content: space-between; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.netlist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.netlist li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Aura de audio (Android, aura.ts): borde luminoso de toda la pantalla. Azul = escuchando o
+   hablando; amarillo = transcribiendo; verde = listo. No intercepta toques. */
+.aura { position: fixed; inset: 0; z-index: 100; pointer-events: none; opacity: 0; transition: opacity .35s ease, box-shadow .35s ease; --aura: transparent; }
+.aura.listen { --aura: #3584e4; }
+.aura.busy { --aura: #e5a50a; }
+.aura.done { --aura: #2ec27e; }
+.aura:not(.idle) { opacity: 1; box-shadow: inset 0 0 0 3px var(--aura), inset 0 0 28px 6px color-mix(in srgb, var(--aura) 70%, transparent), inset 0 0 90px 10px color-mix(in srgb, var(--aura) 35%, transparent); }
+.aura.listen, .aura.busy { animation: aura-pulse 1.6s ease-in-out infinite; }
+@keyframes aura-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .aura.listen, .aura.busy { animation: none; } }
+
 /* Aviso de versión nueva (Android): tapa la app hasta que se elige «Actualizar» o «Ahora no». */
 .update-prompt { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 0.45); }
 .update-prompt .card { width: min(480px, 100%); max-height: 100%; overflow: auto; }
 .update-prompt h2 { margin-top: 0; }
+
+/* ===== Iconos con vida (components/ToolIcon.tsx) ===== */
+.tool-icon { position: relative; display: inline-block; width: 1.25em; text-align: center; line-height: 1; isolation: isolate; --tool-speed: 1; vertical-align: -.08em; }
+.tool-glyph { position: relative; z-index: 1; display: inline-block; }
+.tool-fx { position: absolute; z-index: 2; pointer-events: none; opacity: 0; line-height: 1; }
+button.on .tool-icon, button:hover .tool-icon, button:focus-visible .tool-icon, header .tool-icon { --tool-speed: .6; }
+
+/* Audio: los audífonos se mecen y suben notas. */
+.tool-audio .tool-glyph { transform-origin: 50% 85%; animation: tool-sway calc(3.6s * var(--tool-speed)) ease-in-out infinite; }
+.tool-audio .note { top: -.1em; right: -.25em; font-size: .55em; color: var(--accent); animation: tool-note calc(3.6s * var(--tool-speed)) ease-out .3s infinite; }
+.tool-audio .note.n2 { right: auto; left: -.2em; font-size: .48em; animation-delay: 1.5s; }
+
+/* Lector: una línea de lectura barre el libro, que se abre un poco al pasar página. */
+.tool-lector { overflow: hidden; border-radius: 3px; }
+.tool-lector .tool-glyph { animation: tool-page calc(4.4s * var(--tool-speed)) ease-in-out .8s infinite; }
+.tool-lector .scan { left: 0; right: 0; top: 0; height: 100%; opacity: 1; background: linear-gradient(180deg, transparent 35%, color-mix(in srgb, var(--accent) 45%, transparent) 50%, transparent 65%); transform: translateY(-110%); animation: tool-scan calc(4.4s * var(--tool-speed)) ease-in-out .8s infinite; }
+
+/* Reuniones: globos de diálogo por turnos. */
+.tool-reuniones .tool-glyph { animation: tool-nudge calc(4s * var(--tool-speed)) ease-in-out 1.4s infinite; }
+.tool-reuniones .bubble { top: -.35em; right: -.35em; font-size: .5em; transform-origin: 0 100%; animation: tool-bubble calc(4s * var(--tool-speed)) ease-out 1.4s infinite; }
+.tool-reuniones .bubble.b2 { right: auto; left: -.35em; transform-origin: 100% 100%; animation-delay: 2.4s; }
+
+/* Traducción: el globo se balancea y la «A» se vuelve «文». */
+.tool-traduccion .tool-glyph { animation: tool-rock calc(5s * var(--tool-speed)) ease-in-out 2s infinite; }
+.tool-traduccion .glyph-a, .tool-traduccion .glyph-b { bottom: -.2em; right: -.3em; font-size: .45em; font-weight: 800; color: var(--accent); }
+.tool-traduccion .glyph-a { animation: tool-swap-out calc(5s * var(--tool-speed)) ease-in-out 2s infinite; }
+.tool-traduccion .glyph-b { animation: tool-swap-in calc(5s * var(--tool-speed)) ease-in-out 2s infinite; }
+
+@keyframes tool-sway { 0%, 50%, 100% { transform: none; } 10% { transform: rotate(-8deg); } 22% { transform: rotate(7deg); } 34% { transform: rotate(-4deg); } 44% { transform: rotate(2deg); } }
+@keyframes tool-note {
+  0% { opacity: 0; transform: translate(0, .2em) scale(.6); }
+  12% { opacity: .9; }
+  45%, 100% { opacity: 0; transform: translate(.25em, -.9em) scale(1) rotate(12deg); }
+}
+@keyframes tool-page { 0%, 40%, 100% { transform: none; } 48% { transform: scaleX(.9) translateY(-.04em); } 56% { transform: scaleX(1.06); } 64% { transform: none; } }
+@keyframes tool-scan { 0%, 4% { transform: translateY(-110%); } 40%, 100% { transform: translateY(110%); } }
+@keyframes tool-nudge { 0%, 6%, 22%, 100% { transform: none; } 12% { transform: rotate(-5deg) scale(1.05); } }
+@keyframes tool-bubble {
+  0% { opacity: 0; transform: scale(.2); }
+  8% { opacity: 1; transform: scale(1.15); }
+  14% { transform: scale(1); }
+  30% { opacity: 1; transform: scale(1) translateY(-.1em); }
+  38%, 100% { opacity: 0; transform: scale(.8) translateY(-.4em); }
+}
+@keyframes tool-rock { 0%, 100% { transform: none; } 15% { transform: rotate(-12deg); } 32% { transform: rotate(9deg); } 46% { transform: rotate(-3deg); } 56% { transform: none; } }
+@keyframes tool-swap-out {
+  0%, 10% { opacity: 0; transform: translateY(.3em); }
+  18%, 38% { opacity: 1; transform: none; }
+  46%, 100% { opacity: 0; transform: translateY(-.3em) scale(.7); }
+}
+@keyframes tool-swap-in {
+  0%, 42% { opacity: 0; transform: translateY(.3em) scale(.7); }
+  52%, 72% { opacity: 1; transform: none; }
+  82%, 100% { opacity: 0; transform: translateY(-.3em); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-icon * { animation: none !important; }
+  .tool-fx { display: none; }
+}

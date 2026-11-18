@@ -6,6 +6,7 @@ import { Speaker } from '../speech'
 import { splitText } from '../textutil'
 import { useApp } from '../store'
 import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
+import { ToolIcon } from './ToolIcon'
 
 export function Reader(): JSX.Element {
   const { settings, flash, notice } = useApp()
@@ -92,7 +93,7 @@ export function Reader(): JSX.Element {
   return (
     <div className="view split">
       <section className="card side">
-        <header><h2>📖 Biblioteca</h2></header>
+        <header><h2><ToolIcon tool="lector" /> Biblioteca</h2></header>
         <label className="btn">+ Añadir documento
           <input type="file" accept=".pdf,.epub,.txt,.md" hidden onChange={(e) => { void add(e.target.files?.[0]); e.target.value = '' }} />
         </label>

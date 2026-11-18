@@ -1,3 +1,5 @@
+import { auraListen } from './aura'
+
 export const SAMPLE_RATE = 16000
 const MIN_RMS = 0.004
 /** Audio previo a la detección de voz que se conserva para no cortar el inicio de la frase */
@@ -146,6 +148,8 @@ export class Mic {
   private stream: MediaStream | null = null
   private node: AudioWorkletNode | null = null
   private seg: Segmenter
+  /** Aura azul mientras el micrófono escucha (aura.ts). */
+  private aura: (() => void) | null = null
 
   constructor(private opts: MicOptions) {
     this.seg = new Segmenter(opts.mode, opts.onSegment, opts.pauseMs, opts.onSilence)
@@ -162,6 +166,7 @@ export class Mic {
         channelCount: 1
       }
     })
+    this.aura = auraListen()
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
     // Archivo propio (no blob:) para cumplir la CSP `script-src 'self'`
     await this.ctx.audioWorklet.addModule(new URL('./tap-worklet.js', document.baseURI).href)
@@ -178,6 +183,8 @@ export class Mic {
   }
 
   async stop(discard = false): Promise<void> {
+    this.aura?.()
+    this.aura = null
     this.node?.disconnect()
     this.stream?.getTracks().forEach((t) => t.stop())
     await this.ctx?.close()

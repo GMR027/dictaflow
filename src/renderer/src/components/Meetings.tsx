@@ -4,6 +4,7 @@ import { Mic, Segmenter } from '../audio'
 import { fmtTime, toSubtitles } from '../audioio'
 import { download } from '../textutil'
 import { useApp } from '../store'
+import { ToolIcon } from './ToolIcon'
 
 type Source = 'mic' | 'system' | 'both'
 const SRC: Record<Source, string> = { mic: '🎤 Micrófono', system: '🔊 Audio del sistema', both: '🎤+🔊 Ambos' }
@@ -181,7 +182,7 @@ export function Meetings(): JSX.Element {
   return (
     <div className="view split">
       <section className="card side">
-        <header><h2>🗂 Reuniones</h2></header>
+        <header><h2><ToolIcon tool="reuniones" /> Reuniones</h2></header>
         <input placeholder="Buscar en todas…" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="list">
           {q && hits.map(({ m, s }, i) => (

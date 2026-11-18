@@ -6,6 +6,7 @@ import { Speaker } from '../speech'
 import { download, splitText } from '../textutil'
 import { useApp } from '../store'
 import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
+import { ToolIcon } from './ToolIcon'
 
 const ACTIONS: [string, string][] = [
   ['summary', 'Resumen'], ['chapters', 'Capítulos'], ['post', 'Post para redes'], ['notes', 'Notas'], ['study', 'Apuntes de estudio']
@@ -248,7 +249,7 @@ export function AudioTools(): JSX.Element {
       {notice && <div className="notice" role="status">{notice}</div>}
       <section className="card grow">
         <div className="seg tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'stt'} className={tab === 'stt' ? 'on' : ''} onClick={() => setTab('stt')}>🎧 Voz → Texto</button>
+          <button role="tab" aria-selected={tab === 'stt'} className={tab === 'stt' ? 'on' : ''} onClick={() => setTab('stt')}><ToolIcon tool="audio" /> Voz → Texto</button>
           <button role="tab" aria-selected={tab === 'tts'} className={tab === 'tts' ? 'on' : ''} onClick={() => setTab('tts')}>🔊 Texto → Voz</button>
         </div>
         {tab === 'stt' ? <SpeechToText /> : <TextToSpeech />}

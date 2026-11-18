@@ -15,18 +15,22 @@ import { Onboarding } from './components/Onboarding'
 import { Privacy } from './components/Privacy'
 import { Settings } from './components/Settings'
 import { UpdatePrompt } from './components/Updates'
+import { Aura } from './components/Aura'
+import { ToolIcon, type Tool } from './components/ToolIcon'
+
+const ANDROID = window.api.platform === 'android'
 import type { Theme } from '@shared/types'
 import { useApp, type View } from './store'
 
 const THEMES: [Theme, string, string][] = [['system', '🖥', 'Sistema'], ['dark', '🌙', 'Oscuro'], ['light', '☀', 'Claro']]
 
-const NAV: { id: View; label: string }[] = [
+const NAV: { id: View; label: string; tool?: Tool }[] = [
   { id: 'dictado', label: '🎤 Dictado' },
   { id: 'prompts', label: '📚 Prompts' },
-  { id: 'audio', label: '🎧 Audio' },
-  { id: 'lector', label: '📖 Lector' },
-  { id: 'reuniones', label: '🗂 Reuniones' },
-  { id: 'traduccion', label: '🌐 Traducción' },
+  { id: 'audio', label: 'Audio', tool: 'audio' },
+  { id: 'lector', label: 'Lector', tool: 'lector' },
+  { id: 'reuniones', label: 'Reuniones', tool: 'reuniones' },
+  { id: 'traduccion', label: 'Traducción', tool: 'traduccion' },
   { id: 'agenda', label: '🗓 Agenda' },
   { id: 'voces', label: '🎙 Mis voces' },
   { id: 'automatizaciones', label: '⚙ Automatizaciones' },
@@ -44,8 +48,10 @@ export function App(): JSX.Element | null {
     if (settings.theme === 'system') root.removeAttribute('data-theme')
     else root.setAttribute('data-theme', settings.theme)
   }, [settings.theme])
+  // Teléfono: la barra inferior se desliza sola hasta la sección activa.
+  useEffect(() => { document.querySelector('aside nav button.on')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }, [view, ready])
   if (!ready) return null
-  if (!settings.onboarded) return <><Onboarding /><UpdatePrompt /></>
+  if (!settings.onboarded) return <><Onboarding /><UpdatePrompt />{ANDROID && <Aura />}</>
 
   // Nube = cualquier proveedor que no sea un servidor en este mismo equipo. En Android la IA
   // corre siempre dentro del teléfono.
@@ -60,7 +66,7 @@ export function App(): JSX.Element | null {
         <h1 className="brand"><Logo size={30} />DictaFlow</h1>
         <nav>
           {NAV.map((n) => (
-            <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => setView(n.id)}>{n.label}</button>
+            <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => setView(n.id)}>{n.tool ? <><ToolIcon tool={n.tool} /> {n.label}</> : n.label}</button>
           ))}
         </nav>
         <div className="theme" role="radiogroup" aria-label="Tema">
@@ -89,6 +95,7 @@ export function App(): JSX.Element | null {
         {view === 'manual' && <Manual />}
       </main>
       <UpdatePrompt />
+      {ANDROID && <Aura />}
     </div>
   )
 }

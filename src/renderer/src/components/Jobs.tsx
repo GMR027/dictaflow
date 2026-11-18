@@ -47,6 +47,9 @@ export function Jobs(): JSX.Element | null {
         </div>
       ))}
       {saved && <small className={saved.startsWith('✗') ? 'warn' : 'muted'}>{saved}</small>}
+      {recientes.length > 0 && !vivos.length && (
+        <button className="link" onClick={() => { setSaved(''); void window.api.clearJobs() }}>Limpiar terminados</button>
+      )}
     </div>
   )
 }

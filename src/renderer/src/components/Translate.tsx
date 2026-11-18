@@ -3,6 +3,7 @@ import { TRANS_LANGS, type Lang, type TransLang } from '@shared/types'
 import { Mic, Segmenter } from '../audio'
 import { Speaker } from '../speech'
 import { useApp } from '../store'
+import { ToolIcon } from './ToolIcon'
 
 interface Pair { src: string; dst: string }
 const CODES = Object.keys(TRANS_LANGS) as TransLang[]
@@ -64,7 +65,7 @@ function LiveTranslate(): JSX.Element {
   return (
     <div className="view">
       <section className="card grow">
-        <header><h2>🌐 Traducción en vivo</h2></header>
+        <header><h2><ToolIcon tool="traduccion" /> Traducción en vivo</h2></header>
         <div className="row">
           <label>Hablo / suena en
             <select value={from} onChange={(e) => { const v = e.target.value as TransLang; setFrom(v); if (v === to) setTo(from) }} disabled={on}>

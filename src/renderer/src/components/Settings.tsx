@@ -27,7 +27,7 @@ function General(): JSX.Element {
   const [un, setUn] = useState<{ kind: string; command: string; runnable: boolean; dataPaths: string[]; dataSizeMB: number } | null>(null)
   const [wipe, setWipe] = useState(false)
   const [unErr, setUnErr] = useState('')
-  useEffect(() => { void window.api.uninstallInfo().then(setUn) }, [])
+  useEffect(() => { if (!ANDROID) void window.api.uninstallInfo().then(setUn) }, [])
   const KIND: Record<string, string> = { deb: 'paquete .deb', rpm: 'paquete .rpm', pacman: 'paquete de Arch', appimage: 'AppImage', portable: 'versión portable (.tar.gz)', dev: 'versión de desarrollo' }
   const doUninstall = async (): Promise<void> => {
     setUnErr('')
@@ -72,6 +72,16 @@ function General(): JSX.Element {
 
   return (
     <div className="view">
+      {ANDROID && (
+        <section className="card">
+          <h2>Apariencia</h2>
+          <div className="seg" role="radiogroup" aria-label="Tema">
+            {([['system', '📱 Sistema'], ['dark', '🌙 Oscuro'], ['light', '☀ Claro']] as const).map(([t, label]) => (
+              <button key={t} role="radio" aria-checked={settings.theme === t} className={settings.theme === t ? 'on' : ''} onClick={() => void patchSettings({ theme: t })}>{label}</button>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="card">
         <h2>Idiomas</h2>
         <div className="row">
