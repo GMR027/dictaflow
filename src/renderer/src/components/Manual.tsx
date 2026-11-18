@@ -51,7 +51,10 @@ const TOPICS: Topic[] = [
   {
     id: 'dictado', title: 'Dictado y micrófono',
     body: (<>
-      <p>Arriba eliges el micrófono; la barra muestra el nivel en vivo para comprobar que te escucha.</p>
+      <p>El botón redondo del micrófono es la acción principal: su anillo se mueve con tu voz para que sepas que te escucha. El micrófono se elige en <b>Opciones del micrófono</b>, bajo el botón.</p>
+      <p>Mientras se transcribe aparece un bot escribiendo y el borde del texto se anima; cuando la redacción con IA está lista, su borde queda en verde.</p>
+      <h4>Texto en vivo</h4>
+      <p>En el teléfono, con el modelo «Texto en vivo» descargado (Ajustes → Servicios de IA), ves lo que dices palabra a palabra mientras hablas. Al cerrarse la frase, Whisper pone el texto definitivo con puntuación.</p>
       <h4>Parlante controlado</h4>
       <p>Pulsas <b>Pulsar para hablar</b>, hablas todo lo que quieras y pulsas <b>Detener y transcribir</b>. El micrófono solo está abierto entre esos dos clics.</p>
       <h4>Parlante activo</h4>
@@ -116,10 +119,7 @@ const TOPICS: Topic[] = [
         <li><b>▶ Enviar a Claude Code / opencode</b> abre una terminal en el proyecto con tu prompt. Antes te pide confirmación, porque esos agentes pueden modificar archivos.</li>
       </ul>
     </>),
-    android: (<>
-      <p>En <b>Dictado → 💻 Modo programador</b> eliges el destino del prompt (Claude Code, opencode, Cursor, ChatGPT o genérico) y «Convertir en prompt» lo prepara con esa forma. Cópialo y pégalo donde lo vayas a usar.</p>
-      <p className="muted">Leer una carpeta de proyecto y abrir agentes en una terminal solo existe en la versión de escritorio.</p>
-    </>)
+    android: null
   },
   {
     id: 'prompts', title: 'Biblioteca de prompts y Prompt Architect',
@@ -131,7 +131,13 @@ const TOPICS: Topic[] = [
   {
     id: 'voz', title: 'Comandos de voz y diccionario',
     body: (<>
-      <p>Con los comandos activos, una frase que sea exactamente un comando se ejecuta en vez de escribirse: «borra eso», «nuevo párrafo», «nueva línea», «copia», «rehaz», «redacta», «hazlo más formal / corto / casual», «conviértelo en prompt», «instrucciones de cambio», «guarda este prompt», «pausa». Puedes anteponer «Flow».</p>
+      <p>Con los comandos activos (Ajustes) hay tres formas de usarlos:</p>
+      <ul>
+        <li><b>Solo el comando:</b> una frase que sea solo un comando se ejecuta en vez de escribirse: «borra todo», «nuevo párrafo», «nueva línea», «copia», «rehaz», «redacta», «más formal / más corto / más cercano», «conviértelo en prompt», «instrucciones de cambio», «guarda este prompt», «pausa».</li>
+        <li><b>Al final, con «Flow»:</b> «…nos vemos el lunes. <b>Flow, redacta</b>». Se escribe lo que dijiste y luego se ejecuta el comando. Es la forma de usarlos con <b>Parlante controlado</b>, donde todo lo que dices hasta pulsar Detener es una sola frase.</li>
+        <li><b>Formato en medio del texto:</b> «punto y aparte», «nuevo párrafo» y «salto de línea» se convierten en saltos de línea, sin «Flow».</li>
+      </ul>
+      <p>En Dictado, el botón <b>🎙 Comandos</b> muestra la lista.</p>
       <p>El <b>diccionario personal</b> (Ajustes) corrige términos que Whisper escribe mal y se los indica a la IA. Importa listas desde .txt o .csv («transcribe,escribir»).</p>
     </>)
   },

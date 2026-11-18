@@ -7,11 +7,16 @@ import { download, splitText } from '../textutil'
 import { useApp } from '../store'
 import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
 import { ToolIcon } from './ToolIcon'
+import { BotTyping } from './BotTyping'
+import { MoreMenu } from './MoreMenu'
+import { RecButton } from './RecButton'
 
 const ACTIONS: [string, string][] = [
   ['summary', 'Resumen'], ['chapters', 'Capítulos'], ['post', 'Post para redes'], ['notes', 'Notas'], ['study', 'Apuntes de estudio']
 ]
-const CHUNK_SEC = 300
+// En el teléfono, trozos de 30 s (la ventana de Whisper): 5 minutos de audio en una sola llamada
+// pasaban decenas de MB por el puente con la app y se quedaban sin memoria.
+const CHUNK_SEC = window.api.platform === 'android' ? 30 : 300
 
 function SpeechToText(): JSX.Element {
   const { settings, flash } = useApp()
@@ -23,6 +28,10 @@ function SpeechToText(): JSX.Element {
   const [out, setOut] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  /** Qué está haciendo: transcribir o la acción de IA (para el bot y los bordes). */
+  const [phase, setPhase] = useState<'' | 'stt' | 'ai'>('')
+  const [part, setPart] = useState('')
+  const [level, setLevel] = useState(0)
   const [recording, setRecording] = useState(false)
   const [drag, setDrag] = useState(false)
   const [modelReady, setModelReady] = useState<boolean | null>(null)
@@ -63,11 +72,11 @@ function SpeechToText(): JSX.Element {
 
   const toggleRec = async (): Promise<void> => {
     if (mic.current) {
-      await mic.current.stop(); mic.current = null; setRecording(false)
+      await mic.current.stop(); mic.current = null; setRecording(false); setLevel(0)
       return
     }
     const m = new Mic({
-      deviceId: settings.micDeviceId, mode: 'controlled', onLevel: () => undefined, filters: settings.micFilters,
+      deviceId: settings.micDeviceId, mode: 'controlled', onLevel: setLevel, filters: settings.micFilters,
       onSegment: (p) => void load(`grabacion-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.wav`, encodeWav(p), p)
     })
     try { await m.start(); mic.current = m; setRecording(true) } catch (e) { setStatus(`Micrófono: ${(e as Error).message}`) }
@@ -75,12 +84,13 @@ function SpeechToText(): JSX.Element {
 
   const transcribe = async (): Promise<void> => {
     if (!pcm) return
-    setBusy(true)
+    setBusy(true); setPhase('stt')
     const segs: Segment[] = []
     try {
       const step = CHUNK_SEC * SAMPLE_RATE
       for (let off = 0, i = 1; off < pcm.length; off += step, i++) {
-        setStatus(`Transcribiendo parte ${i} de ${Math.ceil(pcm.length / step)}…`)
+        const n = Math.ceil(pcm.length / step)
+        setPart(n > 1 ? `Transcribiendo parte ${i} de ${n}` : 'Transcribiendo')
         const r = await window.api.transcribeDetailed(pcm.subarray(off, off + step), lang, true)
         const base = off / SAMPLE_RATE
         const parts = r.segments.length ? r.segments : [{ start: 0, end: 0, text: r.text }]
@@ -88,25 +98,25 @@ function SpeechToText(): JSX.Element {
         setSegments([...segs])
         setText(segs.map((s) => s.text).join(' '))
       }
-      setStatus('Listo')
+      setStatus(`${name} · ${fmtTime(pcm.length / SAMPLE_RATE)} · transcrito`)
     } catch (e) {
       setStatus(`Error: ${(e as Error).message}`)
     } finally {
-      setBusy(false)
+      setBusy(false); setPhase(''); setPart('')
     }
   }
 
   const ai = async (action: string): Promise<void> => {
-    setBusy(true); setOut('Generando…')
+    setBusy(true); setPhase('ai'); setOut('')
     try {
       const timed = segments.map((s) => `[${fmtTime(s.start)}] ${s.text}`).join('\n')
       setOut(await window.api.generate(action, timed || text, lang))
-    } catch (e) { setOut(`Error: ${(e as Error).message}`) } finally { setBusy(false) }
+    } catch (e) { setOut(`Error: ${(e as Error).message}`) } finally { setBusy(false); setPhase('') }
   }
   const translate = async (): Promise<void> => {
     const to: Lang = settings.secondaryLang ?? (lang === 'es' ? 'en' : 'es')
-    setBusy(true); setOut('Traduciendo…')
-    try { setOut(await window.api.translate(text, to)) } catch (e) { setOut(`Error: ${(e as Error).message}`) } finally { setBusy(false) }
+    setBusy(true); setPhase('ai'); setOut('')
+    try { setOut(await window.api.translate(text, to)) } catch (e) { setOut(`Error: ${(e as Error).message}`) } finally { setBusy(false); setPhase('') }
   }
 
   const base = name.replace(/\.[^.]+$/, '') || 'transcripcion'
@@ -117,12 +127,12 @@ function SpeechToText(): JSX.Element {
       <div className={`drop ${drag ? 'over' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); void onFile(e.dataTransfer.files[0]) }}>
-        <p>Arrastra aquí un audio (mp3, wav, ogg, flac, m4a, webm…) o</p>
-        <div className="row">
-          <label className="btn">Elegir archivo<input type="file" accept="audio/*,video/webm,video/mp4,.m4a,.flac,.opus" hidden onChange={(e) => void onFile(e.target.files?.[0])} /></label>
-          <button className={`mic ${recording ? 'rec' : ''}`} onClick={() => void toggleRec()}>{recording ? '■ Detener grabación' : '🎤 Grabar con el micrófono'}</button>
+        <div className="source-pick">
+          <label className="btn big">📁 Elegir archivo<input type="file" accept="audio/*,video/webm,video/mp4,.m4a,.flac,.opus" hidden onChange={(e) => void onFile(e.target.files?.[0])} /></label>
+          <span className="muted">o</span>
+          <RecButton recording={recording} level={level} onClick={() => void toggleRec()} idle="Grabar" active="Detener grabación" disabled={busy} />
         </div>
-        <p className="muted">{status}</p>
+        <p className="muted">{status || 'Arrastra aquí un audio (mp3, wav, ogg, flac, m4a…), elige un archivo o graba con el micrófono.'}</p>
       </div>
 
       {settings.sttProvider === 'local' && settings.sttEngine === 'transformers' && modelReady === false && (
@@ -131,34 +141,41 @@ function SpeechToText(): JSX.Element {
           <span className="muted">{prep || 'Se descarga una sola vez y luego funciona sin conexión.'}</span>
         </div>
       )}
-      {settings.sttProvider === 'local' && settings.sttEngine === 'transformers' && modelReady && (
-        <p className="muted">Modelo listo: {settings.sttModel.split('/').pop()}.</p>
-      )}
       {settings.sttProvider === 'local' && settings.sttEngine === 'whispercpp' && (
         <p className="muted">Motor whisper.cpp seleccionado. Sus modelos se gestionan en Ajustes → Rendimiento.</p>
       )}
 
-      <div className="row">
-        <button className="primary" onClick={() => void transcribe()} disabled={!pcm || busy}>{busy ? 'Trabajando…' : 'Transcribir'}</button>
-        <button onClick={() => void saved(download(name || `${base}.wav`, bytes!))} disabled={!bytes}>💾 Guardar audio</button>
-        <button onClick={() => void saved(download(`${base}.txt`, text))} disabled={!text}>⬇ .txt</button>
-        <button onClick={() => void saved(download(`${base}.srt`, toSubtitles(segments, 'srt')))} disabled={!segments.length}>⬇ .srt</button>
-        <button onClick={() => void saved(download(`${base}.vtt`, toSubtitles(segments, 'vtt')))} disabled={!segments.length}>⬇ .vtt</button>
+      <div className="actions">
+        <button className="primary" onClick={() => void transcribe()} disabled={!pcm || busy}>✍ Transcribir</button>
         <button onClick={() => void window.api.copy(text)} disabled={!text}>📋 Copiar</button>
         <button onClick={async () => flash(`📝 ${await window.api.exportNote(base, text, ['audio'])}`)} disabled={!text}>📝 A notas</button>
+        <MoreMenu label="⬇ Exportar" items={[
+          { label: '💾 Audio original', onClick: () => void saved(download(name || `${base}.wav`, bytes!)), disabled: !bytes },
+          { label: 'Texto (.txt)', onClick: () => void saved(download(`${base}.txt`, text)), disabled: !text },
+          { label: 'Subtítulos (.srt)', onClick: () => void saved(download(`${base}.srt`, toSubtitles(segments, 'srt'))), disabled: !segments.length },
+          { label: 'Subtítulos (.vtt)', onClick: () => void saved(download(`${base}.vtt`, toSubtitles(segments, 'vtt'))), disabled: !segments.length }
+        ]} />
       </div>
 
-      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Aquí aparecerá la transcripción." />
+      <div className={`field ${phase === 'stt' ? 'live' : ''}`}>
+        <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Aquí aparecerá la transcripción." />
+        {phase === 'stt' && <BotTyping label={part || 'Transcribiendo'} />}
+      </div>
 
       {text && (
         <>
-          <div className="row">
-            <span className="muted">Con IA:</span>
-            {ACTIONS.map(([k, v]) => <button key={k} onClick={() => void ai(k)} disabled={busy}>{v}</button>)}
-            <button onClick={() => void translate()} disabled={busy}>Traducir</button>
+          <h3>Con IA</h3>
+          <div className="chips scroll">
+            {ACTIONS.map(([k, v]) => <button className="chip" key={k} onClick={() => void ai(k)} disabled={busy}>{v}</button>)}
+            <button className="chip" onClick={() => void translate()} disabled={busy}>🌐 Traducir</button>
           </div>
-          {out && <textarea value={out} onChange={(e) => setOut(e.target.value)} />}
-          {out && <div className="row"><button onClick={() => void window.api.copy(out)}>📋 Copiar resultado</button><button onClick={() => void saved(download(`${base}-resultado.md`, out))}>⬇ Guardar .md</button></div>}
+          {(out || phase === 'ai') && (
+            <div className={`field ${phase === 'ai' ? 'live' : 'done'}`}>
+              <textarea value={out} onChange={(e) => setOut(e.target.value)} />
+              {phase === 'ai' && <BotTyping label="Generando" />}
+            </div>
+          )}
+          {out && phase !== 'ai' && <div className="actions"><button onClick={() => void window.api.copy(out)}>📋 Copiar resultado</button><button onClick={() => void saved(download(`${base}-resultado.md`, out))}>⬇ Guardar .md</button></div>}
         </>
       )}
     </>

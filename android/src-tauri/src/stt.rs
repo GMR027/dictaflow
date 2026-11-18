@@ -5,6 +5,7 @@
 //! borrador: si el motor está ocupado, el borrador se omite (devuelve texto vacío) en vez de hacer
 //! cola delante de la frase que importa.
 
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -12,7 +13,11 @@ use std::time::Instant;
 use serde::Serialize;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use crate::modelos::{archivo_valido, contexto_audio};
+use crate::modelos::{archivo_valido, plan_whisper};
+
+/// Detector de voz Silero (formato de whisper.cpp, MIT, ggml-org/whisper-vad): quita los silencios
+/// de los audios largos antes de transcribir. Pesa menos de 1 MB, así que va dentro del APK.
+static VAD: &[u8] = include_bytes!("../recursos/ggml-silero-v5.1.2.bin");
 
 #[derive(Serialize, Default)]
 pub struct Segmento {
@@ -31,6 +36,8 @@ pub struct Transcripcion {
 
 pub struct Stt {
     dir: PathBuf,
+    /// Carpeta propia de la app (el detector de voz se copia aquí la primera vez).
+    motor_dir: PathBuf,
     /// Modelo cargado (nombre del archivo y contexto de whisper.cpp).
     motor: Mutex<Option<(String, WhisperContext)>>,
 }
@@ -41,9 +48,22 @@ fn hilos() -> i32 {
 }
 
 impl Stt {
-    pub fn new(dir: PathBuf) -> Self {
+    pub fn new(dir: PathBuf, motor_dir: PathBuf) -> Self {
         whisper_rs::install_logging_hooks();
-        Self { dir, motor: Mutex::new(None) }
+        Self { dir, motor_dir, motor: Mutex::new(None) }
+    }
+
+    /// Ruta del detector de voz, copiándolo del APK si hace falta. None si no se pudo (se
+    /// transcribe igual, sin quitar silencios).
+    fn vad(&self) -> Option<String> {
+        let ruta = self.motor_dir.join("ggml-silero-v5.1.2.bin");
+        if fs::metadata(&ruta).map(|m| m.len() as usize).ok() != Some(VAD.len()) {
+            fs::create_dir_all(&self.motor_dir).ok()?;
+            let tmp = ruta.with_extension("tmp");
+            fs::write(&tmp, VAD).ok()?;
+            fs::rename(&tmp, &ruta).ok()?;
+        }
+        ruta.to_str().map(String::from)
     }
 
     fn cargar_en(&self, motor: &mut Option<(String, WhisperContext)>, modelo: &str) -> Result<(), String> {
@@ -79,7 +99,9 @@ impl Stt {
         self.motor.lock().unwrap().as_ref().map(|(m, _)| m.clone())
     }
 
-    pub fn transcribir(&self, modelo: &str, pcm: &[f32], idioma: Option<&str>, marcas: bool, borrador: bool) -> Result<Transcripcion, String> {
+    /// `prompt`: texto de arranque (estilo y palabras del diccionario) para que Whisper puntúe bien
+    /// y escriba los nombres propios como el usuario.
+    pub fn transcribir(&self, modelo: &str, pcm: &[f32], idioma: Option<&str>, marcas: bool, borrador: bool, prompt: &str) -> Result<Transcripcion, String> {
         let mut motor = if borrador {
             match self.motor.try_lock() {
                 Ok(m) => m,
@@ -89,22 +111,42 @@ impl Stt {
             self.motor.lock().unwrap()
         };
         self.cargar_en(&mut motor, modelo)?;
+        let vad = if borrador { None } else { self.vad() };
         let (_, ctx) = motor.as_ref().expect("modelo cargado");
 
         let t0 = Instant::now();
+        let plan = plan_whisper(pcm.len(), marcas, borrador, vad.is_some());
         let mut estado = ctx.create_state().map_err(|e| format!("Whisper: {e}"))?;
-        let mut p = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        let estrategia = if plan.haz > 1 {
+            SamplingStrategy::BeamSearch { beam_size: plan.haz, patience: -1.0 }
+        } else {
+            SamplingStrategy::Greedy { best_of: 1 }
+        };
+        let mut p = FullParams::new(estrategia);
         p.set_n_threads(hilos());
         // Ventana ajustada a la frase (mucho más rápido); con marcas de tiempo (subtítulos) se usa
         // la completa, porque la corta junta todo en un único segmento.
-        if !marcas {
-            p.set_audio_ctx(contexto_audio(pcm.len()));
+        if plan.ventana > 0 {
+            p.set_audio_ctx(plan.ventana);
         }
         p.set_language(Some(idioma.unwrap_or("auto")));
         p.set_no_timestamps(!marcas);
         p.set_single_segment(!marcas);
         p.set_no_context(true);
         p.set_suppress_blank(true);
+        // Sin «[Música]», «(aplausos)» ni similares: en un dictado nunca son texto.
+        p.set_suppress_nst(true);
+        // Si una ventana sale repetitiva o con poca confianza, se reintenta con algo de temperatura.
+        p.set_temperature(0.0);
+        p.set_temperature_inc(if borrador { 0.0 } else { 0.2 });
+        p.set_no_speech_thold(0.6);
+        if !prompt.is_empty() && !borrador {
+            p.set_initial_prompt(prompt);
+        }
+        if let (true, Some(ruta)) = (plan.vad, vad.as_deref()) {
+            p.set_vad_model_path(Some(ruta));
+            p.enable_vad(true);
+        }
         p.set_print_progress(false);
         p.set_print_realtime(false);
         p.set_print_special(false);

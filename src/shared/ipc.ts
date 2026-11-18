@@ -54,6 +54,11 @@ export interface IpcContract {
   'stt:download-ggml': { req: { id: string }; res: void }
   'stt:transcribe': { req: { pcm: Float32Array; lang: TransLang | 'auto'; priority?: SttPriority }; res: TranscribeResult }
   'stt:detailed': { req: { pcm: Float32Array; lang: TransLang | 'auto'; timestamps: boolean; priority?: SttPriority }; res: TranscribeResult }
+  // Texto en vivo (Android, modelo streaming): null si no hay modelo para ese idioma.
+  'stt:live-start': { req: { lang: TransLang }; res: number | null }
+  'stt:live-feed': { req: { session: number; pcm: Float32Array }; res: { text: string } }
+  'stt:live-reset': { req: { session: number }; res: void }
+  'stt:live-stop': { req: { session: number }; res: void }
   'dict:apply': { req: { text: string }; res: string }
 
   'llm:rewrite': { req: RewriteRequest; res: string }

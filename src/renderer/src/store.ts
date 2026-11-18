@@ -4,6 +4,8 @@ import { DEFAULT_SETTINGS } from '@shared/types'
 import { Mic } from './audio'
 import { record } from './metrics'
 import { PartialTranscriber } from './partial'
+import { LiveTranscriber } from './live'
+import { applyFormatting, matchCommand, type CommandId } from './commands'
 
 export type View = 'dictado' | 'prompts' | 'audio' | 'lector' | 'reuniones' | 'traduccion' | 'agenda' | 'voces' | 'automatizaciones' | 'ajustes' | 'privacidad' | 'manual'
 
@@ -42,30 +44,33 @@ interface State {
   flash: (msg: string) => void
 }
 
-const norm = (t: string): string =>
-  t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^(flow|oye flow) /, '')
-
-type Cmd = { re: RegExp; run: (get: () => State, set: (p: Partial<State>) => void) => void | Promise<void>; label: string }
+type Run = (get: () => State, set: (p: Partial<State>) => void) => void | Promise<void>
 const tone = (t: Tone) => async (get: () => State) => { await get().patchSettings({ tone: t }); await get().rewrite('rewrite') }
+const endWith = (sep: string): Run => (g, s) => s({ raw: g().raw.replace(/\s+$/, '') + sep })
 
-const COMMANDS: Cmd[] = [
-  { re: /^(borra|borrar|elimina|eliminar) (eso|todo)$/, label: 'Borrado', run: (g) => g().clearAll() },
-  { re: /^(nuevo parrafo|punto y aparte)$/, label: 'Nuevo párrafo', run: (g, s) => s({ raw: g().raw.replace(/\s+$/, '') + '\n\n' }) },
-  { re: /^(nueva linea|salto de linea)$/, label: 'Nueva línea', run: (g, s) => s({ raw: g().raw.replace(/\s+$/, '') + '\n' }) },
-  { re: /^(copia|copiar|copia eso|copialo)$/, label: 'Copiado', run: (g) => g().copyPolished() },
-  { re: /^(rehaz|rehacer|rehazlo|otra version)$/, label: 'Rehaciendo', run: (g) => g().rewrite('rewrite', true) },
-  { re: /^(redacta|redactar|redactalo)$/, label: 'Redactando', run: (g) => g().rewrite('rewrite') },
-  { re: /^(hazlo mas formal|mas formal)$/, label: 'Tono formal', run: (g) => tone('formal')(g) },
-  { re: /^(hazlo mas corto|mas corto|mas conciso|hazlo mas conciso)$/, label: 'Tono conciso', run: (g) => tone('concise')(g) },
-  { re: /^(hazlo mas casual|mas casual|mas cercano|hazlo mas cercano)$/, label: 'Tono cercano', run: (g) => tone('casual')(g) },
-  { re: /^(convierte(lo)? en prompt|hazlo prompt|a prompt)$/, label: 'Convirtiendo en prompt', run: (g) => g().rewrite('prompt') },
-  { re: /^(instrucciones de cambio|convierte(lo)? en cambios|hazlo cambios|a cambios)$/, label: 'Instrucciones de cambio', run: (g) => g().rewrite('changes') },
-  { re: /^(guarda (este|el) prompt|guardar prompt)$/, label: 'Prompt guardado', run: (g) => g().savePrompt() },
-  { re: /^(pausa|deja de escuchar|detener|para de escuchar)$/, label: 'Micrófono detenido', run: (g) => g().stop() }
-]
+const RUN: Record<CommandId, Run> = {
+  clear: (g) => g().clearAll(),
+  paragraph: endWith('\n\n'),
+  newline: endWith('\n'),
+  copy: (g) => g().copyPolished(),
+  redo: (g) => g().rewrite('rewrite', true),
+  rewrite: (g) => g().rewrite('rewrite'),
+  formal: (g) => tone('formal')(g),
+  concise: (g) => tone('concise')(g),
+  casual: (g) => tone('casual')(g),
+  prompt: (g) => g().rewrite('prompt'),
+  changes: (g) => g().rewrite('changes'),
+  savePrompt: (g) => g().savePrompt(),
+  pause: (g) => g().stop()
+}
+
+/** Añade texto dictado a `raw`: sin espacio tras un salto de línea. */
+const append = (raw: string, text: string): string => (!raw ? text : /\n$/.test(raw) ? raw + text : `${raw} ${text}`)
 
 let mic: Mic | null = null
 let partial: PartialTranscriber | null = null
+/** Texto en vivo con el modelo streaming (Android); si no hay, se usan los borradores de Whisper. */
+let live: LiveTranscriber | null = null
 let queue: Promise<void> = Promise.resolve()
 let debounce: ReturnType<typeof setTimeout> | undefined
 let anywhereSession = false
@@ -122,10 +127,12 @@ export const useApp = create<State>((set, get) => ({
         pauseMs: settings.pauseMs,
         filters: settings.micFilters,
         onLevel: (level) => set({ level }),
+        onAudio: (chunk) => live?.feed(chunk),
         // El silencio que cierra la frase: a partir de aquí el motor se deja libre.
         onSilence: () => { closing = true },
         onSegment: (pcm, startSec, meta) => {
           partial?.reset()
+          live?.reset()
           closing = false
           set((s) => ({ transcribing: s.transcribing + 1 }))
           const mine = epoch
@@ -140,16 +147,19 @@ export const useApp = create<State>((set, get) => ({
               record('stt_ms', r.ms)
               record('stt_total_ms', performance.now() - closedAt)
               if (mine !== epoch) return
-              const cmd = get().settings.voiceCommands && !anywhereSession ? COMMANDS.find((c) => c.re.test(norm(r.text))) : undefined
-              if (cmd) {
-                get().flash(`🎙 Comando: ${cmd.label}`)
-                await cmd.run(get, set)
-              } else if (r.text) {
-                set((s) => ({ raw: (s.raw ? s.raw + ' ' : '') + r.text }))
-                if (get().settings.autoRewrite && !anywhereSession) {
+              const useCmds = get().settings.voiceCommands && !anywhereSession
+              const cmd = useCmds ? matchCommand(r.text) : null
+              const text = cmd ? cmd.rest : useCmds ? applyFormatting(r.text) : r.text
+              if (text) {
+                set((s) => ({ raw: append(s.raw, text) }))
+                if (!cmd && get().settings.autoRewrite && !anywhereSession) {
                   clearTimeout(debounce)
                   debounce = setTimeout(() => void get().rewrite('rewrite', false, true), get().settings.rewriteDelayMs)
                 }
+              }
+              if (cmd) {
+                get().flash(`🎙 Comando: ${cmd.spec.label}`)
+                await RUN[cmd.spec.id](get, set)
               }
             } catch (e) {
               set({ error: `Transcripción: ${(e as Error).message}` })
@@ -163,7 +173,14 @@ export const useApp = create<State>((set, get) => ({
       if (settings.sttProvider === 'local') void window.api.loadStt().catch(() => undefined)
       if (settings.autoRewrite && !anywhere) void window.api.warmLLM()
       await mic.start()
-      if (settings.sttProvider === 'local' && settings.draftsEnabled && !anywhere) {
+      if (!anywhere) {
+        const m = mic
+        const l = await LiveTranscriber.create(settings.primaryLang, (draft) => set({ draft }))
+        // Si se detuvo mientras cargaba el modelo, la sesión no se queda abierta.
+        if (mic === m) live = l
+        else l?.stop()
+      }
+      if (!live && settings.sttProvider === 'local' && settings.draftsEnabled && !anywhere) {
         const m = mic
         partial = new PartialTranscriber({
           snapshot: () => m.snapshot(),
@@ -187,7 +204,8 @@ export const useApp = create<State>((set, get) => ({
     await mic?.stop()
     mic = null
     partial?.stop(); partial = null
-    set({ recording: false, level: 0 })
+    live?.stop(); live = null
+    set({ recording: false, level: 0, draft: '' })
     await queue
   },
 
@@ -198,7 +216,8 @@ export const useApp = create<State>((set, get) => ({
     await mic?.stop(true)
     mic = null
     partial?.stop(); partial = null
-    set({ recording: false, level: 0 })
+    live?.stop(); live = null
+    set({ recording: false, level: 0, draft: '' })
     await queue
     get().flash('⏹ Transcripción detenida')
   },

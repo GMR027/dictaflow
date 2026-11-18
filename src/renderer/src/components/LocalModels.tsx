@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  formatBytes, LOCAL_MODELS, modelFit, modelReady,
+  companions, formatBytes, LOCAL_MODELS, modelFit, modelReady, totalBytes,
   type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelKind, type LocalModelProgress
 } from '@shared/local-models'
 import { useApp } from '../store'
@@ -8,6 +8,7 @@ import { useApp } from '../store'
 const BADGE = { recommended: '★ Recomendado', ok: 'Compatible', slow: '⚠ Pesado para este teléfono' } as const
 const TITLE: Record<LocalModelKind, [string, string]> = {
   stt: ['Voz → texto (Whisper)', 'Transcribe lo que dictas. Funciona sin conexión.'],
+  live: ['Texto en vivo', 'Muestra lo que dices palabra a palabra mientras hablas (Dictado, Reuniones, Traducción). Se usa solo el del idioma en que hablas; Whisper sigue poniendo el texto definitivo.'],
   llm: ['Redacción con IA', 'Pule, reescribe, traduce y resume tus textos dentro del teléfono, sin enviarlos a ningún servidor.'],
   tts: ['Lectura en voz alta (voces)', 'Lee tus textos, documentos y traducciones sin conexión. Elige una voz por idioma; con ▶ la escuchas antes de descargarla.']
 }
@@ -66,13 +67,14 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
 
   const file = (id: string): LocalModelFile | undefined => files.find((f) => f.id === id)
   const active = (m: LocalModel): boolean =>
-    m.kind === 'tts' ? !!m.lang && settings.ttsVoice[m.lang] === m.voice : (m.kind === 'stt' ? settings.sttModel : settings.localLlm) === m.id
+    m.kind === 'live' ? modelReady(m, files)
+      : m.kind === 'tts' ? !!m.lang && settings.ttsVoice[m.lang] === m.voice : (m.kind === 'stt' ? settings.sttModel : settings.localLlm) === m.id
   const select = (m: LocalModel): Promise<void> =>
     m.kind === 'tts' && m.lang && m.voice
       ? patchSettings({ ttsVoice: { ...settings.ttsVoice, [m.lang]: m.voice } })
       : patchSettings(m.kind === 'stt' ? { sttModel: m.id } : { localLlm: m.id })
   const unselect = (m: LocalModel): Partial<typeof settings> | null =>
-    m.kind === 'tts' ? null : m.kind === 'stt' ? { sttModel: '' } : { localLlm: '' }
+    m.kind === 'tts' || m.kind === 'live' ? null : m.kind === 'stt' ? { sttModel: '' } : { localLlm: '' }
 
   /** Voz descargada: la dice el propio teléfono. Si no, la muestra oficial (se pide a Hugging Face). */
   const listenVoice = async (m: LocalModel, ready: boolean): Promise<void> => {
@@ -100,7 +102,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
   }
 
   const remove = async (m: LocalModel): Promise<void> => {
-    if (!confirm(`¿Borrar ${m.label} (${formatBytes(m.bytes)}) del teléfono?`)) return
+    if (!confirm(`¿Borrar ${m.label} (${formatBytes(totalBytes(m))}) del teléfono?`)) return
     await window.api.removeModel(m.id)
     const off = unselect(m)
     if (active(m) && off) await patchSettings(off)
@@ -119,7 +121,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
     }
   }
 
-  const kinds: LocalModelKind[] = only ? [only] : ['stt', 'llm', 'tts']
+  const kinds: LocalModelKind[] = only ? [only] : ['stt', 'live', 'llm', 'tts']
   const used = files.filter((f) => !f.partial).reduce((a, f) => a + f.bytes, 0)
 
   return (
@@ -135,16 +137,16 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
           {LOCAL_MODELS.filter((m) => m.kind === kind).map((m) => {
             const f = file(m.id)
             const ready = modelReady(m, files)
-            const extra = m.extra && progress[m.extra.id]
-            const p = progress[m.id] ?? (extra?.state === 'error' ? extra : undefined)
+            const extra = companions(m).map((x) => progress[x.id]).find((x) => x?.state === 'error')
+            const p = progress[m.id] ?? extra
             const busy = p?.state === 'downloading' || p?.state === 'verifying'
             const fit = modelFit(m, device?.ramGB ?? 0)
             const pct = p && p.total ? Math.floor((p.received / p.total) * 100) : 0
             return (
               <div key={m.id} className={`rec ${fit}`}>
-                {ready && <input type="radio" name={`local-${kind}${m.lang ? `-${m.lang}` : ''}`} checked={active(m)} onChange={() => void select(m)} aria-label={`Usar ${m.label}`} />}
+                {ready && m.kind !== 'live' && <input type="radio" name={`local-${kind}${m.lang ? `-${m.lang}` : ''}`} checked={active(m)} onChange={() => void select(m)} aria-label={`Usar ${m.label}`} />}
                 <span>
-                  <b>{m.label}</b> <small>{formatBytes(m.bytes)}</small><br />
+                  <b>{m.label}</b> <small>{formatBytes(totalBytes(m))}</small><br />
                   <small>{m.note}</small>
                   {busy && (
                     <>
@@ -165,7 +167,7 @@ export function LocalModels({ only }: { only?: LocalModelKind }): JSX.Element {
                   ? <button onClick={() => void window.api.cancelModel(m.id)}>Cancelar</button>
                   : ready
                     ? <button className="link" onClick={() => void remove(m)}>Borrar</button>
-                    : <button className={fit === 'recommended' ? 'primary' : ''} onClick={() => void download(m)}>{f?.partial || (m.extra && file(m.id)) ? 'Continuar' : 'Descargar'}</button>}
+                    : <button className={fit === 'recommended' ? 'primary' : ''} onClick={() => void download(m)}>{f?.partial || companions(m).some((x) => file(x.id)) ? 'Continuar' : 'Descargar'}</button>}
               </div>
             )
           })}

@@ -202,6 +202,21 @@ describe('comandos de voz', () => {
     mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
     expect(app.getState().raw).toBe('')
   })
+  it('en modo controlado ejecuta el comando final tras «Flow» y escribe lo anterior', async () => {
+    const app = await load({ autoRewrite: false })
+    api.transcribe.mockResolvedValueOnce({ text: 'Hola equipo. Flow, nuevo párrafo.', segments: [], ms: 1 }).mockResolvedValueOnce({ text: 'Adiós', segments: [], ms: 1 })
+    await app.getState().start()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
+    expect(app.getState().raw).toBe('Hola equipo.\n\nAdiós')
+  })
+  it('«punto y aparte» dentro del texto se vuelve un párrafo', async () => {
+    const app = await load({ autoRewrite: false })
+    api.transcribe.mockResolvedValueOnce({ text: 'hola qué tal punto y aparte adiós', segments: [], ms: 1 })
+    await app.getState().start()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick()
+    expect(app.getState().raw).toBe('hola qué tal\n\nAdiós')
+  })
 })
 
 describe('redacción automática', () => {

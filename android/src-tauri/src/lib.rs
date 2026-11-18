@@ -36,12 +36,14 @@ mod modelos;
 mod politica;
 mod stt;
 mod tts;
+mod vivo;
 
 use almacen::{Almacen, Documento};
 use archivos::{Archivos, Entrada};
 use descargas::{espacio_libre, ArchivoModelo, Descargas};
 use llm::{Llm, Mensaje, Respuesta};
 use stt::{Stt, Transcripcion};
+use vivo::{Parcial, Vivo};
 use tts::Tts;
 use politica::{descarga_permitida, leer_version, navegacion_interna, origen_valido, Actualizacion, RUTA_VERSION, SERVIDOR_PREDETERMINADO};
 
@@ -161,28 +163,54 @@ fn stt_loaded(stt: tauri::State<'_, Arc<Stt>>) -> Option<String> {
     stt.cargado()
 }
 
-/// Transcribe audio PCM (16 kHz, mono). El audio llega como cuerpo binario (Float32Array) y los
-/// parámetros en cabeceras: `x-model`, `x-lang`, `x-priority` (final|draft) y `x-timestamps`.
+/// Transcribe audio PCM (16 kHz, mono). El audio llega en base64 como muestras de 16 bits: por el
+/// puente de Android un cuerpo binario se convierte en una lista JSON de bytes (seis veces más
+/// grande y lenta de leer). `prompt` es el texto de arranque de Whisper (estilo y diccionario).
 #[tauri::command]
-async fn stt_transcribe(request: tauri::ipc::Request<'_>, stt: tauri::State<'_, Arc<Stt>>) -> Result<Transcripcion, String> {
-    // Con el IPC por protocolo propio llega crudo; con el de postMessage (Android), como lista JSON.
-    let pcm = match request.body() {
-        tauri::ipc::InvokeBody::Raw(bytes) => modelos::pcm_desde_bytes(bytes)?,
-        tauri::ipc::InvokeBody::Json(Value::Array(lista)) => {
-            let bytes: Vec<u8> = lista.iter().map(|v| v.as_u64().filter(|n| *n <= 255).map(|n| n as u8)).collect::<Option<_>>().ok_or("Audio dañado.")?;
-            modelos::pcm_desde_bytes(&bytes)?
-        }
-        _ => return Err("El audio debe llegar como datos binarios.".into()),
-    };
-    let cabecera = |n: &str| request.headers().get(n).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-    let modelo = cabecera("x-model");
-    let idioma = modelos::idioma_whisper(&cabecera("x-lang"))?;
-    let borrador = cabecera("x-priority") == "draft";
-    let marcas = cabecera("x-timestamps") == "1";
+#[allow(clippy::too_many_arguments)]
+async fn stt_transcribe(
+    audio: String,
+    model: String,
+    lang: String,
+    priority: String,
+    timestamps: bool,
+    prompt: String,
+    stt: tauri::State<'_, Arc<Stt>>,
+) -> Result<Transcripcion, String> {
+    let pcm = modelos::pcm_desde_b64(&audio)?;
+    drop(audio);
+    let idioma = modelos::idioma_whisper(&lang)?;
+    let borrador = priority == "draft";
+    let prompt = modelos::prompt_whisper(&prompt);
     let stt = stt.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || stt.transcribir(&modelo, &pcm, idioma.as_deref(), marcas, borrador))
+    tauri::async_runtime::spawn_blocking(move || stt.transcribir(&model, &pcm, idioma.as_deref(), timestamps, borrador, &prompt))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Texto en vivo: abre una sesión con el modelo streaming (lo carga la primera vez).
+#[tauri::command]
+async fn vivo_iniciar(model: String, vivo: tauri::State<'_, Arc<Vivo>>) -> Result<u32, String> {
+    let vivo = vivo.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || vivo.iniciar(&model)).await.map_err(|e| e.to_string())?
+}
+
+/// Texto en vivo: añade audio (base64, 16 bits) y devuelve el texto provisional.
+#[tauri::command]
+async fn vivo_alimentar(session: u32, audio: String, vivo: tauri::State<'_, Arc<Vivo>>) -> Result<Parcial, String> {
+    let pcm = modelos::pcm_desde_b64(&audio)?;
+    let vivo = vivo.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || vivo.alimentar(session, &pcm)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn vivo_reiniciar(session: u32, vivo: tauri::State<'_, Arc<Vivo>>) -> Result<(), String> {
+    vivo.reiniciar(session)
+}
+
+#[tauri::command]
+fn vivo_terminar(session: u32, vivo: tauri::State<'_, Arc<Vivo>>) {
+    vivo.terminar(session)
 }
 
 /// Precarga el modelo de redacción (cargar 1–2 GB tarda unos segundos la primera vez).
@@ -515,6 +543,10 @@ pub fn run() {
             stt_load,
             stt_loaded,
             stt_transcribe,
+            vivo_iniciar,
+            vivo_alimentar,
+            vivo_reiniciar,
+            vivo_terminar,
             llm_load,
             llm_loaded,
             llm_complete,
@@ -543,7 +575,8 @@ pub fn run() {
             app.manage(Datos(datos));
             app.manage(Secretos(Almacen::new(base.join("privado"))));
             app.manage(Arc::new(Descargas::new(base.join("modelos"))));
-            app.manage(Arc::new(Stt::new(base.join("modelos"))));
+            app.manage(Arc::new(Stt::new(base.join("modelos"), base.join("motor"))));
+            app.manage(Arc::new(Vivo::new(base.join("modelos"))));
             app.manage(Arc::new(Llm::new(base.join("modelos"))?));
             app.manage(Arc::new(Tts::new(base.join("modelos"), base.join("voz"))));
             app.manage(Arc::new(Archivos::new(base.join("archivos"))));

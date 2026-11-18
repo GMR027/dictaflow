@@ -225,6 +225,8 @@ export interface Meeting {
   minutes?: MeetingMinutes
   /** Ruta del audio grabado, para volver a transcribirlo. */
   audioPath?: string
+  /** Se está grabando (o la app se cerró a mitad): se guarda poco a poco para no perderla. */
+  inProgress?: boolean
 }
 
 export interface TtsStatus {

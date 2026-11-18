@@ -55,6 +55,10 @@ export function createApi(invoke: Invoke, on: On, platform: Platform) {
 
     transcribeDetailed: (pcm: Float32Array, lang: TransLang | 'auto', timestamps = false, priority: SttPriority = 'final'): Promise<TranscribeResult> =>
       invoke('stt:detailed', { pcm, lang, timestamps, priority }),
+    liveStart: (lang: TransLang): Promise<number | null> => invoke('stt:live-start', { lang }),
+    liveFeed: (session: number, pcm: Float32Array): Promise<{ text: string }> => invoke('stt:live-feed', { session, pcm }),
+    liveReset: (session: number): Promise<void> => invoke('stt:live-reset', { session }),
+    liveStop: (session: number): Promise<void> => invoke('stt:live-stop', { session }),
     applyDictionary: (text: string): Promise<string> => invoke('dict:apply', { text }),
     chat: (system: string, msgs: ChatMsg[]): Promise<string> => invoke('llm:chat', { system, msgs }),
     translate: (text: string, to: TransLang): Promise<string> => invoke('llm:translate', { text, to }),

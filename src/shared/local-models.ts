@@ -7,9 +7,10 @@
 import type { Lang } from './types'
 import { VOICE_META, voiceSampleUrl } from './voice-catalog'
 
-export type LocalModelKind = 'stt' | 'llm' | 'tts'
+/** stt: Whisper (texto definitivo) · live: texto en vivo mientras hablas · llm: redacción · tts: voces. */
+export type LocalModelKind = 'stt' | 'live' | 'llm' | 'tts'
 
-/** Un archivo que acompaña al modelo (la configuración de una voz). */
+/** Un archivo que acompaña al modelo (la configuración de una voz, las partes de un modelo en vivo). */
 export interface LocalModelExtra {
   id: string
   url: string
@@ -33,7 +34,12 @@ export interface LocalModel {
   voice?: string
   lang?: Lang
   extra?: LocalModelExtra
+  /** Más archivos acompañantes (modelos de varias partes). */
+  extras?: LocalModelExtra[]
 }
+
+/** Archivos que acompañan al modelo principal (se descargan antes que él). */
+export const companions = (m: LocalModel): LocalModelExtra[] => [...(m.extra ? [m.extra] : []), ...(m.extras ?? [])]
 
 const hf = (repo: string, file: string): string => `https://huggingface.co/${repo}/resolve/main/${file}`
 
@@ -51,6 +57,26 @@ function voice(id: string, bytes: number, sha256: string, configBytes: number, c
     id: `${id}.onnx`, kind: 'tts', label: meta.label, note: `Voz de ${calidad} · licencia ${meta.license}${uso}.`,
     url: hf(repo, `${id}.onnx`), bytes, sha256, minRamGB: 2, voice: id, lang: meta.langs[0],
     extra: { id: `${id}.onnx.json`, url: hf(repo, `${id}.onnx.json`), bytes: configBytes, sha256: configSha256 }
+  }
+}
+
+/**
+ * Modelo de texto en vivo (copia de csukuangfj para sherpa-onnx de Kroko-ASR, de Banafo). Sus
+ * archivos se llaman igual en todos los idiomas (encoder.onnx…), así que en el teléfono llevan
+ * delante «kroko-<idioma>.».
+ */
+function live(lang: Lang, label: string, encBytes: number, encSha: string, decSha: string, joinSha: string, tokBytes: number, tokSha: string): LocalModel {
+  const repo = `csukuangfj/sherpa-onnx-streaming-zipformer-${lang}-kroko-2025-08-06`
+  const base = `kroko-${lang}`
+  return {
+    id: `${base}.encoder.onnx`, kind: 'live', label,
+    note: 'Escribe lo que dices palabra a palabra mientras hablas; Whisper pone el texto definitivo. Licencia CC-BY-SA (Kroko).',
+    url: hf(repo, 'encoder.onnx'), bytes: encBytes, sha256: encSha, minRamGB: 3, lang,
+    extras: [
+      { id: `${base}.decoder.onnx`, url: hf(repo, 'decoder.onnx'), bytes: 617488, sha256: decSha },
+      { id: `${base}.joiner.onnx`, url: hf(repo, 'joiner.onnx'), bytes: 336817, sha256: joinSha },
+      { id: `${base}.tokens.txt`, url: hf(repo, 'tokens.txt'), bytes: tokBytes, sha256: tokSha }
+    ]
   }
 }
 
@@ -76,6 +102,13 @@ export const LOCAL_MODELS: LocalModel[] = [
     url: hf('ggerganov/whisper.cpp', 'ggml-large-v3-turbo-q5_0.bin'), bytes: 574041195,
     sha256: '394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2', minRamGB: 6
   },
+  // ── Texto en vivo (zipformer streaming de Kroko para sherpa-onnx, licencia CC-BY-SA) ──
+  live('es', 'Texto en vivo · español', 154878102, '2d9f5ef87d1a5257f8a6687e21501c56f3aa2fcbfcfab9364dcc4ce4e06ae81b',
+    'd4ce176b94b25f7acc88717bc3f704fcf5d6e131aaac2e0cabab3885541181ee', 'dae35df88d676e320fcdb99217328e66dcf722bf11b0f2459e14ddb5b982ded5',
+    6385, '1be5e0a58e05d06d327df4c6b7b5e4f8aba01da6981eb016fcaceafc6a56680f'),
+  live('en', 'Texto en vivo · English', 70092599, 'd4881c57449d581e0770fd53fa66c2fdc6cd167d92ece7c715e603defc96d9d4',
+    '455ba38466fce8d5a57e7db68a323b684079ca4d9e1dd93a740d9b2429aae3b1', 'd406f616736350e2a7df3e39398b78eb2fc1a2ca6973a19d3853fa3227e25b52',
+    6310, '396dbeb5f4858875690716084f54e90d339679d0ba3e6b5b584f3d7589254d2d'),
   // ── Redacción con IA (llama.cpp, formato GGUF, cuantizados a 4 bits) ──
   {
     id: 'gemma-3-1b-it-Q4_K_M.gguf', kind: 'llm', label: 'Gemma 3 1B', note: 'Muy rápido; para corregir y pulir frases cortas.',
@@ -129,8 +162,14 @@ export interface LocalModelFile {
 /** ¿Está el modelo completo en el teléfono? (una voz necesita también su configuración). */
 export function modelReady(m: LocalModel, files: LocalModelFile[]): boolean {
   const has = (id: string): boolean => files.some((f) => f.id === id && !f.partial)
-  return has(m.id) && (!m.extra || has(m.extra.id))
+  return has(m.id) && companions(m).every((x) => has(x.id))
 }
+
+/** Lo que ocupa el modelo con todos sus archivos. */
+export const totalBytes = (m: LocalModel): number => m.bytes + companions(m).reduce((a, x) => a + x.bytes, 0)
+
+/** Modelo de texto en vivo para un idioma. */
+export const liveModelFor = (lang: string): LocalModel | undefined => LOCAL_MODELS.find((m) => m.kind === 'live' && m.lang === lang)
 
 /** Progreso de una descarga, emitido por Rust en el evento `models:progress`. */
 export interface LocalModelProgress {
@@ -162,6 +201,7 @@ export function modelFit(m: LocalModel, ramGB: number): Fit {
 
 const PREFERRED: Record<LocalModelKind, string[]> = {
   stt: ['ggml-small-q5_1.bin', 'ggml-base-q5_1.bin', 'ggml-tiny-q5_1.bin'],
+  live: ['kroko-es.encoder.onnx'],
   llm: ['qwen2.5-1.5b-instruct-q4_k_m.gguf', 'gemma-3-1b-it-Q4_K_M.gguf'],
   tts: ['es_MX-claude-high.onnx']
 }

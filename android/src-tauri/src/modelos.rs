@@ -28,7 +28,17 @@ pub fn archivo_valido(nombre: &str) -> bool {
         && nombre.len() <= 128
         && !nombre.starts_with('.')
         && nombre.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
-    simple && [".bin", ".gguf", ".onnx", ".onnx.json"].iter().any(|ext| nombre.ends_with(ext))
+    simple && [".bin", ".gguf", ".onnx", ".onnx.json", ".tokens.txt"].iter().any(|ext| nombre.ends_with(ext))
+}
+
+/// Archivos de un modelo de texto en vivo (zipformer streaming) a partir de su identificador
+/// («kroko-es.encoder.onnx»): codificador, decodificador, unión y tabla de símbolos.
+pub fn archivos_vivo(id: &str) -> Option<[String; 4]> {
+    let base = id.strip_suffix(".encoder.onnx")?;
+    if base.is_empty() || !archivo_valido(id) {
+        return None;
+    }
+    Some([format!("{base}.encoder.onnx"), format!("{base}.decoder.onnx"), format!("{base}.joiner.onnx"), format!("{base}.tokens.txt")])
 }
 
 /// Voz Piper: el identificador de escritorio («es_MX-claude-high»), con su modelo y su configuración.
@@ -103,7 +113,11 @@ pub fn validar_pedido(url: &str, archivo: &str, bytes: u64, sha256: &str) -> Res
     if url.scheme() != "https" || url.host_str() != Some("huggingface.co") || url.port().is_some() {
         return Err("Los modelos solo se descargan de https://huggingface.co.".into());
     }
-    if url.path_segments().and_then(|mut s| s.next_back()) != Some(archivo) {
+    // El archivo se guarda con el nombre de la dirección, o con un prefijo («kroko-es.encoder.onnx»
+    // para …/encoder.onnx) cuando varios modelos traen archivos con el mismo nombre.
+    let ultimo = url.path_segments().and_then(|mut s| s.next_back()).unwrap_or("");
+    let prefijado = archivo.strip_suffix(ultimo).and_then(|p| p.strip_suffix('.')).is_some_and(|p| !p.is_empty() && !p.contains('.'));
+    if ultimo.is_empty() || (archivo != ultimo && !prefijado) {
         return Err("La dirección no corresponde al archivo del modelo.".into());
     }
     let sha = sha256.to_ascii_lowercase();
@@ -137,12 +151,47 @@ pub fn espacio_necesario(total: u64, ya_descargado: u64) -> u64 {
     total.saturating_sub(ya_descargado) + 200 * 1024 * 1024
 }
 
-/// Audio PCM que llega de la interfaz como bytes crudos (Float32Array, little-endian).
-pub fn pcm_desde_bytes(bytes: &[u8]) -> Result<Vec<f32>, String> {
-    if bytes.len() % 4 != 0 {
-        return Err("Audio dañado: el tamaño no es múltiplo de 4 bytes.".into());
+
+/// Audio PCM que llega de la interfaz en base64, como muestras de 16 bits (little-endian). Por el
+/// puente de Android el cuerpo binario llega como lista JSON de bytes (16 caracteres por muestra);
+/// así son menos de 3.
+pub fn pcm_desde_b64(texto: &str) -> Result<Vec<f32>, String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(texto).map_err(|_| "Audio dañado.".to_string())?;
+    if bytes.len() % 2 != 0 {
+        return Err("Audio dañado: el tamaño no es múltiplo de 2 bytes.".into());
     }
-    Ok(bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
+    Ok(bytes.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect())
+}
+
+/// Cómo correr Whisper para un audio.
+#[derive(Debug, PartialEq)]
+pub struct PlanWhisper {
+    /// `audio_ctx` (0 = ventana completa).
+    pub ventana: i32,
+    /// Ancho de la búsqueda en haz (1 = voraz).
+    pub haz: i32,
+    /// Quitar los silencios con el detector de voz antes de transcribir.
+    pub vad: bool,
+}
+
+/// Frases de dictado (hasta 15 s): búsqueda en haz de 3, más precisa y aún rápida. Audios largos
+/// (reuniones, archivos): voraz, porque ahí importa no acumular atraso, y con el detector de voz,
+/// que quita los silencios (menos trabajo y sin texto inventado en los huecos). Los borradores,
+/// siempre lo más rápido.
+pub fn plan_whisper(muestras: usize, marcas: bool, borrador: bool, hay_vad: bool) -> PlanWhisper {
+    let segundos = muestras as f64 / 16_000.0;
+    PlanWhisper {
+        ventana: if marcas { 0 } else { contexto_audio(muestras) },
+        haz: if !borrador && segundos <= 15.0 { 3 } else { 1 },
+        vad: !borrador && hay_vad && segundos >= 8.0,
+    }
+}
+
+/// Texto de arranque para Whisper: como mucho 600 caracteres, sin saltos de línea.
+pub fn prompt_whisper(texto: &str) -> String {
+    let limpio: String = texto.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    limpio.trim().chars().take(600).collect()
 }
 
 /// Idioma para Whisper: código ISO de 2 letras («es», «en»…) o `None` para detectarlo.
@@ -206,6 +255,63 @@ pub fn limpiar_respuesta(texto: &str) -> String {
 }
 
 #[cfg(test)]
+mod pruebas_motor {
+    use super::*;
+
+    #[test]
+    fn pcm_en_base64_de_16_bits() {
+        use base64::Engine as _;
+        let bytes: Vec<u8> = [0i16, 16384, -32768, 32767].iter().flat_map(|v| v.to_le_bytes()).collect();
+        let pcm = pcm_desde_b64(&base64::engine::general_purpose::STANDARD.encode(bytes)).unwrap();
+        assert_eq!(pcm.len(), 4);
+        assert_eq!(pcm[0], 0.0);
+        assert_eq!(pcm[1], 0.5);
+        assert_eq!(pcm[2], -1.0);
+        assert!(pcm_desde_b64("no es base64!").is_err());
+        assert!(pcm_desde_b64("AAAA").is_err()); // 3 bytes: tamaño impar
+    }
+
+    #[test]
+    fn plan_segun_el_audio() {
+        assert_eq!(plan_whisper(16_000 * 5, false, false, true), PlanWhisper { ventana: 384, haz: 3, vad: false });
+        assert_eq!(plan_whisper(16_000 * 5, false, true, true).haz, 1);
+        let largo = plan_whisper(16_000 * 25, false, false, true);
+        assert_eq!((largo.haz, largo.vad), (1, true));
+        assert!(!plan_whisper(16_000 * 25, false, false, false).vad);
+        assert_eq!(plan_whisper(16_000 * 25, true, false, true).ventana, 0);
+    }
+
+    #[test]
+    fn archivos_del_modelo_en_vivo() {
+        let a = archivos_vivo("kroko-es.encoder.onnx").unwrap();
+        assert_eq!(a[3], "kroko-es.tokens.txt");
+        assert!(archivos_vivo("kroko-es.onnx").is_none());
+        assert!(archivos_vivo(".encoder.onnx").is_none());
+        assert!(archivos_vivo("../x.encoder.onnx").is_none());
+    }
+
+    #[test]
+    fn nombre_con_prefijo_para_archivos_repetidos() {
+        const SHA: &str = "2d9f5ef87d1a5257f8a6687e21501c56f3aa2fcbfcfab9364dcc4ce4e06ae81b";
+        let url = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/encoder.onnx";
+        assert!(validar_pedido(url, "kroko-es.encoder.onnx", 1, SHA).is_ok());
+        assert!(validar_pedido(url, "encoder.onnx", 1, SHA).is_ok());
+        assert!(validar_pedido(url, "kroko.es.encoder.onnx", 1, SHA).is_err());
+        assert!(validar_pedido(url, "kroko-es.decoder.onnx", 1, SHA).is_err());
+        assert!(validar_pedido(url, "xencoder.onnx", 1, SHA).is_err());
+        let tokens = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/tokens.txt";
+        assert!(validar_pedido(tokens, "kroko-es.tokens.txt", 1, SHA).is_ok());
+        assert!(validar_pedido(tokens, "tokens.txt", 1, SHA).is_err()); // sin prefijo no es un nombre válido
+    }
+
+    #[test]
+    fn prompt_limpio_y_corto() {
+        assert_eq!(prompt_whisper(" Hola.\nAdiós "), "Hola. Adiós");
+        assert_eq!(prompt_whisper(&"a".repeat(900)).len(), 600);
+    }
+}
+
+#[cfg(test)]
 mod pruebas {
     use super::*;
 
@@ -249,9 +355,6 @@ mod pruebas {
 
     #[test]
     fn audio_e_idioma() {
-        let bytes: Vec<u8> = [0.5f32, -1.0].iter().flat_map(|f| f.to_le_bytes()).collect();
-        assert_eq!(pcm_desde_bytes(&bytes).unwrap(), vec![0.5, -1.0]);
-        assert!(pcm_desde_bytes(&[0, 1, 2]).is_err());
         assert_eq!(idioma_whisper("es").unwrap(), Some("es".into()));
         assert_eq!(idioma_whisper("auto").unwrap(), None);
         assert!(idioma_whisper("es-MX").is_err());

@@ -15,8 +15,9 @@ import type { IpcChannel, IpcContract, IpcEvent, IpcEvents, IpcReq, IpcRes, SttP
 import { DEFAULT_SETTINGS, type ChatMsg, type HistoryItem, type Lang, type Settings, type SttStatus } from '@shared/types'
 import { normalizeModel } from '@shared/providers'
 import { applyDictionary } from '@shared/dictionary'
+import { pcmToB64, whisperPrompt } from './pcm'
 import { createLlmTasks, type ContentAction, type LlmLimits } from '@shared/llm-tasks'
-import { LOCAL_MODELS, localVoice, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
+import { companions, liveModelFor, LOCAL_MODELS, localVoice, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
 import { VOICE_META } from '@shared/voice-catalog'
 import type { VoiceStatus } from '@shared/voice'
 import type { UpdateInfo } from '@shared/update'
@@ -65,21 +66,28 @@ async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
 
 // ── Voz → texto ─────────────────────────────────────────────────────────────────────────────
 /**
- * Whisper corre en Rust. El audio va como bytes crudos (un JSON de cientos de miles de números
- * sería lento) y los parámetros en cabeceras. Después se aplica el diccionario personal, igual
- * que en escritorio.
+ * Whisper corre en Rust. El audio va en base64 a 16 bits (platform/pcm.ts) y con él un texto de
+ * arranque con la puntuación del idioma y los términos del diccionario. Después se aplica el
+ * diccionario personal, igual que en escritorio.
  */
 async function transcribe(pcm: Float32Array, lang: string, timestamps: boolean, priority: SttPriority = 'final'): Promise<TranscribeResult> {
   const s = await getSettings()
-  const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength)
-  const r = await tauriInvoke<TranscribeResult>('stt_transcribe', bytes, {
-    headers: { 'x-model': s.sttModel, 'x-lang': lang, 'x-priority': priority, 'x-timestamps': timestamps ? '1' : '0' }
+  const prompt = whisperPrompt(lang === 'auto' ? s.primaryLang : lang, s.dictionary.map((d) => d.to || d.from))
+  const r = await tauriInvoke<TranscribeResult>('stt_transcribe', {
+    audio: pcmToB64(pcm), model: s.sttModel, lang, priority, timestamps, prompt
   })
   return {
     text: applyDictionary(r.text, s.dictionary),
     segments: r.segments.map((x) => ({ ...x, text: applyDictionary(x.text, s.dictionary) })),
     ms: r.ms
   }
+}
+
+/** Texto en vivo: abre una sesión con el modelo streaming del idioma, si está descargado. */
+async function liveStart(lang: string): Promise<number | null> {
+  const m = liveModelFor(lang)
+  if (!m || !modelReady(m, await listModels())) return null
+  return tauriInvoke<number>('vivo_iniciar', { model: m.id })
 }
 
 // ── Redacción con IA ───────────────────────────────────────────────────────────────────────
@@ -109,13 +117,13 @@ const listModels = (): Promise<LocalModelFile[]> => tauriInvoke<LocalModelFile[]
 async function startDownload(m: LocalModel): Promise<void> {
   await netGuard(await getSettings(), `Descargar ${m.label}`, m.url)
   // Rust vuelve a validar dirección, nombre y huella.
-  if (m.extra) await tauriInvoke('models_download', { url: m.extra.url, id: m.extra.id, bytes: m.extra.bytes, sha256: m.extra.sha256 })
+  for (const x of companions(m)) await tauriInvoke('models_download', { url: x.url, id: x.id, bytes: x.bytes, sha256: x.sha256 })
   await tauriInvoke('models_download', { url: m.url, id: m.id, bytes: m.bytes, sha256: m.sha256 })
 }
 
 /** Descarga un modelo y espera a que esté completo (para «Descargar voz» fuera de Ajustes). */
 async function downloadAndWait(m: LocalModel): Promise<void> {
-  const pending = new Set([m.id, ...(m.extra ? [m.extra.id] : [])])
+  const pending = new Set([m.id, ...companions(m).map((x) => x.id)])
   for (const f of await listModels()) if (!f.partial) pending.delete(f.id)
   if (!pending.size) return
   let un: (() => void) | null = null
@@ -195,13 +203,13 @@ const handlers: Handlers = {
     return startDownload(m)
   },
   'models:cancel': async ({ id }) => {
-    const extra = LOCAL_MODELS.find((x) => x.id === id)?.extra
-    if (extra) await tauriInvoke('models_cancel', { id: extra.id })
+    const m = LOCAL_MODELS.find((x) => x.id === id)
+    for (const x of m ? companions(m) : []) await tauriInvoke('models_cancel', { id: x.id })
     await tauriInvoke('models_cancel', { id })
   },
   'models:remove': async ({ id }) => {
-    const extra = LOCAL_MODELS.find((x) => x.id === id)?.extra
-    if (extra) await tauriInvoke('models_remove', { id: extra.id })
+    const m = LOCAL_MODELS.find((x) => x.id === id)
+    for (const x of m ? companions(m) : []) await tauriInvoke('models_remove', { id: x.id })
     await tauriInvoke('models_remove', { id })
   },
 
@@ -252,6 +260,10 @@ const handlers: Handlers = {
   },
   'stt:transcribe': ({ pcm, lang, priority }) => transcribe(pcm, lang, false, priority),
   'stt:detailed': ({ pcm, lang, timestamps, priority }) => transcribe(pcm, lang, timestamps, priority),
+  'stt:live-start': ({ lang }) => liveStart(lang),
+  'stt:live-feed': ({ session, pcm }) => tauriInvoke<{ texto: string }>('vivo_alimentar', { session, audio: pcmToB64(pcm) }).then((r) => ({ text: r.texto })),
+  'stt:live-reset': ({ session }) => tauriInvoke('vivo_reiniciar', { session }),
+  'stt:live-stop': ({ session }) => tauriInvoke('vivo_terminar', { session }),
   'stt:status': async () => {
     const s = await getSettings()
     const loaded = await tauriInvoke<string | null>('stt_loaded')

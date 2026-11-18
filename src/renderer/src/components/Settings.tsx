@@ -123,7 +123,7 @@ function General(): JSX.Element {
       <section className="card">
         <h2>Comandos de voz</h2>
         <label className="inline check"><input type="checkbox" checked={settings.voiceCommands} onChange={(e) => void patchSettings({ voiceCommands: e.target.checked })} /> Activar comandos de voz</label>
-        <p className="muted">Solo se ejecutan cuando una frase es exactamente un comando (puedes anteponer «Flow»): «borra eso», «nuevo párrafo», «nueva línea», «copia», «rehaz», «redacta», «hazlo más formal / corto / casual», «conviértelo en prompt», «guarda este prompt», «pausa».</p>
+        <p className="muted">Di el comando como una frase sola («redacta», «copia», «borra todo», «más formal», «pausa»…) o al final de lo que dictas precedido de «Flow»: «…nos vemos el lunes. Flow, redacta». «Punto y aparte» y «salto de línea» funcionan en medio del texto. La lista completa está en Dictado → 🎙 Comandos.</p>
       </section>
 
       {!ANDROID && (

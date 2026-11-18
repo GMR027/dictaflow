@@ -4,7 +4,14 @@ import { Mic, Segmenter } from '../audio'
 import { fmtTime, toSubtitles } from '../audioio'
 import { download } from '../textutil'
 import { useApp } from '../store'
+import { takeNext, withRetry, type Pending } from '../meeting-queue'
+import { keepAwake } from '../wakelock'
+import { LiveTranscriber } from '../live'
 import { ToolIcon } from './ToolIcon'
+import { BotTyping } from './BotTyping'
+import { MoreMenu } from './MoreMenu'
+import { RecButton } from './RecButton'
+import { Sheet } from './Sheet'
 
 type Source = 'mic' | 'system' | 'both'
 const SRC: Record<Source, string> = { mic: '🎤 Micrófono', system: '🔊 Audio del sistema', both: '🎤+🔊 Ambos' }
@@ -34,6 +41,8 @@ const minutesToMarkdown = (m: Meeting): string => {
   return partes.join('\n')
 }
 
+const ANDROID = window.api.platform === 'android'
+
 export function Meetings(): JSX.Element {
   const { settings, flash, notice } = useApp()
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -47,23 +56,32 @@ export function Meetings(): JSX.Element {
   const [error, setError] = useState('')
   const [renaming, setRenaming] = useState<number | null>(null)
   const [newName, setNewName] = useState('')
+  const [history, setHistory] = useState(false)
+  const [level, setLevel] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
+  const [draft, setDraft] = useState('')
   const mic = useRef<Mic | null>(null)
   const sysSeg = useRef<Segmenter | null>(null)
   const unsub = useRef<(() => void) | null>(null)
-  const queue = useRef<Promise<void>>(Promise.resolve())
+  const backlog = useRef<Pending[]>([])
+  const worker = useRef<Promise<void> | null>(null)
   const segs = useRef<Segment[]>([])
   const t0 = useRef(0)
   /** Instante en que arrancó cada fuente, para compartir una sola línea de tiempo. */
   const micOffset = useRef(0)
   const sysOffset = useRef(0)
-  /** Id de la grabación en curso. */
+  /** Id de la grabación en curso (también es el id de la reunión que se va guardando). */
   const session = useRef('')
+  const lastSave = useRef(0)
+  const release = useRef<(() => void) | null>(null)
+  const live$ = useRef<LiveTranscriber | null>(null)
   /** Audio acumulado para no enviar un trozo por cada bloque de 20 ms. */
   const audioBuf = useRef<Float32Array[]>([])
 
   /** Manda el audio grabado al proceso principal, en bloques de ~1 s. */
   const record = (chunk: Float32Array): void => {
     if (!session.current) return
+    live$.current?.feed(chunk)
     audioBuf.current.push(chunk)
     const total = audioBuf.current.reduce((n, c) => n + c.length, 0)
     if (total < 16000) return
@@ -74,11 +92,64 @@ export function Meetings(): JSX.Element {
     void window.api.pushMeetingAudio(session.current, all)
   }
 
-  useEffect(() => { void window.api.getCollection<Meeting>('meetings').then(setMeetings) }, [])
-  useEffect(() => () => { void stop(true) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void window.api.getCollection<Meeting>('meetings').then((all) => {
+      // Una reunión que quedó «en curso» es de una sesión que se cerró a mitad: se recupera lo guardado.
+      const cut = all.filter((m) => m.inProgress)
+      if (!cut.length) { setMeetings(all); return }
+      const fixed = all.filter((m) => !m.inProgress || m.segments.length).map((m) => (m.inProgress ? { ...m, inProgress: false } : m))
+      setMeetings(fixed)
+      void window.api.saveCollection('meetings', fixed)
+      if (cut.some((m) => m.segments.length)) flash('🗂 Se recuperó una reunión que se interrumpió; está en el historial.')
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Al salir de la pantalla en mitad de una reunión se guarda (antes se descartaba).
+  useEffect(() => () => { void stop() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!recording) return
+    const id = setInterval(() => setElapsed((Date.now() - t0.current) / 1000), 1000)
+    return () => clearInterval(id)
+  }, [recording])
 
   const persist = (next: Meeting[]): void => { setMeetings(next); void window.api.saveCollection('meetings', next) }
   const current = meetings.find((m) => m.id === sel) ?? null
+
+  /** Guarda la reunión en curso tal como va (cada pocas frases), para no perderla si Android cierra la app. */
+  const checkpoint = (force = false): void => {
+    if (!session.current || (!force && Date.now() - lastSave.current < 10000)) return
+    lastSave.current = Date.now()
+    const id = session.current
+    const snapshot = { segments: segs.current, durationSec: (Date.now() - t0.current) / 1000 }
+    setMeetings((all) => {
+      const next = all.map((m) => (m.id === id ? { ...m, ...snapshot } : m))
+      void window.api.saveCollection('meetings', next)
+      return next
+    })
+  }
+
+  /** Transcribe las frases pendientes, de una en una (o juntas si hay atraso). */
+  const drain = (): Promise<void> => {
+    worker.current ??= (async () => {
+      let item: Pending | undefined
+      while ((item = takeNext(backlog.current))) {
+        const it = item
+        setPending(backlog.current.length + 1)
+        try {
+          const r = await withRetry(() => window.api.transcribeDetailed(it.pcm, settings.primaryLang))
+          if (r.text) {
+            segs.current = [...segs.current, { start: it.start, end: it.start + it.pcm.length / 16000, text: r.text, speaker: it.speaker }].sort((a, b) => a.start - b.start)
+            setLive(segs.current)
+            checkpoint()
+          }
+        } catch (e) {
+          setError(`No se pudo transcribir el fragmento de ${fmtTime(it.start)}: ${(e as Error).message}`)
+        }
+      }
+      setPending(0)
+      worker.current = null
+    })()
+    return worker.current
+  }
 
   /**
    * Encola un fragmento para transcribir. `offset` es el instante en que arrancó
@@ -86,31 +157,33 @@ export function Meetings(): JSX.Element {
    * audio del sistema quedan en la misma escala y se pueden ordenar.
    */
   const enqueue = (pcm: Float32Array, start: number, offset: number, speaker?: string): void => {
-    setPending((n) => n + 1)
-    queue.current = queue.current.then(async () => {
-      try {
-        const r = await window.api.transcribeDetailed(pcm, settings.primaryLang)
-        if (r.text) {
-          const at = offset + start
-          segs.current = [...segs.current, { start: at, end: at + pcm.length / 16000, text: r.text, speaker }].sort((a, b) => a.start - b.start)
-          setLive(segs.current)
-        }
-      } catch (e) { setError((e as Error).message) } finally { setPending((n) => n - 1) }
-    })
+    setDraft(''); live$.current?.reset()
+    backlog.current.push({ pcm, start: offset + start, speaker })
+    setPending(backlog.current.length)
+    void drain()
   }
 
   const start = async (): Promise<void> => {
-    setError(''); segs.current = []; setLive([]); setSel(null)
+    setError(''); segs.current = []; setLive([]); setSel(null); setElapsed(0); setDraft('')
+    backlog.current = []
     t0.current = Date.now()
     const tag = (s: string): string | undefined => (source === 'both' ? s : undefined)
     const clock = performance.now()
     session.current = crypto.randomUUID()
     await window.api.startMeetingAudio(session.current)
+    const now = new Date()
+    const m: Meeting = {
+      id: session.current, title: `Reunión ${now.toLocaleDateString()} ${now.toLocaleTimeString().slice(0, 5)}`,
+      createdAt: t0.current, durationSec: 0, source, segments: [], summary: '', inProgress: true
+    }
+    setMeetings((all) => { const next = [m, ...all]; void window.api.saveCollection('meetings', next); return next })
+    lastSave.current = Date.now()
     try {
       if (source !== 'system') {
         micOffset.current = (performance.now() - clock) / 1000
-        mic.current = new Mic({ deviceId: settings.micDeviceId, mode: 'continuous', onLevel: () => undefined, filters: settings.micFilters, onAudio: record, onSegment: (p, t) => enqueue(p, t, micOffset.current, tag('Yo')) })
+        mic.current = new Mic({ deviceId: settings.micDeviceId, mode: 'continuous', onLevel: setLevel, filters: settings.micFilters, onAudio: record, onSegment: (p, t) => enqueue(p, t, micOffset.current, tag('Yo')) })
         await mic.current.start()
+        live$.current = await LiveTranscriber.create(settings.primaryLang, setDraft)
       }
       if (source !== 'mic') {
         sysOffset.current = (performance.now() - clock) / 1000
@@ -118,28 +191,30 @@ export function Meetings(): JSX.Element {
         unsub.current = window.api.onSystemAudio((c) => { record(c); sysSeg.current?.feed(c) })
         await window.api.startSystemAudio()
       }
+      release.current = keepAwake()
       setRecording(true)
     } catch (e) { setError((e as Error).message); await stop(true) }
   }
 
   const stop = async (discard = false): Promise<void> => {
+    if (!session.current) return
+    const id = session.current
+    release.current?.(); release.current = null
     await mic.current?.stop(); mic.current = null
+    live$.current?.stop(); live$.current = null
     if (sysSeg.current) { await window.api.stopSystemAudio(); unsub.current?.(); sysSeg.current.flush(); sysSeg.current = null }
-    setRecording(false)
-    await queue.current
-    const audio = await window.api.stopMeetingAudio(session.current)
+    setRecording(false); setLevel(0); setDraft('')
+    await drain()
+    const audio = await window.api.stopMeetingAudio(id)
+    session.current = ''
     if (discard || !segs.current.length) {
-      if (discard) await window.api.discardMeetingAudio(session.current)
+      if (discard) await window.api.discardMeetingAudio(id)
+      setMeetings((all) => { const next = all.filter((m) => m.id !== id); void window.api.saveCollection('meetings', next); return next })
       return
     }
-    const now = new Date()
-    const m: Meeting = {
-      id: crypto.randomUUID(), title: `Reunión ${now.toLocaleDateString()} ${now.toLocaleTimeString().slice(0, 5)}`,
-      createdAt: t0.current, durationSec: (Date.now() - t0.current) / 1000, source, segments: segs.current, summary: '',
-      audioPath: audio?.path
-    }
-    setMeetings((all) => { const next = [m, ...all]; void window.api.saveCollection('meetings', next); return next })
-    setSel(m.id); setLive([])
+    const final = { segments: segs.current, durationSec: (Date.now() - t0.current) / 1000, audioPath: audio?.path, inProgress: false }
+    setMeetings((all) => { const next = all.map((m) => (m.id === id ? { ...m, ...final } : m)); void window.api.saveCollection('meetings', next); return next })
+    setSel(id); setLive([])
   }
 
   /** Genera el acta estructurada: resumen, temas, decisiones, acuerdos y tareas. */
@@ -178,56 +253,87 @@ export function Meetings(): JSX.Element {
   }, [q, meetings])
 
   const shown = recording ? live : current?.segments ?? []
+  const done = meetings.filter((m) => m.id !== session.current)
+
+  const exportPdf = async (m: Meeting): Promise<void> => {
+    try {
+      const f = await window.api.generatePdf(m.title, m.minutes ? minutesToMarkdown(m) : toMarkdown(m), 'reunion')
+      flash(`📄 PDF guardado: ${f}`)
+    } catch (e) { setError((e as Error).message) }
+  }
+
+  const list = (
+    <>
+      <input placeholder="Buscar en todas las reuniones…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en las reuniones" />
+      <div className="list">
+        {q && hits.map(({ m, s }, i) => (
+          <div key={i} className="item pick" onClick={() => { setSel(m.id); setQ(''); setHistory(false) }}>
+            <small className="muted">{m.title} · {fmtTime(s.start)}</small><br />{s.text.slice(0, 120)}
+          </div>
+        ))}
+        {!q && done.map((m) => (
+          <div key={m.id} className={`item pick ${m.id === sel ? 'sel' : ''}`} onClick={() => { if (!recording) { setSel(m.id); setHistory(false) } }}>
+            <b>{m.title}</b><br /><small className="muted">{fmtTime(m.durationSec)} · {m.segments.length} frases{m.minutes ? ' · acta' : ''}</small>
+          </div>
+        ))}
+        {!q && !done.length && <p className="muted">Aún no hay reuniones grabadas.</p>}
+      </div>
+    </>
+  )
 
   return (
-    <div className="view split">
-      <section className="card side">
-        <header><h2><ToolIcon tool="reuniones" /> Reuniones</h2></header>
-        <input placeholder="Buscar en todas…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <div className="list">
-          {q && hits.map(({ m, s }, i) => (
-            <div key={i} className="item pick" onClick={() => { setSel(m.id); setQ('') }}>
-              <small className="muted">{m.title} · {fmtTime(s.start)}</small><br />{s.text.slice(0, 120)}
-            </div>
-          ))}
-          {!q && meetings.map((m) => (
-            <div key={m.id} className={`item pick ${m.id === sel ? 'sel' : ''}`} onClick={() => !recording && setSel(m.id)}>
-              <b>{m.title}</b><br /><small className="muted">{fmtTime(m.durationSec)} · {m.segments.length} frases{m.minutes ? ' · acta' : ''}</small>
-            </div>
-          ))}
-          {!q && !meetings.length && <p className="muted">Aún no hay reuniones grabadas.</p>}
-        </div>
-      </section>
+    <div className={`view ${ANDROID ? '' : 'split'}`}>
+      {!ANDROID && (
+        <section className="card side">
+          <header><h2><ToolIcon tool="reuniones" /> Reuniones</h2></header>
+          {list}
+        </section>
+      )}
+      {history && <Sheet title="🗂 Historial de reuniones" onClose={() => setHistory(false)}>{list}</Sheet>}
 
-      <section className="card wide">
+      <section className="card wide grow">
         {notice && <div className="notice" role="status">{notice}</div>}
-        <div className="row">
-          <select value={source} onChange={(e) => setSource(e.target.value as Source)} disabled={recording} aria-label="Fuente de audio">
-            {SOURCES.map((k) => <option key={k} value={k}>{SRC[k]}</option>)}
-          </select>
-          <button className={`mic ${recording ? 'rec' : ''}`} onClick={() => void (recording ? stop() : start())}>
-            {recording ? '■ Terminar y guardar' : '● Empezar a transcribir'}
-          </button>
-          <span className="muted">{recording ? `Grabando… ${pending ? '(transcribiendo)' : ''}` : pending ? 'Terminando de transcribir…' : ''}</span>
+        {ANDROID && (
+          <header>
+            <h2><ToolIcon tool="reuniones" /> Reuniones</h2>
+            <button className="chip" onClick={() => setHistory(true)} disabled={recording}>🗂 Historial ({done.length})</button>
+          </header>
+        )}
+
+        <div className="recorder">
+          {SOURCES.length > 1 && (
+            <div className="seg" role="radiogroup" aria-label="Fuente de audio">
+              {SOURCES.map((k) => (
+                <button key={k} role="radio" aria-checked={source === k} className={source === k ? 'on' : ''}
+                  disabled={recording} onClick={() => setSource(k)}>{SRC[k]}</button>
+              ))}
+            </div>
+          )}
+          <RecButton recording={recording} level={level} onClick={() => void (recording ? stop() : start())}
+            idle={current ? 'Nueva reunión' : 'Empezar a transcribir'} active="Terminar y guardar"
+            hint={recording ? fmtTime(elapsed) : undefined} />
+          {pending > 0 && <BotTyping small label={recording ? `Transcribiendo (${pending} en cola)` : 'Terminando de transcribir'} />}
         </div>
-        <p className="muted">Todo se procesa en tu equipo. Avisa a los participantes antes de grabar. Con «Ambos» usa auriculares para evitar eco. El audio se guarda para poder volver a transcribirlo.</p>
-        {error && <p className="warn" role="alert">{error}</p>}
+        {!recording && !current && (
+          <p className="muted center">Todo se procesa en tu {ANDROID ? 'teléfono' : 'equipo'}. Avisa a los participantes antes de grabar.{ANDROID ? ' La pantalla se mantiene encendida mientras grabas y la reunión se guarda poco a poco.' : ' Con «Ambos» usa auriculares para evitar eco.'}</p>
+        )}
+        {error && <p className="warn" role="alert">{error} <button className="link" onClick={() => setError('')}>cerrar</button></p>}
 
         {current && !recording && (
-          <div className="row">
-            <input className="grow title" value={current.title} onChange={(e) => persist(meetings.map((m) => (m.id === current.id ? { ...m, title: e.target.value } : m)))} />
-            <button onClick={() => void makeMinutes()} disabled={!!busy}>📋 Generar acta</button>
-            <button onClick={async () => flash(`📝 ${await window.api.exportNote(current.title, minutesToMarkdown(current), ['reunion'])}`)}>📝 A notas</button>
-            <button onClick={async () => {
-              try {
-                const f = await window.api.generatePdf(current.title, current.minutes ? minutesToMarkdown(current) : toMarkdown(current), 'reunion')
-                flash(`📄 PDF guardado: ${f}`)
-              } catch (e) { setError((e as Error).message) }
-            }}>📄 PDF</button>
-            <button onClick={() => void download(`${current.title}.srt`, toSubtitles(current.segments, 'srt'))}>⬇ .srt</button>
-            <button className="danger" onClick={() => { persist(meetings.filter((m) => m.id !== current.id)); setSel(null) }}>🗑</button>
-            <span className="muted">{busy}</span>
-          </div>
+          <>
+            <input className="title" value={current.title} aria-label="Título de la reunión"
+              onChange={(e) => persist(meetings.map((m) => (m.id === current.id ? { ...m, title: e.target.value } : m)))} />
+            <div className="actions">
+              <button className="primary" onClick={() => void makeMinutes()} disabled={!!busy}>📋 {current.minutes ? 'Rehacer acta' : 'Generar acta'}</button>
+              <button onClick={async () => flash(`📝 ${await window.api.exportNote(current.title, minutesToMarkdown(current), ['reunion'])}`)}>📝 A notas</button>
+              <MoreMenu items={[
+                { label: '📄 Exportar PDF', onClick: () => void exportPdf(current) },
+                { label: '⬇ Subtítulos (.srt)', onClick: () => void download(`${current.title}.srt`, toSubtitles(current.segments, 'srt')) },
+                { label: '🗑 Eliminar reunión', danger: true, onClick: () => { persist(meetings.filter((m) => m.id !== current.id)); setSel(null) } }
+              ]} />
+            </div>
+            {busy && <BotTyping label={busy.replace(/…$/, '')} />}
+          </>
         )}
 
         {current?.minutes && (
@@ -255,7 +361,7 @@ export function Meetings(): JSX.Element {
         )}
 
         <div className="page transcript">
-          {shown.length === 0 && <p className="muted">{recording ? 'Esperando voz…' : 'Elige una reunión o empieza una nueva.'}</p>}
+          {shown.length === 0 && !draft && <p className="muted">{recording ? 'Esperando voz…' : ANDROID ? 'Pulsa el micrófono para empezar o abre el historial.' : 'Elige una reunión o empieza una nueva.'}</p>}
           {shown.map((s, i) => (
             <p key={i}>
               <span className="ts">{fmtTime(s.start)}</span>
@@ -267,6 +373,7 @@ export function Meetings(): JSX.Element {
               {s.text}
             </p>
           ))}
+          {recording && draft && <p className="live-line" aria-live="polite"><span className="ts">{fmtTime(elapsed)}</span>{draft}</p>}
         </div>
       </section>
     </div>
