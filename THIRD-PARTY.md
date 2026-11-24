@@ -8,6 +8,7 @@ DictaFlow is MIT licensed. It uses the following components. / DictaFlow usa est
 |---|---|---|
 | [Electron](https://www.electronjs.org) | MIT | App shell |
 | [React](https://react.dev), [Zustand](https://github.com/pmndrs/zustand) | MIT | UI |
+| [Inter](https://github.com/rsms/inter) + [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans) (via Fontsource) | SIL OFL-1.1 | Interface typography (desktop and Android) |
 | [Transformers.js](https://github.com/huggingface/transformers.js) + [ONNX Runtime](https://onnxruntime.ai) | Apache-2.0 / MIT | Local speech recognition |
 | [PDF.js](https://github.com/mozilla/pdf.js) | Apache-2.0 | PDF reader |
 | [pdf-lib](https://github.com/Hopding/pdf-lib) | MIT | PDF generation |
