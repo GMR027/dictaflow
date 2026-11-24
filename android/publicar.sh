@@ -40,7 +40,7 @@ IFS=. read -r MAYOR MENOR PARCHE <<<"$VERSION"
 CODIGO=$((MAYOR * 1000000 + MENOR * 1000 + PARCHE))
 [[ "$APK_VERSION" == "$VERSION" && "$APK_CODE" == "$CODIGO" ]] || {
   echo "El APK es la versión $APK_VERSION ($APK_CODE), pero tauri.conf.json dice $VERSION ($CODIGO)." >&2; exit 1; }
-FIRMA=$("$BT"/apksigner verify --print-certs "$APK" | sed -nE 's/^Signer #1 certificate SHA-256 digest: //p')
+FIRMA=$("$BT"/apksigner verify --print-certs "$APK" | sed -nE 's/^.*certificate SHA-256 digest: //p' | head -1)
 [[ -n "$FIRMA" ]] || { echo "El APK no está firmado." >&2; exit 1; }
 SHA=$(sha256sum "$APK" | cut -d' ' -f1)
 TAMANO=$(stat -c %s "$APK")
