@@ -5,6 +5,8 @@ import type { VoiceStatus } from '@shared/voice'
 import { mb, speaks } from '@shared/voice'
 import { useApp } from '../store'
 
+const ANDROID = window.api.platform === 'android'
+
 export type TtsInfo = TtsStatus & { catalog: VoiceStatus[] }
 
 /** Estado del motor y del catálogo de voces. */
@@ -54,7 +56,7 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
     <div className="item">
       <p className="warn">
         {supertonic
-          ? `Para la voz natural falta descargar Supertonic (~${vinfo ? formatBytes(vinfo.sizeBytes) : '145 MB'}): una sola descarga incluye 10 voces y 31 idiomas. Se guarda en tu teléfono y luego funciona sin conexión.`
+          ? `Para la voz natural falta descargar Supertonic (~${vinfo ? formatBytes(vinfo.sizeBytes) : '145 MB'}): una sola descarga incluye 10 voces y 31 idiomas. Se guarda en tu ${ANDROID ? 'teléfono' : 'equipo'} y luego funciona sin conexión.`
           : <>Para voz local falta descargar{needEngine ? ' el motor Piper (~25 MB)' : ''}{needEngine && needVoice ? ' y' : ''}{needVoice ? ` la voz ${vinfo?.label ?? voice} (~${vinfo ? mb(vinfo.sizeBytes) : '60'} MB)` : ''}. Se guarda en tu equipo y luego funciona sin conexión.</>}
       </p>
       <div className="row">
@@ -66,7 +68,7 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
   )
 }
 
-/** Grupos del selector: voces del teléfono (solo Android), Kokoro, Piper y nube. */
+/** Grupos del selector: voces del teléfono (solo Android), Supertonic, Kokoro, Piper y nube. */
 const GROUPS: [string[], string][] = [
   [['sistema'], 'Voces del teléfono (sin descargas)'],
   [['supertonic'], 'Supertonic · natural (44.1 kHz)'],

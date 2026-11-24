@@ -6,7 +6,8 @@ import type { Lang, TtsStatus } from '@shared/types'
 import type { VoiceStatus } from '@shared/voice'
 import { KOKORO_MODEL, KOKORO_VOICES, kokoroId, kokoroLabel } from '@shared/kokoro'
 import { totalBytes } from '@shared/local-models'
-import { kokoroReady, synthesizeKokoro } from './sherpa'
+import { supertonicCatalog, supertonicVoice, SUPERTONIC_MODEL } from '@shared/supertonic'
+import { kokoroReady, supertonicReady, synthesizeKokoro, synthesizeSupertonic } from './sherpa'
 import { downloadLocal } from './local-models'
 import { dataDir, getSecret, getSettings } from './store'
 import { downloadFile } from './download'
@@ -27,17 +28,22 @@ function kokoroCatalog(installed: boolean): VoiceStatus[] {
   }))
 }
 
-/** Estado del motor de voz local y de las voces descargadas, con el catálogo (Kokoro y Piper). */
+/** Estado del motor de voz local y de las voces descargadas, con el catálogo (Piper, Kokoro y Supertonic). */
 export function ttsStatus(): TtsStatus & { catalog: VoiceStatus[] } {
   const kokoro = kokoroCatalog(kokoroReady())
+  const supertonic = supertonicCatalog(supertonicReady())
   return {
     piperInstalled: piperInstalled(),
-    voices: [...installedVoiceIds(), ...kokoro.filter((v) => v.installed).map((v) => v.id)],
-    catalog: [...voiceStatus(), ...kokoro]
+    voices: [
+      ...installedVoiceIds(),
+      ...kokoro.filter((v) => v.installed).map((v) => v.id),
+      ...supertonic.filter((v) => v.installed).map((v) => v.id)
+    ],
+    catalog: [...voiceStatus(), ...supertonic, ...kokoro]
   }
 }
 
-/** Frase con la que se presenta una voz que no tiene muestra publicada (Kokoro). */
+/** Frase con la que se presenta una voz que no tiene muestra publicada (Kokoro y Supertonic). */
 const SAMPLE_TEXT: Record<Lang, string> = {
   es: 'Hola, soy una de las voces de DictaFlow. Así sonarán tus textos y tus libros.',
   en: 'Hi, I am one of the DictaFlow voices. This is how your texts and books will sound.'
@@ -70,8 +76,12 @@ export async function installPiper(onPct: (what: string, pct: number) => void, s
  * Si se interrumpe, no queda nada a medias: los ficheros se renombran al final.
  */
 export async function installVoice(id: string, onPct: (what: string, pct: number) => void, signal?: AbortSignal): Promise<void> {
+  if (supertonicVoice(id)) {
+    await downloadLocal(SUPERTONIC_MODEL, (p) => { if (p.state === 'downloading') onPct('Supertonic', p.total ? Math.floor((p.received / p.total) * 100) : 0) })
+    return
+  }
   if (id.startsWith('kokoro:')) {
-    await downloadLocal(KOKORO_MODEL, (p) => { if (p.state === 'downloading') onPct(p.id, p.total ? Math.floor((p.received / p.total) * 100) : 0) })
+    await downloadLocal(KOKORO_MODEL, (p) => { if (p.state === 'downloading') onPct('Kokoro', p.total ? Math.floor((p.received / p.total) * 100) : 0) })
     return
   }
   if (getSettings().strictOffline) throw new Error('Modo offline estricto activo: desactívalo en Privacidad para descargar.')
@@ -103,7 +113,13 @@ export { removeVoice }
  * Muestra de audio de una voz (para escuchar antes de descargarla). Se pide
  * directamente a la fuente oficial; no se guarda en el equipo.
  */
-export async function fetchVoiceSample(id: string): Promise<Uint8Array> {
+export async function fetchVoiceSample(id: string, lang?: Lang): Promise<Uint8Array> {
+  const st = supertonicVoice(id)
+  if (st) {
+    if (!supertonicReady()) throw new Error('Falta descargar Supertonic (Ajustes → Audio → Modelos de voz).')
+    const l = lang ?? getSettings().primaryLang
+    return new Uint8Array(await synthesizeSupertonic(st.sid, l, SAMPLE_TEXT[l], getSettings().ttsSpeed))
+  }
   const k = KOKORO_VOICES.find((v) => kokoroId(v) === id)
   if (k) return new Uint8Array(await synthesizeKokoro(id, SAMPLE_TEXT[k.lang], getSettings().ttsSpeed))
   const m = voiceManifest(id)
@@ -130,7 +146,10 @@ export async function synthesize(text: string, lang: Lang, voiceId?: string): Pr
 
   const voice = voiceId ?? s.ttsVoice[lang]
   if (voice.startsWith('supertonic:')) {
-    throw new Error('La voz Supertonic solo está disponible en Android. Elige otra voz en Ajustes → Audio.')
+    const st = supertonicVoice(voice)
+    if (!st) throw new Error(`Voz de Supertonic desconocida: ${voice}`)
+    if (!supertonicReady()) throw new Error('Falta descargar Supertonic (Ajustes → Audio → Modelos de voz).')
+    return synthesizeSupertonic(st.sid, lang, text, s.ttsSpeed)
   }
   if (voice.startsWith('kokoro:')) return synthesizeKokoro(voice, text, s.ttsSpeed)
   const model = voiceModelPath(voice)

@@ -10,6 +10,8 @@ import { RecButton } from './RecButton'
 
 const cuando = (ms: number): string => new Date(ms).toLocaleString()
 const dur = (sec: number): string => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`
+/** Las voces Piper se publican como «sherpa-onnx» en Android y como «piper» en escritorio. */
+const isPiperVoice = (v: { engine: string }): boolean => v.engine === 'piper' || v.engine === 'sherpa-onnx'
 
 /**
  * «Mis voces»: las voces que el usuario ha creado, las grabaciones originales,
@@ -59,12 +61,12 @@ export function MyVoices(): JSX.Element {
   useEffect(() => {
     if (engineKind !== 'piper') return
     const valid = (id: string): boolean =>
-      (tts?.catalog ?? []).some((v) => v.id === id && v.installed && v.engine === 'sherpa-onnx' && v.langs.includes(lang))
+      (tts?.catalog ?? []).some((v) => v.id === id && v.installed && isPiperVoice(v) && v.langs.includes(lang))
     // La voz de Ajustes puede ser Kokoro, Supertonic o del teléfono: una voz personal solo puede
     // leer con una voz Piper instalada.
     if (valid(settings.ttsVoice[lang])) setPiperVoice(settings.ttsVoice[lang])
     else {
-      const first = (tts?.catalog ?? []).find((v) => v.installed && v.engine === 'sherpa-onnx' && v.langs.includes(lang))
+      const first = (tts?.catalog ?? []).find((v) => v.installed && isPiperVoice(v) && v.langs.includes(lang))
       if (first) setPiperVoice(first.id)
     }
   }, [lang, engineKind, settings.ttsVoice, tts])
@@ -164,7 +166,7 @@ export function MyVoices(): JSX.Element {
     } catch (e) { setError((e as Error).message) }
   }
 
-  const piperVoices = (tts?.catalog ?? []).filter((v) => v.installed && v.engine === 'sherpa-onnx' && v.langs.includes(lang))
+  const piperVoices = (tts?.catalog ?? []).filter((v) => v.installed && isPiperVoice(v) && v.langs.includes(lang))
 
   const ANDROID = window.api.platform === 'android'
   const voiceList = (

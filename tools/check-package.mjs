@@ -70,7 +70,7 @@ if (!files.some((f) => f.path.endsWith('/out/main/sherpa-worker.js'))) problems.
 for (const n of ['sherpa-onnx.node', 'libsherpa-onnx-c-api.so']) {
   if (!files.some((f) => f.path.endsWith(n) && f.unpacked)) problems.push(`${n} no está descomprimido (unpacked): sherpa-onnx no cargaría.`)
 }
-for (const n of ['espeak-ng-data.tar', 'ggml-silero-v5.1.2.bin']) {
+for (const n of ['espeak-ng-data.tar', 'ggml-silero-v5.1.2.bin', 'supertonic-tts.json', 'espeak-ng', 'libespeak-ng.so.1']) {
   if (!existsSync(join(resources, n))) problems.push(`Falta resources/${n}.`)
 }
 

@@ -1,9 +1,10 @@
-// Modelos de IA que se descargan y ejecutan dentro del teléfono (Android).
+// Modelos de IA que se descargan y ejecutan dentro de la app (teléfono y escritorio).
 //
-// En escritorio la IA local la sirven Transformers.js/whisper.cpp y Ollama; en Android no hay
-// Ollama, así que la app trae los motores (whisper.cpp y llama.cpp) y el usuario descarga aquí los
-// modelos. Cada archivo lleva su tamaño y SHA-256 (los de Hugging Face): Rust rechaza una descarga
-// que no coincida, y solo acepta direcciones de huggingface.co.
+// En Android no hay Ollama, así que la app trae los motores (whisper.cpp y llama.cpp) y el usuario
+// descarga aquí los modelos. En escritorio se usan para las voces sherpa-onnx (texto en vivo,
+// Kokoro y Supertonic); Whisper y la redacción siguen con Transformers.js/whisper.cpp y Ollama.
+// Cada archivo lleva su tamaño y SHA-256 (los de Hugging Face): el motor rechaza una descarga que
+// no coincida, y solo acepta direcciones de huggingface.co.
 import type { Lang } from './types'
 import { VOICE_META, voiceSampleUrl } from './voice-catalog'
 import { KOKORO_MODEL } from './kokoro'
@@ -32,7 +33,7 @@ export interface LocalModel {
   sha256: string
   /** RAM mínima (GB) con la que funciona con holgura. */
   minRamGB: number
-  /** Solo se ofrece en esta plataforma (p. ej. Supertonic, que aún no existe en escritorio). */
+  /** Solo se ofrece en esta plataforma, si alguna vez hay un modelo exclusivo. */
   platform?: 'android'
   /** Voces: identificador de la voz (el de escritorio, sin «.onnx»), su idioma y su configuración. */
   voice?: string

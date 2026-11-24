@@ -139,7 +139,7 @@ function General(): JSX.Element {
             </label>
             <label>Texto → voz
               <select value={settings.ttsProvider} onChange={(e) => void patchSettings({ ttsProvider: e.target.value as 'piper' | 'openai' })}>
-                <option value="piper">Local (Piper)</option><option value="openai">Nube (compatible con OpenAI)</option>
+                <option value="piper">Local (voces descargadas)</option><option value="openai">Nube (compatible con OpenAI)</option>
               </select>
             </label>
           </div>
@@ -160,7 +160,7 @@ function General(): JSX.Element {
               </div>
             </>
           )}
-          <h3>Modelos de voz (sherpa-onnx)</h3>
+          <h3>Voces naturales (sherpa-onnx)</h3>
           <LocalModels kinds={['live', 'tts']} pick={(m) => m.kind === 'live' || !m.voice} />
           <h3>Voces locales (Piper)</h3>
           <p className="muted">Todas las funciones que leen en voz alta (texto a voz, lector, resúmenes) usan este mismo catálogo. Puedes escuchar la muestra antes de descargar.</p>

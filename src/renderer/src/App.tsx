@@ -8,9 +8,12 @@ import { Aura } from './components/Aura'
 import { NavIcon } from './components/NavIcon'
 import { UiIcon, type UiGlyph } from './components/UiIcon'
 
-const ANDROID = window.api.platform === 'android'
 import type { Theme } from '@shared/types'
 import { useApp, type View } from './store'
+
+const ANDROID = window.api.platform === 'android'
+// El tema premium de escritorio se activa con este atributo; Android conserva su diseño táctil.
+document.documentElement.dataset.platform = ANDROID ? 'android' : 'desktop'
 
 // Las pantallas pesadas (PDF, audio, reuniones, ajustes) se cargan al abrirlas. El dictado,
 // que es la entrada por defecto, va en el paquete inicial.
@@ -51,6 +54,14 @@ const NAV: { id: View; label: string }[] = [
   { id: 'ajustes', label: 'Ajustes' },
   { id: 'privacidad', label: 'Privacidad' },
   { id: 'manual', label: 'Manual' }
+]
+
+/** Agrupación de la barra lateral en escritorio: da jerarquía sin tocar la navegación del teléfono. */
+const NAV_GROUPS: { title: string; ids: View[] }[] = [
+  { title: 'Crear', ids: ['dictado', 'prompts', 'audio', 'lector'] },
+  { title: 'Colaborar', ids: ['reuniones', 'traduccion', 'agenda'] },
+  { title: 'Personalizar', ids: ['voces', 'automatizaciones'] },
+  { title: 'Sistema', ids: ['ajustes', 'privacidad', 'manual'] }
 ]
 
 /** Secciones fijas de la barra inferior; el resto vive en «Más». */
@@ -95,6 +106,7 @@ export function App(): JSX.Element | null {
   const privacyText = local
     ? '● Todo local'
     : `● Nube: ${[cloud, cloudAudio ? 'audio' : ''].filter(Boolean).join(' + ') || 'servicio'}`
+  const activeNav = NAV.find((n) => n.id === view)
 
   return (
     <div className="shell">
@@ -113,10 +125,24 @@ export function App(): JSX.Element | null {
                 <NavIcon id="more" /> Más
               </button>
             </>
-          ) : NAV.map((n) => (
-            <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => setView(n.id)}>
-              <NavIcon id={n.id} /> {n.label}
-            </button>
+          ) : ANDROID ? (
+            NAV.map((n) => (
+              <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => setView(n.id)}>
+                <NavIcon id={n.id} /> {n.label}
+              </button>
+            ))
+          ) : NAV_GROUPS.map((g) => (
+            <div className="nav-group" key={g.title}>
+              <span>{g.title}</span>
+              {g.ids.map((id) => {
+                const n = NAV.find((x) => x.id === id)!
+                return (
+                  <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => setView(n.id)}>
+                    <NavIcon id={n.id} /> {n.label}
+                  </button>
+                )
+              })}
+            </div>
           ))}
         </nav>
         <div className="theme" role="radiogroup" aria-label="Tema">
@@ -131,6 +157,20 @@ export function App(): JSX.Element | null {
         <Jobs />
       </aside>
       <main>
+        {!ANDROID && (
+          <header className="desktop-top">
+            <div className="top-title">
+              <span className="eyebrow">DictaFlow · espacio de trabajo</span>
+              <h1>{activeNav?.label ?? 'DictaFlow'}</h1>
+            </div>
+            <div className="top-status" title="Estado de privacidad">
+              <span className={`status-dot ${local ? 'local' : 'cloud'}`} />
+              <span>{local ? 'Todo local' : `Nube${cloudAudio ? ' + audio' : ''}`}</span>
+              <span className="top-sep" />
+              <span className="muted">{settings.primaryLang === 'es' ? 'Español' : 'English'}</span>
+            </div>
+          </header>
+        )}
         {ANDROID && (
           <header className="mobile-bar">
             <span className="mobile-brand"><Logo size={22} /> DictaFlow</span>

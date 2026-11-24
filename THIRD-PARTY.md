@@ -16,8 +16,8 @@ DictaFlow is MIT licensed. It uses the following components. / DictaFlow usa est
 | [lamejs (@breezystack/lamejs)](https://github.com/breezystack/lamejs) | LGPL-3.0 | MP3 encoding. Linked as a separate, replaceable module bundle. |
 | [sharp](https://github.com/lovell/sharp) + [libvips](https://github.com/libvips/libvips) | Apache-2.0 / LGPL-3.0 | Pulled in by Transformers.js for image models; DictaFlow does not use it (audio only) |
 | [Silero VAD](https://github.com/snakers4/silero-vad) (ggml conversion, [ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad)) | MIT | Removes silence before Whisper transcribes long audio (Android; desktop with whisper.cpp) |
-| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Android: Rust 2.0.3 + C API; desktop: `sherpa-onnx-node` 1.13.8; bundles ONNX Runtime) | Apache-2.0 | Desktop and Android: live text (streaming), Piper/Kokoro voices and Supertonic 3 (Android) |
-| [espeak-ng](https://github.com/espeak-ng/espeak-ng) pronunciation data (es/en only) | GPL-3.0 | Kokoro and Piper pronunciation, used as unmodified data files |
+| [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Android: Rust 2.0.3 + C API; desktop: `sherpa-onnx-node` 2.0.3; bundles ONNX Runtime) | Apache-2.0 | Desktop and Android: live text (streaming), Piper/Kokoro voices and Supertonic 3 |
+| [espeak-ng](https://github.com/espeak-ng/espeak-ng) (desktop: binary and pronunciation data; Android: data only) | GPL-3.0 | Kokoro pronunciation on desktop (Spanish IPA) and espeak data for Piper/Kokoro; unmodified upstream files |
 | [piper-plus-g2p](https://github.com/ayutaz/piper-plus) | MIT | Spanish/English grapheme-to-phoneme for Piper and Kokoro on Android (sherpa-onnx 2.x, no eSpeak-ng dependency) |
 
 ## Downloaded on demand, not redistributed / Descargado bajo demanda
@@ -33,7 +33,7 @@ Se descargan de su fuente oficial solo cuando tú lo eliges.
 | [Ollama](https://ollama.com) | MIT | ollama.com installer (optional) |
 | whisper.cpp models (ggml) | MIT (OpenAI Whisper) | Hugging Face |
 | [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) v1.0 (sherpa-onnx int8 conversion, `csukuangfj/kokoro-int8-multi-lang-v1_0`) | Apache-2.0 | Hugging Face — read-aloud voices (desktop and Android) |
-| [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) (sherpa-onnx int8 conversion, `csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11`) | Model weights OpenRAIL-M (© Supertone Inc.); conversion MIT | Hugging Face — 10 natural voices and 31 languages (Android). Read the OpenRAIL-M use restrictions before commercial distribution. |
+| [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) (sherpa-onnx int8 conversion, `csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11`) | Model weights OpenRAIL-M (© Supertone Inc.); conversion MIT | Hugging Face — 10 natural voices and 31 languages (desktop and Android). Read the OpenRAIL-M use restrictions before commercial distribution. |
 | [Kroko-ASR](https://huggingface.co/Banafo/Kroko-ASR) community streaming models (sherpa-onnx conversion, `csukuangfj/sherpa-onnx-streaming-zipformer-*-kroko-2025-08-06`) | CC-BY-SA (Banafo) | Hugging Face — «Texto en vivo» (desktop and Android) |
 
 Every download is verified with its SHA-256 before it is used, and the expected hashes live in

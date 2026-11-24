@@ -13,7 +13,7 @@ import { clearNetEvents, getNetEvents } from './netlog'
 import { exportNote, launchAgent, openFileDialog, pickDir, readProjectContext, saveFileDialog } from './tools'
 import { fetchVoiceSample, installPiper, installVoice, removeVoice, synthesize, ttsStatus } from './tts'
 import { cancelLocal, deviceInfo, downloadLocal, listLocalFiles, removeLocal } from './local-models'
-import { liveFeed, liveReset, liveStart, liveStop, stopSherpa } from './sherpa'
+import { liveFeed, liveReset, liveStart, liveStop, releaseTts, stopSherpa } from './sherpa'
 import { startSystemAudio, stopSystemAudio } from './sysaudio'
 import { runUninstall, uninstallInfo } from './uninstall'
 import { applyUpdate, checkUpdate } from './updater'
@@ -196,7 +196,11 @@ function registerIpc(): void {
   handle('models:list', () => listLocalFiles())
   handle('models:download', (e, req) => downloadLocal(req.model, (p) => e.sender.send('models:progress', p)))
   handle('models:cancel', (_e, req) => cancelLocal(req.id))
-  handle('models:remove', (_e, req) => removeLocal(req.id))
+  handle('models:remove', (_e, req) => {
+    removeLocal(req.id)
+    // Si era Kokoro o Supertonic, el motor deja de tener sentido: se libera la RAM.
+    releaseTts()
+  })
   handle('stt:transcribe', (_e, req) => transcribe(req.pcm, req.lang, req.priority))
   handle('stt:detailed', (_e, req) => transcribeDetailed(req.pcm, req.lang, req.timestamps, req.priority))
   handle('dict:apply', (_e, { text }) => applyDictionary(text))
@@ -341,9 +345,9 @@ function registerIpc(): void {
   handle('tts:install-piper', (e) => installPiper((what, pct) => e.sender.send('tts:progress', { what, pct })))
   handle('tts:install-voice', (e, req) => installVoice(req.id, (what, pct) => e.sender.send('tts:progress', { what, pct })))
   handle('tts:remove-voice', (_e, req) => removeVoice(req.id))
-  handle('tts:sample', (_e, req) => fetchVoiceSample(req.id))
+  handle('tts:sample', (_e, req) => fetchVoiceSample(req.id, req.lang))
   handle('tts:synth', async (_e, req) => new Uint8Array(await synthesize(req.text, req.lang, req.voice)))
-  handle('tts:liberar', () => undefined)
+  handle('tts:liberar', () => releaseTts())
 
   handle('project:pick', async () => {
     const dir = await pickDir('Carpeta del proyecto')

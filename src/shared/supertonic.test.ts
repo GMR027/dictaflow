@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { companions, modelReady } from './local-models'
 import {
-  SUPERTONIC_BYTES, SUPERTONIC_MODEL, SUPERTONIC_VOICES, supertonicCatalog,
+  SUPERTONIC_BYTES, SUPERTONIC_FILES, SUPERTONIC_MODEL, SUPERTONIC_VOICES, supertonicCatalog,
   supertonicId, supertonicLabel, supertonicVoice
 } from './supertonic'
 
@@ -25,7 +25,8 @@ describe('Supertonic 3', () => {
   it('comparte un solo modelo de seis archivos', () => {
     expect(SUPERTONIC_MODEL.kind).toBe('tts')
     expect(SUPERTONIC_MODEL.voice).toBeUndefined()
-    expect(SUPERTONIC_MODEL.platform).toBe('android')
+    expect(SUPERTONIC_MODEL.platform).toBeUndefined()
+    expect(SUPERTONIC_MODEL.id).toBe(SUPERTONIC_FILES.vectorEstimator)
     expect(companions(SUPERTONIC_MODEL)).toHaveLength(5)
     const total = SUPERTONIC_MODEL.bytes + companions(SUPERTONIC_MODEL).reduce((a, x) => a + x.bytes, 0)
     expect(total).toBe(SUPERTONIC_BYTES)

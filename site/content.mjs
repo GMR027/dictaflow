@@ -81,21 +81,21 @@ export const T = {
       ['Dictado', 'Continuo o pulsando para hablar, con cualquier micrófono. Comandos de voz como «nuevo párrafo» o «hazlo más formal».'],
       ['Redacción con IA', 'Corrige, acorta o cambia el tono. Rehazlo, cópialo o conviértelo en un prompt de programación estructurado.'],
       ['Biblioteca de prompts', 'Guarda tus mejores prompts y pide al agente Prompt Architect que escriba nuevos con tu estilo.'],
-      ['Audio ↔ texto', 'Transcribe archivos de audio con subtítulos (.srt/.vtt) o genera voz y descarga WAV o MP3.'],
+      ['Audio ↔ texto', 'Transcribe archivos de audio con subtítulos (.srt/.vtt) o genera voz con Piper, Kokoro o Supertonic y descarga WAV o MP3.'],
       ['Lector de PDF y EPUB', 'Escucha libros y documentos con lectura resaltada, o exporta un audiolibro.'],
       ['Reuniones y clases', 'Transcribe tu micrófono y el audio del sistema; obtén actas con tareas, responsables y fechas, y apuntes de estudio.'],
       ['Traducción en vivo', 'Conversaciones y subtítulos español ↔ inglés, con salida hablada opcional.'],
       ['Agenda y recordatorios', 'Eventos que exportas a .ics (Google Calendar, Thunderbird, GNOME) y avisos locales.'],
       ['PDF y automatizaciones', 'Exporta a PDF y guarda secuencias de pasos que repites cuando quieras.'],
       ['Diagnóstico y copias', 'Un informe con el estado de todo, y copias de seguridad de lo que has creado.'],
-      ['Privado por diseño', 'El reconocimiento de voz se ejecuta en tu equipo. Un registro de red muestra cada petición saliente.']
+      ['Privado por diseño', 'El reconocimiento de voz y las voces Piper, Kokoro y Supertonic se ejecutan en tu equipo. Un registro de red muestra cada petición saliente.']
     ],
     shotsTitle: 'Una interfaz tranquila y nativa',
     shotsSub: 'Temas claro y oscuro que siguen a tu sistema — o elige el tuyo.',
     shotCaptions: { dictado: 'Dictado y redacción con IA', prompts: 'Biblioteca de prompts y Prompt Architect', reuniones: 'Reuniones con acta', audio: 'Herramientas de audio' },
     privacyTitle: 'Tu voz sigue siendo tuya',
     privacy: [
-      ['Local primero', 'El reconocimiento Whisper y las voces Piper se ejecutan en tu ordenador. No hace falta cuenta.'],
+      ['Local primero', 'El reconocimiento Whisper y las voces Piper, Kokoro y Supertonic se ejecutan en tu ordenador. No hace falta cuenta.'],
       ['Nada oculto', 'La insignia de estado te dice si algo usa la nube y la pestaña Privacidad registra cada petición externa.'],
       ['Modo offline estricto', 'Un interruptor bloquea toda conexión que no sea a tu propio equipo.'],
       ['Tú eliges la IA', 'Ollama en local, o tu suscripción de Claude, opencode o compatible con OpenAI. Las claves se guardan cifradas con el llavero del sistema.']

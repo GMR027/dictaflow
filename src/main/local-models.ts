@@ -1,6 +1,6 @@
-// Modelos de sherpa-onnx descargables en escritorio: texto en vivo (Kroko) y Kokoro. Son los mismos
-// del teléfono (src/shared/local-models.ts) y se guardan con los mismos nombres, en una carpeta
-// propia. Whisper, la redacción y Piper siguen con sus gestores de siempre.
+// Modelos de sherpa-onnx descargables en escritorio: texto en vivo (Kroko), Kokoro y Supertonic.
+// Son los mismos del teléfono (src/shared/local-models.ts) y se guardan con los mismos nombres, en
+// una carpeta propia. Whisper, la redacción y Piper siguen con sus gestores de siempre.
 //
 // La interfaz manda el modelo entero, pero aquí solo se acepta uno del catálogo y se descargan sus
 // URL y sus sumas del catálogo, nunca las que lleguen por IPC.
@@ -10,6 +10,7 @@ import { statfs } from 'fs/promises'
 import { join } from 'path'
 import { companions, LOCAL_MODELS, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
 import { KOKORO_MODEL } from '@shared/kokoro'
+import { SUPERTONIC_MODEL } from '@shared/supertonic'
 import { downloadFile } from './download'
 import { netFetch } from './netlog'
 import { dataDir, getSettings } from './store'
@@ -18,7 +19,9 @@ export const localDir = join(dataDir, 'local')
 export const localPath = (id: string): string => join(localDir, id)
 
 /** Modelos que el escritorio descarga con este gestor. */
-export const DESKTOP_MODELS: LocalModel[] = LOCAL_MODELS.filter((m) => m.kind === 'live' || m.id === KOKORO_MODEL.id)
+export const DESKTOP_MODELS: LocalModel[] = LOCAL_MODELS.filter(
+  (m) => m.kind === 'live' || m.id === KOKORO_MODEL.id || m.id === SUPERTONIC_MODEL.id
+)
 const catalogModel = (id: string): LocalModel | undefined => DESKTOP_MODELS.find((m) => m.id === id)
 
 export function listLocalFiles(): LocalModelFile[] {
@@ -43,7 +46,10 @@ export async function deviceInfo(): Promise<DeviceInfo> {
 
 const running = new Map<string, AbortController>()
 
-/** Descarga un modelo y sus archivos, uno tras otro, avisando del progreso de cada uno. */
+/**
+ * Descarga un modelo y sus archivos, uno tras otro. El progreso se informa sobre el modelo
+ * principal y suma todos los archivos: la tarjeta no da el modelo por listo hasta que están todos.
+ */
 export async function downloadLocal(requested: LocalModel, emit: (p: LocalModelProgress) => void): Promise<void> {
   const m = catalogModel(requested.id)
   if (!m) throw new Error('Ese modelo no se descarga en escritorio.')
@@ -51,24 +57,45 @@ export async function downloadLocal(requested: LocalModel, emit: (p: LocalModelP
   if (running.has(m.id)) return
   const ctrl = new AbortController()
   running.set(m.id, ctrl)
+  const files = [...companions(m), { id: m.id, url: m.url, bytes: m.bytes, sha256: m.sha256 }]
+  const total = files.reduce((n, f) => n + f.bytes, 0)
+  let done = 0
+  // Un evento por cada 1 % (y no por cada trozo): la interfaz no se satura con 8.000 avisos.
+  let lastPct = -1
+  const send = (p: LocalModelProgress): void => {
+    if (p.state === 'downloading' && p.total) {
+      const pct = Math.floor((p.received / p.total) * 100)
+      if (pct === lastPct) return
+      lastPct = pct
+    } else {
+      lastPct = -1
+    }
+    emit(p)
+  }
   try {
-    for (const f of [{ id: m.id, url: m.url, bytes: m.bytes, sha256: m.sha256 }, ...companions(m)]) {
-      const total = f.bytes
-      emit({ id: f.id, state: 'downloading', received: 0, total })
+    for (const f of files) {
+      send({ id: m.id, state: 'downloading', received: done, total })
       try {
         await downloadFile({
           purpose: `sherpa:${m.kind}`, url: f.url, dest: localPath(f.id), sha256: f.sha256, size: f.bytes, signal: ctrl.signal,
-          onPct: (pct) => emit({ id: f.id, state: pct >= 100 ? 'verifying' : 'downloading', received: Math.round((total * pct) / 100), total })
+          onPct: (pct) => send({
+            id: m.id,
+            state: pct >= 100 ? 'verifying' : 'downloading',
+            received: done + Math.round((f.bytes * pct) / 100),
+            total
+          })
         }, netFetch)
-        emit({ id: f.id, state: 'done', received: total, total })
+        done += f.bytes
+        send({ id: m.id, state: 'downloading', received: done, total })
       } catch (e) {
         const cancelled = ctrl.signal.aborted
-        emit({ id: f.id, state: cancelled ? 'cancelled' : 'error', received: 0, total, error: cancelled ? undefined : (e as Error).message })
+        // El error también se publica con el id del archivo que falló, para poder nombrarlo.
+        send({ id: f.id, state: cancelled ? 'cancelled' : 'error', received: done, total, error: cancelled ? undefined : (e as Error).message })
+        send({ id: m.id, state: cancelled ? 'cancelled' : 'error', received: done, total, error: cancelled ? undefined : (e as Error).message })
         throw e
       }
     }
-    // El modelo principal avisa el último: la interfaz lo da por listo cuando están todos.
-    emit({ id: m.id, state: 'done', received: m.bytes, total: m.bytes })
+    send({ id: m.id, state: 'done', received: total, total })
   } finally {
     running.delete(m.id)
   }

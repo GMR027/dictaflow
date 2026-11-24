@@ -149,9 +149,10 @@ const TOPICS: Topic[] = [
       <p>Con IA puedes generar resumen, capítulos con tiempos, post para redes, notas o apuntes de estudio, y traducir.</p>
       <h4>🔊 Texto → Voz</h4>
       <p>Escribe o pega texto, elige idioma, voz y velocidad, escucha y descarga en <b>WAV o MP3</b>. También puedes usar un servicio en la nube en Ajustes → Audio.</p>
-      <p>Hay dos tipos de voz local, agrupados en el selector:</p>
+      <p>Hay tres tipos de voz local, agrupados en el selector:</p>
       <ul>
-        <li><b>Kokoro:</b> las más naturales (3 en español y 28 en inglés), en una sola descarga de unos 155 MB en Ajustes → Audio → Modelos de voz o con ⬇ Descargar en el selector.</li>
+        <li><b>Supertonic:</b> 10 voces y 31 idiomas en una sola descarga de unos 145 MB, a 44.1 kHz. Una voz muy natural; también la más pesada. Ideal para el lector y los audiolibros. Licencia OpenRAIL-M (Supertone).</li>
+        <li><b>Kokoro:</b> las más naturales después de Supertonic (3 en español y 28 en inglés), en una sola descarga de unos 155 MB en Ajustes → Audio → Modelos de voz o con ⬇ Descargar en el selector.</li>
         <li><b>Piper:</b> una descarga por voz (60–120 MB), muy rápidas. El motor (~25 MB) se instala solo la primera vez.</li>
       </ul>
     </>),

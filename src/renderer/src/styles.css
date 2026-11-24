@@ -55,10 +55,10 @@
 html, body { height: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.55 'Inter', 'Cantarell', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 15px/1.55 'Inter Variable', 'Inter', 'Cantarell', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-h1, h2, h3, .brand { font-family: 'Plus Jakarta Sans', 'Inter', 'Cantarell', system-ui, sans-serif; }
+h1, h2, h3, .brand { font-family: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', 'Inter Variable', 'Inter', 'Cantarell', system-ui, sans-serif; }
 h1 { font-size: 1.3rem; margin: 0 0 .5rem; font-weight: 700; }
 h2 { font-size: 1rem; margin: 0 0 .6rem; font-weight: 700; }
 h3 { margin: 1.1rem 0 .4rem; font-size: .85rem; color: var(--muted); font-weight: 700; }
@@ -591,3 +591,307 @@ blockquote.script { margin: 6px 0 10px; padding: 12px 14px; background: var(--fi
 
 /* Reproductor del audio de una reunión */
 .player audio { flex: 1 1 100%; max-width: 720px; }
+
+/* ===== Escritorio: tema «Aurora» =====
+   La interfaz de escritorio comparte componentes con el teléfono, pero aquí tiene más aire,
+   jerarquía (grupos en la barra lateral) y un acabado con profundidad. Todo va bajo
+   [data-platform='desktop'] para no tocar el diseño táctil de Android. */
+:root[data-platform='desktop'] {
+  --bg: #070a11;
+  --sidebar: #090e1a;
+  --panel: #0f1626;
+  --field: #0a111e;
+  --btn: #151f34;
+  --btn-hover: #1c2944;
+  --btn-active: #253556;
+  --line: rgba(148, 163, 255, .12);
+  --line-strong: rgba(148, 163, 255, .24);
+  --text: #eef2ff;
+  --muted: #94a0bd;
+  --accent: #5b8cff;
+  --accent-hover: #7aa2ff;
+  --accent-ink: #fff;
+  --accent-soft: rgba(91, 140, 255, .16);
+  --accent-2: #a78bfa;
+  --accent-3: #22d3ee;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #ff8a8a;
+  --danger-solid: #e5484d;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 24px 60px -32px rgba(0, 0, 0, .85);
+  --radius: 20px;
+  --radius-sm: 12px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-platform='desktop']:not([data-theme]) {
+    --bg: #f3f6fc; --sidebar: #fff; --panel: #fff; --field: #f6f8fe;
+    --btn: #eef2fb; --btn-hover: #e3eaf8; --btn-active: #d7e0f4;
+    --line: rgba(38, 55, 92, .10); --line-strong: rgba(38, 55, 92, .20);
+    --text: #101728; --muted: #5f6d88;
+    --accent: #3b6df6; --accent-hover: #2c5ae6; --accent-soft: rgba(59, 109, 246, .10);
+    --accent-2: #7c3aed; --accent-3: #0891b2;
+    --ok: #0f9d6b; --warn: #b45309; --danger: #c01c28; --danger-solid: #c01c28;
+    --shadow: 0 1px 2px rgba(16, 23, 40, .05), 0 24px 60px -34px rgba(16, 23, 40, .28);
+    color-scheme: light;
+  }
+}
+:root[data-platform='desktop'][data-theme='light'] {
+  --bg: #f3f6fc; --sidebar: #fff; --panel: #fff; --field: #f6f8fe;
+  --btn: #eef2fb; --btn-hover: #e3eaf8; --btn-active: #d7e0f4;
+  --line: rgba(38, 55, 92, .10); --line-strong: rgba(38, 55, 92, .20);
+  --text: #101728; --muted: #5f6d88;
+  --accent: #3b6df6; --accent-hover: #2c5ae6; --accent-soft: rgba(59, 109, 246, .10);
+  --accent-2: #7c3aed; --accent-3: #0891b2;
+  --ok: #0f9d6b; --warn: #b45309; --danger: #c01c28; --danger-solid: #c01c28;
+  --shadow: 0 1px 2px rgba(16, 23, 40, .05), 0 24px 60px -34px rgba(16, 23, 40, .28);
+  color-scheme: light;
+}
+:root[data-platform='desktop'] body {
+  background:
+    radial-gradient(1100px 700px at 12% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 62%),
+    radial-gradient(900px 650px at 100% 0%, color-mix(in srgb, var(--accent-2) 14%, transparent), transparent 58%),
+    var(--bg);
+  background-attachment: fixed;
+}
+:root[data-platform='desktop'][data-theme='light'] body {
+  background:
+    radial-gradient(1100px 700px at 12% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%),
+    radial-gradient(900px 650px at 100% 0%, color-mix(in srgb, var(--accent-2) 8%, transparent), transparent 58%),
+    var(--bg);
+  background-attachment: fixed;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-platform='desktop']:not([data-theme]) body {
+    background:
+      radial-gradient(1100px 700px at 12% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%),
+      radial-gradient(900px 650px at 100% 0%, color-mix(in srgb, var(--accent-2) 8%, transparent), transparent 58%),
+      var(--bg);
+    background-attachment: fixed;
+  }
+}
+:root[data-platform='desktop'] ::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+
+@media (min-width: 601px) {
+  :root[data-platform='desktop'] .shell {
+    grid-template-columns: 250px minmax(0, 1fr);
+    background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 0);
+    background-size: 26px 26px;
+  }
+  :root[data-platform='desktop'] aside {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--sidebar) 94%, var(--accent) 6%), var(--sidebar) 48%);
+    border-right: 1px solid var(--line);
+    padding: 16px 12px 12px;
+    gap: 10px;
+    box-shadow: inset -1px 0 0 color-mix(in srgb, var(--accent) 6%, transparent);
+  }
+  :root[data-platform='desktop'] aside h1 { font-size: 1.18rem; padding: 4px 10px 10px; letter-spacing: -.03em; gap: 11px; }
+  :root[data-platform='desktop'] .brand .logo { filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 42%, transparent)); }
+  :root[data-platform='desktop'] aside nav { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  :root[data-platform='desktop'] .nav-group { display: flex; flex-direction: column; gap: 1px; }
+  :root[data-platform='desktop'] .nav-group > span {
+    display: block; padding: 0 12px 4px; font-size: .62rem; font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+  }
+  :root[data-platform='desktop'] aside nav button,
+  :root[data-platform='desktop'] .manual nav button {
+    position: relative; padding: 7px 11px; border-radius: 12px; color: var(--muted);
+    font-size: .88rem; font-weight: 500; gap: 10px; background: none; border-color: transparent;
+    box-shadow: none; transition: background .16s, color .16s, transform .16s;
+  }
+  :root[data-platform='desktop'] aside nav button:hover:not(:disabled) {
+    color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); transform: translateX(2px);
+  }
+  :root[data-platform='desktop'] aside nav button.on {
+    color: var(--text); font-weight: 600;
+    background: linear-gradient(90deg, var(--accent-soft), transparent 72%);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  :root[data-platform='desktop'] aside nav button.on::before {
+    content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px;
+    border-radius: 0 3px 3px 0; background: linear-gradient(var(--accent), var(--accent-2));
+    box-shadow: 0 0 10px var(--accent);
+  }
+  :root[data-platform='desktop'] .nav-icon { opacity: .8; }
+  :root[data-platform='desktop'] aside nav button.on .nav-icon,
+  :root[data-platform='desktop'] aside nav button:hover .nav-icon { opacity: 1; }
+  :root[data-platform='desktop'] .theme {
+    background: color-mix(in srgb, var(--field) 80%, transparent);
+    border-color: var(--line); border-radius: 12px;
+  }
+  :root[data-platform='desktop'] .theme button { background: none; border-color: transparent; box-shadow: none; }
+  :root[data-platform='desktop'] .theme button.on {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
+    box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  :root[data-platform='desktop'] .badge {
+    border-radius: 12px; background: color-mix(in srgb, var(--field) 76%, transparent);
+    border-color: color-mix(in srgb, var(--ok) 24%, var(--line));
+  }
+  :root[data-platform='desktop'] .job { background: color-mix(in srgb, var(--field) 72%, transparent); border-radius: 12px; }
+
+  :root[data-platform='desktop'] main { padding: 0 26px 36px; }
+  :root[data-platform='desktop'] .desktop-top {
+    position: sticky; top: 0; z-index: 20;
+    margin: 0 -26px 20px; padding: 18px 26px 16px;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 90%, transparent), color-mix(in srgb, var(--bg) 58%, transparent));
+    backdrop-filter: blur(16px); border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  }
+  :root[data-platform='desktop'] .top-title .eyebrow {
+    display: block; margin-bottom: 4px; font-size: .66rem; font-weight: 700;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--muted);
+  }
+  :root[data-platform='desktop'] .top-title h1 {
+    margin: 0; font-size: 1.55rem; letter-spacing: -.035em;
+    background: linear-gradient(100deg, var(--text) 18%, color-mix(in srgb, var(--accent) 62%, var(--text)) 72%, color-mix(in srgb, var(--accent-2) 45%, var(--text)));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  :root[data-platform='desktop'] .top-status {
+    display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 66%, transparent);
+    backdrop-filter: blur(8px); font-size: .8rem; color: var(--muted);
+  }
+  :root[data-platform='desktop'] .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+  :root[data-platform='desktop'] .status-dot.cloud { background: var(--warn); box-shadow: 0 0 12px var(--warn); }
+  :root[data-platform='desktop'] .top-sep { width: 1px; height: 14px; background: var(--line-strong); }
+  :root[data-platform='desktop'] .view { gap: 16px; }
+
+  :root[data-platform='desktop'] .card {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, #fff 6%), var(--panel));
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 20px;
+    box-shadow: var(--shadow); transition: border-color .18s, box-shadow .18s;
+  }
+  :root[data-platform='desktop'] .card:hover,
+  :root[data-platform='desktop'] .card:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+    box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  :root[data-platform='desktop'] .card > header { margin-bottom: 10px; }
+  :root[data-platform='desktop'] .card h2 { font-size: 1.05rem; letter-spacing: -.02em; }
+  :root[data-platform='desktop'] h3 { letter-spacing: .04em; text-transform: uppercase; font-size: .72rem; }
+  :root[data-platform='desktop'] .dictation > .card:first-of-type {
+    background:
+      radial-gradient(700px 320px at 76% -20%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+      radial-gradient(500px 260px at 0% 100%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 60%),
+      linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, #fff 8%), var(--panel));
+    border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  }
+  :root[data-platform='desktop'] .dictation .field { min-height: 190px; }
+  :root[data-platform='desktop'] .dictation .field > textarea { min-height: 190px; font-size: 1.02rem; }
+  :root[data-platform='desktop'] .dictation .recbox { margin: 20px auto 10px; }
+
+  :root[data-platform='desktop'] input,
+  :root[data-platform='desktop'] select,
+  :root[data-platform='desktop'] textarea { background: color-mix(in srgb, var(--field) 88%, transparent); border-color: var(--line); border-radius: 11px; }
+  :root[data-platform='desktop'] button { border-radius: 11px; background: linear-gradient(180deg, color-mix(in srgb, var(--btn) 92%, #fff 8%), var(--btn)); border-color: var(--line); }
+  :root[data-platform='desktop'] button:hover:not(:disabled) { background: var(--btn-hover); }
+  :root[data-platform='desktop'] button:active:not(:disabled) { background: var(--btn-active); }
+  :root[data-platform='desktop'] button:focus-visible,
+  :root[data-platform='desktop'] input:focus-visible,
+  :root[data-platform='desktop'] select:focus-visible,
+  :root[data-platform='desktop'] textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  :root[data-platform='desktop'] button.primary,
+  :root[data-platform='desktop'] button.mic {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: #fff;
+    font-weight: 650; box-shadow: 0 10px 26px -12px color-mix(in srgb, var(--accent) 80%, transparent);
+  }
+  :root[data-platform='desktop'] button.primary:hover:not(:disabled),
+  :root[data-platform='desktop'] button.mic:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--accent-hover), var(--accent-2));
+    filter: brightness(1.04); transform: translateY(-1px);
+  }
+  :root[data-platform='desktop'] button.link { background: none; border-color: transparent; color: var(--accent-hover); }
+  :root[data-platform='desktop'] button.link:hover:not(:disabled) { background: none; text-decoration: underline; }
+  :root[data-platform='desktop'] input[type='range'],
+  :root[data-platform='desktop'] input[type='checkbox'],
+  :root[data-platform='desktop'] input[type='radio'] { background: none; border: none; box-shadow: none; }
+  :root[data-platform='desktop'] .more-menu button { background: none; border-color: transparent; }
+  :root[data-platform='desktop'] .more-menu button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  :root[data-platform='desktop'] .theme button:hover:not(:disabled),
+  :root[data-platform='desktop'] .seg button:hover:not(:disabled),
+  :root[data-platform='desktop'] .chip:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  :root[data-platform='desktop'] .theme button.on:hover:not(:disabled),
+  :root[data-platform='desktop'] .seg button.on:hover:not(:disabled),
+  :root[data-platform='desktop'] .chip.on:hover:not(:disabled) { background: linear-gradient(135deg, var(--accent-hover), var(--accent-2)); }
+  :root[data-platform='desktop'] .seg { background: color-mix(in srgb, var(--field) 78%, transparent); border-radius: 12px; padding: 3px; }
+  :root[data-platform='desktop'] .seg button.on {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
+    box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--accent) 75%, transparent);
+  }
+  :root[data-platform='desktop'] .chip { background: color-mix(in srgb, var(--field) 78%, transparent); border-color: var(--line); }
+  :root[data-platform='desktop'] .chip.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: #fff; }
+  :root[data-platform='desktop'] .field > textarea { background: color-mix(in srgb, var(--field) 76%, transparent); border-radius: 14px; }
+  :root[data-platform='desktop'] .field.live::before { inset: -1px; border-radius: 15px; box-shadow: 0 0 22px -4px color-mix(in srgb, var(--accent) 45%, transparent); }
+  :root[data-platform='desktop'] .field.done::before { box-shadow: 0 0 22px -4px color-mix(in srgb, var(--ok) 45%, transparent); }
+
+  :root[data-platform='desktop'] .recbox { isolation: isolate; gap: 8px; }
+  :root[data-platform='desktop'] .recbtn {
+    width: 104px; height: 104px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 28%, #9dbdff, var(--accent) 44%, #3d5bd9 100%);
+    border: 1px solid rgba(255, 255, 255, .30);
+    box-shadow: 0 0 0 12px color-mix(in srgb, var(--accent) 12%, transparent), 0 18px 50px -12px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  :root[data-platform='desktop'] .recbtn::before {
+    content: ''; position: absolute; inset: -22px; z-index: -1; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 34%, transparent), transparent 66%);
+    filter: blur(7px); pointer-events: none;
+  }
+  :root[data-platform='desktop'] .recbtn::after {
+    content: ''; position: absolute; inset: -7px; z-index: -1; border-radius: 50%; pointer-events: none;
+    background: conic-gradient(from 0deg, transparent, var(--accent-3), transparent 30%, var(--accent-2), transparent 64%);
+    opacity: .55; animation: desktop-orbit 7s linear infinite;
+  }
+  :root[data-platform='desktop'] .recbtn:hover:not(:disabled) {
+    background: radial-gradient(circle at 35% 28%, #b3ceff, var(--accent-hover) 44%, #4b6aea 100%);
+    filter: brightness(1.04);
+  }
+  :root[data-platform='desktop'] .recbtn .recbtn-icon svg { width: 40px; height: 40px; }
+  :root[data-platform='desktop'] .recbtn.rec {
+    background: radial-gradient(circle at 35% 28%, #ffb1b1, var(--danger-solid) 48%, #b4232a 100%);
+    box-shadow: 0 0 0 12px color-mix(in srgb, var(--danger-solid) 15%, transparent), 0 18px 50px -12px color-mix(in srgb, var(--danger-solid) 70%, transparent);
+  }
+  :root[data-platform='desktop'] .recbtn.rec:hover:not(:disabled) {
+    background: radial-gradient(circle at 35% 28%, #ffc2c2, #f05a5f 48%, #c32f36 100%);
+    filter: brightness(1.04);
+  }
+  :root[data-platform='desktop'] .recbtn.rec::after { animation-duration: 2.4s; background: conic-gradient(from 0deg, transparent, #ffb4b4, transparent 30%, #ff6b6b, transparent 64%); }
+  :root[data-platform='desktop'] .recbox-label { font-size: 1rem; letter-spacing: -.01em; }
+  @keyframes desktop-orbit { to { transform: rotate(360deg); } }
+
+  :root[data-platform='desktop'] .item,
+  :root[data-platform='desktop'] .rec { background: linear-gradient(180deg, color-mix(in srgb, var(--field) 88%, #fff 4%), var(--field)); border-radius: 13px; }
+  :root[data-platform='desktop'] .item:hover,
+  :root[data-platform='desktop'] .rec:hover { border-color: color-mix(in srgb, var(--accent) 22%, var(--line)); }
+  :root[data-platform='desktop'] .drop {
+    border-color: color-mix(in srgb, var(--accent) 28%, var(--line-strong));
+    background: radial-gradient(600px 240px at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%);
+    border-radius: var(--radius);
+  }
+  :root[data-platform='desktop'] .page { background: color-mix(in srgb, var(--field) 72%, transparent); border-radius: 14px; }
+  :root[data-platform='desktop'] .bubble-msg { background: color-mix(in srgb, var(--field) 82%, transparent); border-radius: 18px 18px 18px 5px; }
+  :root[data-platform='desktop'] .pair { border-left-color: var(--accent-2); }
+  :root[data-platform='desktop'] .player .round { background: linear-gradient(180deg, var(--btn-hover), var(--btn)); }
+  :root[data-platform='desktop'] .player .round.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+  :root[data-platform='desktop'] .step-n { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+  :root[data-platform='desktop'] .note,
+  :root[data-platform='desktop'] code { background: color-mix(in srgb, var(--field) 80%, transparent); }
+
+}
+@media (min-width: 601px) and (max-width: 900px) {
+  :root[data-platform='desktop'] .shell { grid-template-columns: 74px minmax(0, 1fr); }
+  :root[data-platform='desktop'] aside { padding: 12px 8px; }
+  :root[data-platform='desktop'] .nav-group > span { display: none; }
+  :root[data-platform='desktop'] aside nav button { justify-content: center; padding: 10px; font-size: 0; gap: 0; }
+  :root[data-platform='desktop'] aside nav button .nav-icon { width: 20px; height: 20px; }
+  :root[data-platform='desktop'] .desktop-top { margin: 0 -20px 16px; padding: 16px 20px; }
+  :root[data-platform='desktop'] main { padding: 0 20px 30px; }
+}
+@media (max-width: 600px) {
+  :root[data-platform='desktop'] .desktop-top { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-platform='desktop'] .recbtn::after { animation: none; }
+  :root[data-platform='desktop'] aside nav button,
+  :root[data-platform='desktop'] button { transition: none; }
+}

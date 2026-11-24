@@ -18,10 +18,15 @@ files:
   # carga y la inferencia funciona sin él (tools/check-package.mjs lo verifica).
   - "!node_modules/onnxruntime-web/**"
 
-# Lo mismo que lleva el APK: datos de pronunciación de espeak-ng (Kokoro) y el VAD de Silero (whisper.cpp).
+# Lo mismo que lleva el APK: datos de pronunciación de espeak-ng (Kokoro), el VAD de Silero
+# (whisper.cpp) y el `tts.json` de Supertonic. El binario de espeak-ng solo se usa en escritorio para
+# preparar los IPA de Kokoro en español (sherpa-onnx 2.x ya no phonemiza por dentro).
 extraResources:
   - { from: android/src-tauri/recursos/espeak-ng-data.tar, to: espeak-ng-data.tar }
   - { from: android/src-tauri/recursos/ggml-silero-v5.1.2.bin, to: ggml-silero-v5.1.2.bin }
+  - { from: android/src-tauri/recursos/supertonic-tts.json, to: supertonic-tts.json }
+  - { from: resources/espeak-ng, to: espeak-ng }
+  - { from: resources/libespeak-ng.so.1, to: libespeak-ng.so.1 }
 
 asar: true
 # Los módulos nativos y el worker de voz (proceso Node aparte) no pueden vivir dentro del asar

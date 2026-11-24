@@ -16,7 +16,10 @@ const TITLE: Record<LocalModelKind, [string, string]> = {
   tts: ['Lectura en voz alta (voces)', 'Lee textos, documentos y traducciones sin conexión. Elige una voz por idioma. Supertonic añade 10 voces y 31 idiomas en una sola descarga; Piper y Kokoro siguen disponibles.']
 }
 
-const DESKTOP_TTS: [string, string] = ['Voces Kokoro', 'Un solo modelo con 31 voces más naturales que Piper (3 en español). Tras descargarlo, elígelas en el selector de voz de Lector, Audio o Mis voces.']
+const DESKTOP_TTS: [string, string] = [
+  'Voces naturales (Kokoro y Supertonic)',
+  'Kokoro: 31 voces más naturales que Piper (3 en español), en una descarga de ~155 MB. Supertonic: 10 voces y 31 idiomas a 44.1 kHz en una descarga de ~145 MB. Tras descargarlas, elígelas en el selector de voz de Lector, Audio o Mis voces.'
+]
 
 /** Reproduce un audio (WAV o MP3) y espera a que termine. */
 function play(bytes: Uint8Array, type: string): Promise<void> {
@@ -91,7 +94,8 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
     if (!m.voice || !m.lang) return
     setListen({ id: m.id, msg: ready ? 'Generando…' : 'Descargando muestra…' })
     try {
-      const frase = m.lang === 'es' ? 'Hola. Así suena esta voz en tu teléfono, sin conexión a internet.' : 'Hello. This is how this voice sounds on your phone, offline.'
+      const donde = ANDROID ? 'teléfono' : 'equipo'
+      const frase = m.lang === 'es' ? `Hola. Así suena esta voz en tu ${donde}, sin conexión a internet.` : `Hello. This is how this voice sounds on your ${ANDROID ? 'phone' : 'computer'}, offline.`
       const t0 = performance.now()
       const bytes = ready ? await window.api.synthesize(frase, m.lang, m.voice) : await window.api.voiceSample(m.voice)
       setListen({ id: m.id, msg: ready ? `▶ generada en ${((performance.now() - t0) / 1000).toFixed(1)} s` : '▶ muestra' })
@@ -104,7 +108,7 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
 
   const download = async (m: LocalModel): Promise<void> => {
     const total = totalBytes(m)
-    if (total >= 100e6 && !confirm(`Se descargarán ${formatBytes(total)}. Usa Wi-Fi y deja la app abierta hasta que termine. ¿Continuar?`)) return
+    if (total >= 100e6 && !confirm(`Se descargarán ${formatBytes(total)}. ${ANDROID ? 'Usa Wi-Fi y deja' : 'Deja'} la app abierta hasta que termine. ¿Continuar?`)) return
     setProgress((x) => ({ ...x, [m.id]: { id: m.id, state: 'downloading', received: file(m.id)?.bytes ?? 0, total: m.bytes } }))
     try {
       await window.api.downloadModel(m)
@@ -114,7 +118,7 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
   }
 
   const remove = async (m: LocalModel): Promise<void> => {
-    if (!confirm(`¿Borrar ${m.label} (${formatBytes(totalBytes(m))}) del teléfono?`)) return
+    if (!confirm(`¿Borrar ${m.label} (${formatBytes(totalBytes(m))}) ${ANDROID ? 'del teléfono' : 'de este equipo'}?`)) return
     await window.api.removeModel(m.id)
     // Supertonic comparte un modelo para las diez voces: si estaba elegida, se vuelve a Piper.
     if (m.id === SUPERTONIC_MODEL.id) {

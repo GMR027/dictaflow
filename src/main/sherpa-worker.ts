@@ -1,9 +1,9 @@
 // Proceso Node aparte (ELECTRON_RUN_AS_NODE) con sherpa-onnx: texto en vivo (Kroko streaming) y
-// voces Kokoro. Igual que stt-worker, no corre dentro de Electron: los búferes externos de los
-// módulos nativos no se permiten en su V8.
+// voces Kokoro/Supertonic. Igual que stt-worker, no corre dentro de Electron: los búferes externos
+// de los módulos nativos no se permiten en su V8.
 //
-// Se arrancan dos copias, una por tarea (`role`), para que leer en voz alta con Kokoro no frene el
-// texto en vivo. Las peticiones de cada copia se atienden de una en una.
+// Se arrancan dos copias, una por tarea (`role`), para que leer en voz alta no frene el texto en
+// vivo. Las peticiones de cada copia se atienden de una en una.
 //
 // Es la versión de escritorio de android/src-tauri/src/vivo.rs y tts.rs (cargar_kokoro).
 
@@ -16,7 +16,12 @@ type Msg =
   | { id: number; type: 'live-stop'; session: number }
   | {
       id: number; type: 'kokoro'; model: string; voices: string; tokens: string; lexicon?: string
-      dataDir: string; lang: string; sid: number; text: string; speed: number; threads: number
+      phonemeCodepoints?: number[]; sid: number; text: string; speed: number; threads: number
+    }
+  | {
+      id: number; type: 'supertonic'; durationPredictor: string; textEncoder: string
+      vectorEstimator: string; vocoder: string; ttsJson: string; unicodeIndexer: string
+      voiceStyle: string; lang: string; sid: number; text: string; speed: number; threads: number
     }
 
 let sherpa: any = null
@@ -71,26 +76,61 @@ function feed(id: number, pcm: Float32Array): string {
   return join(s.previous, current)
 }
 
-// ── Kokoro ─────────────────────────────────────────────────────────────────────────────────
+// ── Voz (Kokoro y Supertonic) ──────────────────────────────────────────────────────────────
 let tts: { key: string; engine: any } | null = null
 
+function engine(key: string, config: Record<string, unknown>): any {
+  if (tts?.key === key) return tts.engine
+  tts = null
+  const next = new (lib().OfflineTts)(config)
+  tts = { key, engine: next }
+  return next
+}
+
 function kokoro(m: Extract<Msg, { type: 'kokoro' }>): { samples: Float32Array; sampleRate: number } {
-  const key = [m.model, m.lexicon ?? '', m.lang].join('\0')
-  if (tts?.key !== key) {
-    tts = null
-    const engine = new (lib().OfflineTts)({
-      model: {
-        kokoro: { model: m.model, voices: m.voices, tokens: m.tokens, dataDir: m.dataDir, lexicon: m.lexicon ?? '', lang: m.lang, lengthScale: 1 },
-        numThreads: m.threads,
-        provider: 'cpu'
-      },
-      maxNumSentences: 1,
-      silenceScale: 0.2
-    })
-    tts = { key, engine }
+  const config = {
+    model: {
+      kokoro: { model: m.model, voices: m.voices, tokens: m.tokens, lexicon: m.lexicon ?? '', lengthScale: 1 },
+      numThreads: m.threads,
+      provider: 'cpu'
+    },
+    maxNumSentences: 1,
+    silenceScale: 0.2
   }
-  const audio = tts.engine.generate({ text: m.text, sid: m.sid, speed: m.speed, enableExternalBuffer: false })
+  const t = engine(['kokoro', m.model, m.lexicon ?? ''].join('\0'), config)
+  const req = { text: m.text, sid: m.sid, speed: m.speed, enableExternalBuffer: false }
+  const audio = m.phonemeCodepoints?.length
+    ? t.generate({ ...req, generationConfig: { phonemeCodepoints: [m.phonemeCodepoints] } })
+    : t.generate(req)
   // Copia propia: el búfer que devuelve el módulo nativo no se puede mandar entre procesos.
+  return { samples: Float32Array.from(audio.samples as Float32Array), sampleRate: audio.sampleRate }
+}
+
+function supertonic(m: Extract<Msg, { type: 'supertonic' }>): { samples: Float32Array; sampleRate: number } {
+  const key = ['supertonic', m.durationPredictor, m.textEncoder, m.vectorEstimator, m.vocoder, m.ttsJson, m.unicodeIndexer, m.voiceStyle].join('\0')
+  const config = {
+    model: {
+      supertonic: {
+        durationPredictor: m.durationPredictor,
+        textEncoder: m.textEncoder,
+        vectorEstimator: m.vectorEstimator,
+        vocoder: m.vocoder,
+        ttsJson: m.ttsJson,
+        unicodeIndexer: m.unicodeIndexer,
+        voiceStyle: m.voiceStyle
+      },
+      numThreads: m.threads,
+      provider: 'cpu'
+    },
+    maxNumSentences: 1,
+    silenceScale: 0.2
+  }
+  const t = engine(key, config)
+  const audio = t.generate({
+    text: m.text,
+    enableExternalBuffer: false,
+    generationConfig: { sid: m.sid, numSteps: 8, speed: m.speed, extra: { lang: m.lang } }
+  })
   return { samples: Float32Array.from(audio.samples as Float32Array), sampleRate: audio.sampleRate }
 }
 
@@ -115,6 +155,8 @@ async function handle(msg: Msg): Promise<Record<string, unknown>> {
       return {}
     case 'kokoro':
       return kokoro(msg)
+    case 'supertonic':
+      return supertonic(msg)
   }
 }
 
