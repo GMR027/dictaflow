@@ -4,8 +4,8 @@
 # compilar.sh lo llama solo si faltan. Al subir de versión el crate sherpa-onnx (Cargo.toml),
 # cambia aquí la versión y la huella del archivo publicado en GitHub.
 set -euo pipefail
-VERSION=1.13.8
-SHA256=2ff63469a71cb6009aa2e3ed5f4a670f8abdcbe4bb9ffd23776afc792a6b4f44
+VERSION=2.0.3
+SHA256=2a30b222abae6d5cf544df4a1c27944279449c25dbb9c755097189cb45db1df0
 DESTINO="${SHERPA_ONNX_LIB_DIR:?Carga antes android/entorno.sh}"
 ARCHIVO="sherpa-onnx-v${VERSION}-android.tar.bz2"
 CACHE="$(dirname "$DESTINO")"

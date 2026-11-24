@@ -4,10 +4,33 @@ import type { Lang } from '@shared/types'
 export class Speaker {
   private audio: HTMLAudioElement | null = null
   private cancelled = false
+  private idle: ReturnType<typeof setTimeout> | null = null
   playing = false
 
   async synth(text: string, lang: Lang): Promise<Uint8Array> {
+    this.cancelRelease()
     return window.api.synthesize(text, lang)
+  }
+
+  /** Libera la voz local tras un rato sin usarla (Supertonic ocupa bastante RAM). */
+  private scheduleRelease(): void {
+    this.cancelRelease()
+    this.idle = setTimeout(() => {
+      this.idle = null
+      void window.api.releaseTts().catch(() => undefined)
+    }, 120_000)
+  }
+
+  private cancelRelease(): void {
+    if (this.idle) clearTimeout(this.idle)
+    this.idle = null
+  }
+
+  /** Al desmontar la pantalla: para el audio y devuelve la RAM del motor. */
+  async dispose(): Promise<void> {
+    this.stop()
+    this.cancelRelease()
+    await window.api.releaseTts().catch(() => undefined)
   }
 
   private playBytes(bytes: Uint8Array): Promise<void> {
@@ -35,13 +58,17 @@ export class Speaker {
       }
     } finally {
       this.playing = false
+      this.scheduleRelease()
     }
   }
 
   async say(text: string, lang: Lang): Promise<void> {
     this.cancelled = false
     this.playing = true
-    try { await this.playBytes(await this.synth(text, lang)) } finally { this.playing = false }
+    try { await this.playBytes(await this.synth(text, lang)) } finally {
+      this.playing = false
+      this.scheduleRelease()
+    }
   }
 
   pause(): void { this.audio?.pause() }

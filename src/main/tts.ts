@@ -129,6 +129,9 @@ export async function synthesize(text: string, lang: Lang, voiceId?: string): Pr
   }
 
   const voice = voiceId ?? s.ttsVoice[lang]
+  if (voice.startsWith('supertonic:')) {
+    throw new Error('La voz Supertonic solo está disponible en Android. Elige otra voz en Ajustes → Audio.')
+  }
   if (voice.startsWith('kokoro:')) return synthesizeKokoro(voice, text, s.ttsSpeed)
   const model = voiceModelPath(voice)
   if (!existsSync(piperBin)) throw new Error('Falta instalar el motor de voz local (Audio → Texto a voz).')

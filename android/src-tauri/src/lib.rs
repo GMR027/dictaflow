@@ -149,6 +149,9 @@ fn models_cancel(id: String, descargas: tauri::State<'_, Arc<Descargas>>) {
 
 #[tauri::command]
 fn models_remove(id: String, descargas: tauri::State<'_, Arc<Descargas>>, tts: tauri::State<'_, Arc<Tts>>) -> Result<(), String> {
+    if modelos::es_archivo_supertonic(&id) {
+        tts.olvidar("supertonic");
+    }
     if let Some(voz) = id.strip_suffix(".onnx.json").or_else(|| id.strip_suffix(".onnx")) {
         tts.olvidar(voz);
     }
@@ -284,6 +287,13 @@ async fn tts_synth(
 ) -> Result<tauri::ipc::Response, String> {
     let tts = tts.inner().clone();
     let wav = tauri::async_runtime::spawn_blocking(move || match sid {
+        // Supertonic: diez voces y un modelo que entiende el idioma por petición.
+        _ if voice == "supertonic" => tts.sintetizar_supertonic(
+            sid.ok_or("Falta la voz de Supertonic.")?,
+            lang.as_deref().unwrap_or("es"),
+            &text,
+            speed,
+        ),
         // Kokoro: un solo modelo con muchas voces (sid) e idioma de pronunciación.
         Some(sid) => tts.sintetizar_kokoro(sid, lang.as_deref().unwrap_or("en-us"), &text, speed),
         None => tts.sintetizar(&voice, &text, speed),
@@ -291,6 +301,12 @@ async fn tts_synth(
         .await
         .map_err(|e| e.to_string())??;
     Ok(tauri::ipc::Response::new(wav))
+}
+
+/// Devuelve la RAM del motor de voz (se llama al salir del lector o al terminar una exportación).
+#[tauri::command]
+fn tts_liberar(tts: tauri::State<'_, Arc<Tts>>) {
+    tts.liberar();
 }
 
 /// Muestra oficial de una voz (MP3 corto), para escucharla antes de descargarla. No se guarda.
@@ -803,6 +819,7 @@ pub fn run() {
             llm_prepare,
             llm_cancel,
             tts_synth,
+            tts_liberar,
             tts_sample,
             vista_inicial,
             captura_iniciar,

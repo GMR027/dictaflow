@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { DEFAULT_SETTINGS } from '@shared/types'
 import {
   companions, formatBytes, LOCAL_MODELS, modelFit, modelReady, totalBytes,
   type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelKind, type LocalModelProgress
 } from '@shared/local-models'
+import { SUPERTONIC_MODEL } from '@shared/supertonic'
 import { useApp } from '../store'
 
 const ANDROID = window.api.platform === 'android'
@@ -11,7 +13,7 @@ const TITLE: Record<LocalModelKind, [string, string]> = {
   stt: ['Voz → texto (Whisper)', 'Transcribe lo que dictas. Funciona sin conexión.'],
   live: ['Texto en vivo', 'Muestra lo que dices palabra a palabra mientras hablas (Dictado, Reuniones, Traducción). Se usa solo el del idioma en que hablas; Whisper sigue poniendo el texto definitivo.'],
   llm: ['Redacción con IA', 'Pule, reescribe, traduce y resume tus textos dentro del teléfono, sin enviarlos a ningún servidor.'],
-  tts: ['Lectura en voz alta (voces)', 'Lee tus textos, documentos y traducciones sin conexión. Elige una voz por idioma; con ▶ la escuchas antes de descargarla.']
+  tts: ['Lectura en voz alta (voces)', 'Lee textos, documentos y traducciones sin conexión. Elige una voz por idioma. Supertonic añade 10 voces y 31 idiomas en una sola descarga; Piper y Kokoro siguen disponibles.']
 }
 
 const DESKTOP_TTS: [string, string] = ['Voces Kokoro', 'Un solo modelo con 31 voces más naturales que Piper (3 en español). Tras descargarlo, elígelas en el selector de voz de Lector, Audio o Mis voces.']
@@ -101,6 +103,8 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
   }
 
   const download = async (m: LocalModel): Promise<void> => {
+    const total = totalBytes(m)
+    if (total >= 100e6 && !confirm(`Se descargarán ${formatBytes(total)}. Usa Wi-Fi y deja la app abierta hasta que termine. ¿Continuar?`)) return
     setProgress((x) => ({ ...x, [m.id]: { id: m.id, state: 'downloading', received: file(m.id)?.bytes ?? 0, total: m.bytes } }))
     try {
       await window.api.downloadModel(m)
@@ -112,6 +116,15 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
   const remove = async (m: LocalModel): Promise<void> => {
     if (!confirm(`¿Borrar ${m.label} (${formatBytes(totalBytes(m))}) del teléfono?`)) return
     await window.api.removeModel(m.id)
+    // Supertonic comparte un modelo para las diez voces: si estaba elegida, se vuelve a Piper.
+    if (m.id === SUPERTONIC_MODEL.id) {
+      const next = { ...settings.ttsVoice }
+      let changed = false
+      for (const l of ['es', 'en'] as const) {
+        if (next[l].startsWith('supertonic:')) { next[l] = DEFAULT_SETTINGS.ttsVoice[l]; changed = true }
+      }
+      if (changed) await patchSettings({ ttsVoice: next })
+    }
     const off = unselect(m)
     if (active(m) && off) await patchSettings(off)
     setProgress((x) => ({ ...x, [m.id]: { id: m.id, state: 'cancelled', received: 0, total: m.bytes } }))
@@ -142,7 +155,7 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
         <div key={kind}>
           <h3>{(!ANDROID && kind === 'tts' ? DESKTOP_TTS : TITLE[kind])[0]}</h3>
           <p className="muted">{(!ANDROID && kind === 'tts' ? DESKTOP_TTS : TITLE[kind])[1]}</p>
-          {LOCAL_MODELS.filter((m) => m.kind === kind && (!pick || pick(m))).map((m) => {
+          {LOCAL_MODELS.filter((m) => m.kind === kind && (ANDROID || m.platform !== 'android') && (!pick || pick(m))).map((m) => {
             const f = file(m.id)
             const ready = modelReady(m, files)
             const extra = companions(m).map((x) => progress[x.id]).find((x) => x?.state === 'error')
@@ -170,7 +183,7 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
                 {kind === 'tts' && m.voice && (
                   <button className="link" onClick={() => void listenVoice(m, ready)} disabled={!!listen && !listen.msg.startsWith('✗')} aria-label={`Escuchar ${m.label}`}>▶</button>
                 )}
-                <em>{ready && active(m) ? '✓ En uso' : BADGE[fit]}</em>
+                <em>{ready && active(m) ? (m.kind === 'tts' && !m.voice ? '✓ Descargado' : '✓ En uso') : BADGE[fit]}</em>
                 {busy
                   ? <button onClick={() => void window.api.cancelModel(m.id)}>Cancelar</button>
                   : ready

@@ -7,6 +7,7 @@
 import type { Lang } from './types'
 import { VOICE_META, voiceSampleUrl } from './voice-catalog'
 import { KOKORO_MODEL } from './kokoro'
+import { SUPERTONIC_MODEL } from './supertonic'
 
 /** stt: Whisper (texto definitivo) · live: texto en vivo mientras hablas · llm: redacción · tts: voces. */
 export type LocalModelKind = 'stt' | 'live' | 'llm' | 'tts'
@@ -31,6 +32,8 @@ export interface LocalModel {
   sha256: string
   /** RAM mínima (GB) con la que funciona con holgura. */
   minRamGB: number
+  /** Solo se ofrece en esta plataforma (p. ej. Supertonic, que aún no existe en escritorio). */
+  platform?: 'android'
   /** Voces: identificador de la voz (el de escritorio, sin «.onnx»), su idioma y su configuración. */
   voice?: string
   lang?: Lang
@@ -143,6 +146,7 @@ export const LOCAL_MODELS: LocalModel[] = [
   voice('en_US-hfc_female-medium', 63201425, '6d8b3711715f17f29b9f0ded97571924ead9a06e300bfdf3680b014a51ddc9e5', 5033, '03f1fa0622b80463283592d97aca9f6e89aec345a5c56b7257723e0093c58b6c'),
   voice('en_US-ryan-high', 120786923, '4343c10fd88301574d2012b3d006fa5fc8fdf18d04ca9564ef399eed180d8788', 4166, 'c6d3b98f08315cb4bebf0d49d50fc4ff491b503c64b940cd3d5ca28543b48011'),
   KOKORO_MODEL,
+  SUPERTONIC_MODEL,
   voice('en_GB-alan-medium', 63201430, 'd907c48857000940104a9ad3248a94617df917d1a525c9495490fdbf87fd54b2', 4888, 'c0f0d124e5895c00e7c03b35dcc8287f319a6998a365b182deb5c8e752ee8c1e')
 ]
 

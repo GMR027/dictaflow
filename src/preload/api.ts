@@ -149,9 +149,10 @@ export function createApi(invoke: Invoke, on: On, platform: Platform) {
     installPiper: (): Promise<void> => invoke('tts:install-piper'),
     installVoice: (id: string): Promise<void> => invoke('tts:install-voice', { id }),
     removeVoice: (id: string): Promise<void> => invoke('tts:remove-voice', { id }),
-    voiceSample: (id: string): Promise<Uint8Array> => invoke('tts:sample', { id }),
+    voiceSample: (id: string, lang?: Lang): Promise<Uint8Array> => invoke('tts:sample', { id, lang }),
     onTtsProgress: (cb: (p: { what: string; pct: number }) => void) => on('tts:progress', cb),
     synthesize: (text: string, lang: Lang, voice?: string): Promise<Uint8Array> => invoke('tts:synth', { text, lang, voice }),
+    releaseTts: (): Promise<void> => invoke('tts:liberar'),
 
     pickProject: (): Promise<string> => invoke('project:pick'),
     pickVault: (): Promise<string> => invoke('vault:pick'),

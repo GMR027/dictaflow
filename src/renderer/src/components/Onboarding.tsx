@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { HardwareInfo, Lang, ModelRec } from '@shared/types'
+import { SUPERTONIC_MODEL } from '@shared/supertonic'
 import { useApp } from '../store'
 import { Logo } from './Logo'
 import { OllamaSetup } from './OllamaSetup'
@@ -91,7 +92,7 @@ export function Onboarding(): JSX.Element {
           <>
             <h1>Modelos de IA</h1>
             <p>Descarga al menos el modelo de voz para dictar. Todo corre dentro del teléfono, sin enviar tu voz ni tus textos a ningún servidor.</p>
-            <LocalModels />
+            <LocalModels pick={(m) => m.id !== SUPERTONIC_MODEL.id} />
           </>
         )}
         {step === 1 && !ANDROID && (

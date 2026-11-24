@@ -191,7 +191,13 @@ function TextToSpeech(): JSX.Element {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const speaker = useRef(new Speaker())
+  useEffect(() => () => { void speaker.current.dispose() }, [])
   const cloud = settings.ttsProvider === 'openai'
+  const engine = info?.catalog.find((v) => v.id === settings.ttsVoice[lang])?.engine
+  const localLabel = engine === 'supertonic' ? 'Voz natural local (Supertonic)'
+    : engine === 'kokoro' ? 'Voz local (Kokoro)'
+      : engine === 'sistema' ? 'Voz del teléfono'
+        : 'Voz local (Piper)'
 
   const play = async (): Promise<void> => {
     setError(''); setBusy('Reproduciendo…')
@@ -244,7 +250,7 @@ function TextToSpeech(): JSX.Element {
         <label>Velocidad {settings.ttsSpeed.toFixed(1)}×
           <input type="range" min="0.6" max="1.6" step="0.1" value={settings.ttsSpeed} onChange={(e) => void patchSettings({ ttsSpeed: Number(e.target.value) })} />
         </label>
-        <span className="muted">{cloud ? '☁ Voz en la nube' : '🟢 Voz local (Piper)'}</span>
+        <span className="muted">{cloud ? '☁ Voz en la nube' : `🟢 ${localLabel}`}</span>
       </div>
       <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Escribe o pega el texto que quieres convertir en voz." />
       <div className="row">

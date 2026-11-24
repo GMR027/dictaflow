@@ -27,7 +27,7 @@ export function Reader(): JSX.Element {
 
   const refreshList = (): void => void window.api.listLibrary().then(setMetas)
   useEffect(refreshList, [])
-  useEffect(() => () => speaker.current.stop(), [])
+  useEffect(() => () => { void speaker.current.dispose() }, [])
 
   const chapter = doc?.chapters[doc.progress.chapter]
   const units = chapter ? splitText(chapter.text, 350) : []

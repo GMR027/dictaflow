@@ -131,8 +131,9 @@ export interface IpcContract {
   'tts:install-piper': { req: void; res: void }
   'tts:install-voice': { req: { id: string }; res: void }
   'tts:remove-voice': { req: { id: string }; res: void }
-  'tts:sample': { req: { id: string }; res: Uint8Array }
+  'tts:sample': { req: { id: string; lang?: Lang }; res: Uint8Array }
   'tts:synth': { req: { text: string; lang: Lang; voice?: string }; res: Uint8Array }
+  'tts:liberar': { req: void; res: void }
 
   'project:pick': { req: void; res: string }
   'vault:pick': { req: void; res: string }

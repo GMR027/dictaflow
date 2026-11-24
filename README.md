@@ -15,7 +15,7 @@ Speak, get clean text. DictaFlow turns your voice into polished writing, coding 
 
 **Features:** dictation (continuous or push-to-talk, voice commands) · AI rewriting · prompt library + Prompt Architect agent · programmer mode (project context, send to Claude Code/opencode) · audio ↔ text with subtitles · PDF/EPUB reader with read-aloud and audiobook export · meeting transcription (mic + system audio) with structured minutes · live translation (ES↔EN) · personal dictionary · notes export (Obsidian-ready Markdown) · PDF export · calendar (ICS) and reminders · reusable automations · backups · diagnostics.
 
-**Private by design:** speech recognition (Whisper) and voices (Piper) run on your machine. A status badge shows whether anything uses the cloud, the *Privacy* tab logs every outgoing request, and *strict offline mode* blocks all non-local connections.
+**Private by design:** speech recognition (Whisper) and voices (Piper, Kokoro, Supertonic) run on your machine. A status badge shows whether anything uses the cloud, the *Privacy* tab logs every outgoing request, and *strict offline mode* blocks all non-local connections.
 
 ### Install
 
@@ -57,7 +57,7 @@ Habla y obtén texto pulido. DictaFlow convierte tu voz en redacción, prompts d
 
 **Herramientas:** dictado (continuo o pulsando para hablar, comandos de voz) · redacción con IA · biblioteca de prompts + agente Prompt Architect · modo programador (contexto del proyecto, envío a Claude Code/opencode) · audio ↔ texto con subtítulos · lector de PDF/EPUB con lectura en voz alta y audiolibro · transcripción de reuniones (micrófono + audio del sistema) con acta estructurada · traducción en vivo (ES↔EN) · diccionario personal · exportación de notas (Markdown listo para Obsidian) · exportación a PDF · agenda (ICS) y recordatorios · automatizaciones reutilizables · copias de seguridad · diagnóstico.
 
-**Privado por diseño:** el reconocimiento de voz (Whisper) y las voces (Piper) se ejecutan en tu equipo. Una insignia indica si algo usa la nube, la pestaña *Privacidad* registra cada petición saliente y el *modo offline estricto* bloquea toda conexión no local.
+**Privado por diseño:** el reconocimiento de voz (Whisper) y las voces (Piper, Kokoro, Supertonic) se ejecutan en tu equipo. Una insignia indica si algo usa la nube, la pestaña *Privacidad* registra cada petición saliente y el *modo offline estricto* bloquea toda conexión no local.
 
 ### Instalación
 

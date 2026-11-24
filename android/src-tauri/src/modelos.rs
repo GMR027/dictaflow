@@ -62,6 +62,33 @@ pub fn idioma_kokoro(lang: &str) -> Result<&'static str, String> {
     }
 }
 
+/// Voces del modelo Supertonic 3 (ids 0–9: F1–F5 y M1–M5).
+pub const SUPERTONIC_VOCES: i32 = 10;
+
+/// Archivos del modelo Supertonic 3 que se descargan (tts.json va dentro de la app).
+pub const SUPERTONIC_ARCHIVOS: [&str; 6] = [
+    "duration_predictor.int8.onnx",
+    "text_encoder.int8.onnx",
+    "vector_estimator.int8.onnx",
+    "vocoder.int8.onnx",
+    "unicode_indexer.bin",
+    "voice.bin",
+];
+
+/// ¿Este archivo pertenece al modelo Supertonic? (para liberar el motor al borrarlo).
+pub fn es_archivo_supertonic(id: &str) -> bool {
+    SUPERTONIC_ARCHIVOS.contains(&id)
+}
+
+/// Idioma que entiende Supertonic 3. DictaFlow solo usa español e inglés por ahora.
+pub fn idioma_supertonic(lang: &str) -> Result<&'static str, String> {
+    match lang {
+        "es" => Ok("es"),
+        "en" => Ok("en"),
+        l => Err(format!("Idioma de Supertonic no válido: «{l}».")),
+    }
+}
+
 /// Muestra de una voz: solo las oficiales de rhasspy/piper-voices en Hugging Face.
 pub fn url_muestra(url: &str) -> Result<Url, String> {
     let u = Url::parse(url).map_err(|_| "Dirección de muestra inválida.".to_string())?;
@@ -350,6 +377,17 @@ mod pruebas_motor {
         let tokens = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06/resolve/main/tokens.txt";
         assert!(validar_pedido(tokens, "kroko-es.tokens.txt", 1, SHA).is_ok());
         assert!(validar_pedido(tokens, "tokens.txt", 1, SHA).is_err()); // sin prefijo no es un nombre válido
+    }
+
+    #[test]
+    fn supertonic() {
+        assert_eq!(SUPERTONIC_VOCES, 10);
+        assert_eq!(idioma_supertonic("es").unwrap(), "es");
+        assert_eq!(idioma_supertonic("en").unwrap(), "en");
+        assert!(idioma_supertonic("fr").is_err());
+        assert!(es_archivo_supertonic("voice.bin"));
+        assert!(es_archivo_supertonic("vector_estimator.int8.onnx"));
+        assert!(!es_archivo_supertonic("model.int8.onnx"));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Lang, TtsStatus } from '@shared/types'
+import { formatBytes } from '@shared/local-models'
 import type { VoiceStatus } from '@shared/voice'
 import { mb, speaks } from '@shared/voice'
 import { useApp } from '../store'
@@ -27,8 +28,9 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
 
   if (!info || settings.ttsProvider !== 'piper') return null
   const voice = settings.ttsVoice[lang]
-  // Kokoro corre con sherpa-onnx dentro de la app: no necesita el motor Piper.
-  const needEngine = !info.piperInstalled && !voice.startsWith('kokoro:')
+  const supertonic = voice.startsWith('supertonic:')
+  // Kokoro y Supertonic corren con sherpa-onnx dentro de la app: no necesitan el motor Piper.
+  const needEngine = !info.piperInstalled && !voice.startsWith('kokoro:') && !supertonic
   const needVoice = !info.voices.includes(voice)
   if (!needEngine && !needVoice) return null
 
@@ -50,7 +52,11 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
 
   return (
     <div className="item">
-      <p className="warn">Para voz local falta descargar{needEngine ? ' el motor Piper (~25 MB)' : ''}{needEngine && needVoice ? ' y' : ''}{needVoice ? ` la voz ${vinfo?.label ?? voice} (~${vinfo ? mb(vinfo.sizeBytes) : '60'} MB)` : ''}. Se guarda en tu equipo y luego funciona sin conexión.</p>
+      <p className="warn">
+        {supertonic
+          ? `Para la voz natural falta descargar Supertonic (~${vinfo ? formatBytes(vinfo.sizeBytes) : '145 MB'}): una sola descarga incluye 10 voces y 31 idiomas. Se guarda en tu teléfono y luego funciona sin conexión.`
+          : <>Para voz local falta descargar{needEngine ? ' el motor Piper (~25 MB)' : ''}{needEngine && needVoice ? ' y' : ''}{needVoice ? ` la voz ${vinfo?.label ?? voice} (~${vinfo ? mb(vinfo.sizeBytes) : '60'} MB)` : ''}. Se guarda en tu equipo y luego funciona sin conexión.</>}
+      </p>
       <div className="row">
         <button className="primary" onClick={() => void run()} disabled={busy}>{busy ? `Descargando… ${progress}` : '⬇ Descargar'}</button>
         <span className="muted">O usa la nube en Ajustes → Audio.</span>
@@ -63,6 +69,7 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
 /** Grupos del selector: voces del teléfono (solo Android), Kokoro, Piper y nube. */
 const GROUPS: [string[], string][] = [
   [['sistema'], 'Voces del teléfono (sin descargas)'],
+  [['supertonic'], 'Supertonic · natural (44.1 kHz)'],
   [['kokoro'], 'Kokoro · más naturales'],
   [['piper', 'sherpa-onnx'], 'Piper'],
   [['cloud'], 'Nube']
@@ -89,7 +96,7 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
     setError('')
     setPlaying(id)
     try {
-      const bytes = await window.api.voiceSample(id)
+      const bytes = await window.api.voiceSample(id, lang)
       // Las muestras publicadas son MP3; las que dice el teléfono (Kokoro, voces del sistema), WAV.
       const wav = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
       const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: wav ? 'audio/wav' : 'audio/mpeg' }))
@@ -106,7 +113,7 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
     setBusy(id)
     setError('')
     try {
-      if (!info?.piperInstalled && !id.startsWith('kokoro:')) await window.api.installPiper()
+      if (!info?.piperInstalled && !id.startsWith('kokoro:') && !id.startsWith('supertonic:')) await window.api.installPiper()
       await window.api.installVoice(id)
       onChanged()
     } catch (e) {
@@ -136,7 +143,7 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
       </label>
       {value && (
         <div className="row tight">
-          {current?.sampleUrl && (current.installed || current.engine !== 'kokoro') && (
+          {current?.sampleUrl && (current.installed || (current.engine !== 'kokoro' && current.engine !== 'supertonic')) && (
             <button onClick={() => void playSample(value)} disabled={playing === value}>
               {playing === value ? '🔊 Reproduciendo…' : '🔊 Escuchar muestra'}
             </button>

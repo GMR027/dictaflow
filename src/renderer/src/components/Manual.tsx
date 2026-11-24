@@ -161,10 +161,11 @@ const TOPICS: Topic[] = [
       <p>Con IA puedes generar resumen, capítulos, post para redes, notas o apuntes de estudio, y traducir.</p>
       <h4>🔊 Texto → Voz</h4>
       <p>Escribe o pega texto, elige idioma, voz y velocidad, escúchalo y guárdalo en <b>WAV o MP3</b> donde quieras (Descargas, Drive…).</p>
-      <p>Hay tres tipos de voz, agrupados en el selector:</p>
+      <p>Hay cuatro tipos de voz, agrupados en el selector:</p>
       <ul>
         <li><b>Voces del teléfono:</b> las del motor de voz de Android (Google, Samsung…), sin descargas. Son rápidas; las encuentras o añades en los ajustes de Android → Texto a voz.</li>
-        <li><b>Kokoro:</b> las más naturales (3 en español y 28 en inglés), en una descarga de unos 155 MB en Ajustes → Servicios de IA. Son más lentas: ideales para el lector y los audiolibros.</li>
+        <li><b>Supertonic:</b> 10 voces y 31 idiomas en una sola descarga de unos 145 MB, a 44.1 kHz. Una voz muy natural; también la más pesada. Ideal para el lector y los audiolibros. Licencia OpenRAIL-M (Supertone).</li>
+        <li><b>Kokoro:</b> muy naturales (3 en español y 28 en inglés), en una descarga de unos 155 MB en Ajustes → Servicios de IA. Son más lentas: ideales para el lector y los audiolibros.</li>
         <li><b>Piper:</b> una descarga por voz (60–120 MB), rápidas y sin conexión.</li>
       </ul>
     </>)

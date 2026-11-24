@@ -19,6 +19,7 @@ import { pcmToB64, whisperPrompt } from './pcm'
 import { KOKORO_MODEL, KOKORO_VOICES, kokoroId, kokoroLabel, kokoroVoice } from '@shared/kokoro'
 import { createLlmTasks, systemPrompt, type CompleteOpts, type ContentAction, type LlmLimits } from '@shared/llm-tasks'
 import { companions, liveModelFor, LOCAL_MODELS, localVoice, totalBytes, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
+import { SUPERTONIC_MODEL, supertonicCatalog, supertonicVoice } from '@shared/supertonic'
 import { VOICE_META } from '@shared/voice-catalog'
 import type { VoiceStatus } from '@shared/voice'
 import type { UpdateInfo } from '@shared/update'
@@ -216,15 +217,29 @@ async function startDownload(m: LocalModel): Promise<void> {
 /** Descarga un modelo y espera a que esté completo (para «Descargar voz» fuera de Ajustes). */
 async function downloadAndWait(m: LocalModel): Promise<void> {
   const pending = new Set([m.id, ...companions(m).map((x) => x.id)])
-  for (const f of await listModels()) if (!f.partial) pending.delete(f.id)
+  const bytes = new Map<string, number>([[m.id, m.bytes], ...companions(m).map((x): [string, number] => [x.id, x.bytes])])
+  const total = [...bytes.values()].reduce((a, b) => a + b, 0)
+  const received = new Map<string, number>()
+  // Los archivos ya completos cuentan desde el principio: el porcentaje no vuelve a cero en cada uno.
+  for (const f of await listModels()) {
+    if (!bytes.has(f.id)) continue
+    if (!f.partial) pending.delete(f.id)
+    received.set(f.id, f.bytes)
+  }
   if (!pending.size) return
   let un: (() => void) | null = null
   const done = new Promise<void>((resolve, reject) => {
     void listen<LocalModelProgress>('models:progress', ({ payload: p }) => {
       if (!pending.has(p.id)) return
-      if (p.state === 'downloading') emitLocal('tts:progress', { what: m.label, pct: p.total ? Math.floor((p.received / p.total) * 100) : 0 })
-      else if (p.state === 'done') { pending.delete(p.id); if (!pending.size) resolve() }
-      else if (p.state === 'error') reject(new Error(p.error ?? 'La descarga falló.'))
+      if (p.state === 'downloading') {
+        received.set(p.id, p.received)
+        const got = [...received.entries()].reduce((a, [id, n]) => a + (bytes.has(id) ? n : 0), 0)
+        emitLocal('tts:progress', { what: m.label, pct: total ? Math.floor((got / total) * 100) : 0 })
+      } else if (p.state === 'done') {
+        received.set(p.id, bytes.get(p.id) ?? p.received)
+        pending.delete(p.id)
+        if (!pending.size) resolve()
+      } else if (p.state === 'error') reject(new Error(p.error ?? 'La descarga falló.'))
       else if (p.state === 'cancelled') reject(new Error('Descarga cancelada.'))
     }).then((u) => { un = u })
   })
@@ -291,6 +306,15 @@ async function synthesize(text: string, lang: Lang, voiceId?: string): Promise<U
   if (k) {
     if (!modelReady(KOKORO_MODEL, await listModels())) throw new Error('Falta descargar Kokoro (Ajustes → Servicios de IA → Lectura en voz alta).')
     return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_synth', { voice: 'kokoro', text, speed: s.ttsSpeed, sid: k.sid, lang: k.accent }))
+  }
+  const st = supertonicVoice(id)
+  if (st) {
+    if (!modelReady(SUPERTONIC_MODEL, await listModels())) {
+      throw new Error('Falta descargar Supertonic (Ajustes → Servicios de IA → Lectura en voz alta).')
+    }
+    return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_synth', {
+      voice: 'supertonic', text, speed: s.ttsSpeed, sid: st.sid, lang
+    }))
   }
   if (id.startsWith('sistema:')) {
     return new Uint8Array(await tauriInvoke<ArrayBuffer>('voz_sistema_sintetizar', { voice: id.slice(8), text, speed: s.ttsSpeed }))
@@ -370,12 +394,18 @@ const handlers: Handlers = {
     const piper = LOCAL_MODELS.filter((m) => m.kind === 'tts' && m.voice).map((m): VoiceStatus => ({
       ...VOICE_META[m.voice!], id: m.voice!, engine: 'sherpa-onnx', sizeBytes: m.bytes, sampleUrl: localVoiceSample(m.voice!), installed: modelReady(m, files)
     }))
-    const catalog = [...piper, ...kokoroCatalog(modelReady(KOKORO_MODEL, files)), ...(await systemCatalog())]
+    const catalog = [
+      ...piper,
+      ...supertonicCatalog(modelReady(SUPERTONIC_MODEL, files)),
+      ...kokoroCatalog(modelReady(KOKORO_MODEL, files)),
+      ...(await systemCatalog())
+    ]
     // El motor va dentro de la app: no hay nada que instalar aparte.
     return { piperInstalled: true, voices: catalog.filter((v) => v.installed).map((v) => v.id), catalog }
   },
   'tts:install-piper': () => undefined,
   'tts:install-voice': ({ id }) => {
+    if (supertonicVoice(id)) return downloadAndWait(SUPERTONIC_MODEL)
     if (kokoroVoice(id)) return downloadAndWait(KOKORO_MODEL)
     if (id.startsWith('sistema:')) return undefined
     const m = localVoice(id)
@@ -383,21 +413,33 @@ const handlers: Handlers = {
     return downloadAndWait(m)
   },
   'tts:remove-voice': async ({ id }) => {
+    if (supertonicVoice(id)) {
+      for (const f of [SUPERTONIC_MODEL.id, ...companions(SUPERTONIC_MODEL).map((x) => x.id)]) {
+        await tauriInvoke('models_remove', { id: f })
+      }
+      return
+    }
     const m = localVoice(id)
     if (m) for (const f of [m.id, m.extra!.id]) await tauriInvoke('models_remove', { id: f })
   },
-  'tts:sample': async ({ id }) => {
-    // Kokoro y las voces del teléfono no tienen muestra publicada: la dice el propio teléfono.
+  'tts:sample': async ({ id, lang }) => {
+    // Supertonic, Kokoro y las voces del teléfono no tienen muestra publicada: la dice el teléfono.
+    const st = supertonicVoice(id)
+    if (st) {
+      const l: Lang = lang ?? (await getSettings()).primaryLang
+      return synthesize(SAMPLE_TEXT[l], l, id)
+    }
     const k = kokoroVoice(id)
     if (k || id.startsWith('sistema:')) {
-      const lang: Lang = k ? k.lang : (await listSystemVoices()).find((v) => `sistema:${v.nombre}` === id)?.idioma === 'en' ? 'en' : 'es'
-      return synthesize(SAMPLE_TEXT[lang], lang, id)
+      const l: Lang = k ? k.lang : lang ?? ((await listSystemVoices()).find((v) => `sistema:${v.nombre}` === id)?.idioma === 'en' ? 'en' : 'es')
+      return synthesize(SAMPLE_TEXT[l], l, id)
     }
     if (!localVoice(id)) throw new Error(`La voz ${id} no está disponible en Android.`)
     await netGuard(await getSettings(), 'Muestra de voz', localVoiceSample(id))
     return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_sample', { url: localVoiceSample(id) }))
   },
   'tts:synth': ({ text, lang, voice }) => synthesize(text, lang, voice),
+  'tts:liberar': () => tauriInvoke('tts_liberar'),
 
   'hw:detect': () => ({
     hw: {

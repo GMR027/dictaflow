@@ -16,7 +16,7 @@ export GGML_NATIVE=OFF GGML_CPU_ARM_ARCH="armv8.2-a+dotprod+fp16"
 export ANDROID_API_LEVEL=26 LLAMA_LIB_PROFILE=Release
 # Lectura en voz alta: librerías precompiladas de sherpa-onnx (herramientas/sherpa-onnx.sh las
 # descarga); compilar.sh las copia a gen/android/…/jniLibs para que entren en el APK.
-export SHERPA_ONNX_LIB_DIR="${SHERPA_ONNX_LIB_DIR:-$HOME/.cache/dictaflow-android/sherpa/v1.13.8-arm64}"
+export SHERPA_ONNX_LIB_DIR="${SHERPA_ONNX_LIB_DIR:-$HOME/.cache/dictaflow-android/sherpa/v2.0.3-arm64}"
 # Flags del sistema pensadas para compilar en la PC (p. ej. librerías de cursos) no deben colarse
 # en la compilación para el teléfono.
 unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS

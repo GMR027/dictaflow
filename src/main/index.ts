@@ -343,6 +343,7 @@ function registerIpc(): void {
   handle('tts:remove-voice', (_e, req) => removeVoice(req.id))
   handle('tts:sample', (_e, req) => fetchVoiceSample(req.id))
   handle('tts:synth', async (_e, req) => new Uint8Array(await synthesize(req.text, req.lang, req.voice)))
+  handle('tts:liberar', () => undefined)
 
   handle('project:pick', async () => {
     const dir = await pickDir('Carpeta del proyecto')

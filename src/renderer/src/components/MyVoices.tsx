@@ -57,8 +57,17 @@ export function MyVoices(): JSX.Element {
   useEffect(refresh, [])
 
   useEffect(() => {
-    if (engineKind === 'piper') setPiperVoice(settings.ttsVoice[lang])
-  }, [lang, engineKind, settings.ttsVoice])
+    if (engineKind !== 'piper') return
+    const valid = (id: string): boolean =>
+      (tts?.catalog ?? []).some((v) => v.id === id && v.installed && v.engine === 'sherpa-onnx' && v.langs.includes(lang))
+    // La voz de Ajustes puede ser Kokoro, Supertonic o del teléfono: una voz personal solo puede
+    // leer con una voz Piper instalada.
+    if (valid(settings.ttsVoice[lang])) setPiperVoice(settings.ttsVoice[lang])
+    else {
+      const first = (tts?.catalog ?? []).find((v) => v.installed && v.engine === 'sherpa-onnx' && v.langs.includes(lang))
+      if (first) setPiperVoice(first.id)
+    }
+  }, [lang, engineKind, settings.ttsVoice, tts])
   // Si la frase de prueba es una de ejemplo, cambia con el idioma.
   useEffect(() => {
     setTestPhrase((t) => (TEST_PHRASES.es.includes(t) || TEST_PHRASES.en.includes(t) || t === 'Esta es una prueba de mi voz.' ? TEST_PHRASES[lang][0] : t))
@@ -155,7 +164,7 @@ export function MyVoices(): JSX.Element {
     } catch (e) { setError((e as Error).message) }
   }
 
-  const piperVoices = (tts?.catalog ?? []).filter((v) => v.installed && v.langs.includes(lang))
+  const piperVoices = (tts?.catalog ?? []).filter((v) => v.installed && v.engine === 'sherpa-onnx' && v.langs.includes(lang))
 
   const ANDROID = window.api.platform === 'android'
   const voiceList = (

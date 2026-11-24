@@ -54,7 +54,7 @@ function LiveTranslate(): JSX.Element {
   const opts = useRef({ from, to, speak })
   opts.current = { from, to, speak }
 
-  useEffect(() => () => { void stop() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { void stop(); void speaker.current.dispose() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // La conversación sigue al último mensaje.
   useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }) }, [pairs, draft])
 
