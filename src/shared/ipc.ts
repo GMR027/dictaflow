@@ -105,6 +105,8 @@ export interface IpcContract {
   'meeting:audio-chunk': { req: { sessionId: string; pcm: Float32Array }; res: void }
   'meeting:audio-stop': { req: { sessionId: string }; res: { path: string; durationSec: number } | null }
   'meeting:audio-discard': { req: { sessionId: string }; res: void }
+  /** Lee el WAV de una reunión para escucharlo dentro de la app. */
+  'meeting:audio-read': { req: { path: string }; res: Uint8Array }
 
   'pv:list': { req: void; res: PersonalVoice[] }
   'pv:save': { req: { voice: PersonalVoice }; res: PersonalVoice }

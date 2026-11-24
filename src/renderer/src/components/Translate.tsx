@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { TRANS_LANGS, type Lang, type TransLang } from '@shared/types'
-import { Mic, Segmenter } from '../audio'
+import { applyDictionary } from '@shared/dictionary'
+import { createMic, Segmenter, type MicLike } from '../audio'
 import { LiveTranscriber } from '../live'
 import { PartialTranscriber } from '../partial'
+import { ensureMicPermission, phoneSttBias, phoneSttDisponible } from '../phone-mic'
 import { Speaker } from '../speech'
 import { useApp } from '../store'
 import { keepAwake } from '../wakelock'
@@ -37,7 +39,7 @@ function LiveTranslate(): JSX.Element {
   /** El texto en vivo también en una referencia: al cerrarse la frase pasa a su burbuja. */
   const draftRef = useRef('')
   const setDraft = (t: string): void => { draftRef.current = t; setDraftState(t) }
-  const mic = useRef<Mic | null>(null)
+  const mic = useRef<MicLike | null>(null)
   const seg = useRef<Segmenter | null>(null)
   const unsub = useRef<(() => void) | null>(null)
   const queue = useRef<Promise<void>>(Promise.resolve())
@@ -45,6 +47,7 @@ function LiveTranslate(): JSX.Element {
   const speaker = useRef(new Speaker())
   const live = useRef<LiveTranscriber | null>(null)
   const partial = useRef<PartialTranscriber | null>(null)
+  const phone = useRef<{ unsub: () => void } | null>(null)
   const release = useRef<(() => void) | null>(null)
   const nextId = useRef(1)
   const list = useRef<HTMLDivElement>(null)
@@ -56,6 +59,25 @@ function LiveTranslate(): JSX.Element {
   useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }) }, [pairs, draft])
 
   const update = (id: number, p: Partial<Pair>): void => setPairs((all) => all.map((x) => (x.id === id ? { ...x, ...p } : x)))
+
+  /** Una frase ya transcrita por el motor del teléfono: se añade y se traduce. */
+  const translateFinal = (text: string): void => {
+    if (!text.trim()) return
+    const id = nextId.current++
+    setPairs((p) => [...p, { id, src: text, dst: '', step: 'translating' }])
+    pendingCount.current++
+    queue.current = queue.current.then(async () => {
+      try {
+        const { to: t, speak: sp } = opts.current
+        const dst = await window.api.translate(text, t)
+        update(id, { dst, step: 'done' })
+        if (sp && hasVoice(t)) await speaker.current.say(dst, t)
+      } catch (e) {
+        update(id, { step: 'error' })
+        setError((e as Error).message)
+      } finally { pendingCount.current-- }
+    })
+  }
 
   const handle = (pcm: Float32Array): void => {
     // La frase se cerró: lo que se veía en vivo pasa a una burbuja que se va completando.
@@ -85,9 +107,43 @@ function LiveTranslate(): JSX.Element {
     setError(''); setDraft('')
     try {
       if (source === 'mic') {
-        const m = new Mic({
+        // En Android, el motor on-device traduce la frase en cuanto se cierra, sin Whisper.
+        if ((from === 'es' || from === 'en') && await phoneSttDisponible(settings)) {
+          let unsub: (() => void) | null = null
+          let fallo = false
+          try {
+            unsub = await window.api.phoneStt.on({
+              onPartial: setDraft,
+              onLevel: setLevel,
+              onFinal: (t) => {
+                setDraft('')
+                const text = applyDictionary(t, settings.dictionary)
+                if (text.trim()) translateFinal(text)
+              },
+              onError: (m) => {
+                fallo = true
+                unsub?.()
+                setError(`Voz del teléfono: ${m}`)
+                void stop()
+              }
+            })
+            await ensureMicPermission()
+            await window.api.phoneStt.start({ lang: from, continuous: true, bias: phoneSttBias(settings) })
+            if (fallo) throw new Error('El motor de voz del teléfono falló al arrancar.')
+            phone.current = { unsub }
+            release.current = keepAwake()
+            setOn(true)
+            return
+          } catch {
+            // Si el motor del teléfono falla al arrancar, se usa el micrófono normal.
+            unsub?.()
+            await window.api.phoneStt.cancel().catch(() => undefined)
+          }
+        }
+        const m = createMic({
           deviceId: settings.micDeviceId, mode: 'continuous', pauseMs: PAUSE_MS, onLevel: setLevel, filters: settings.micFilters,
-          onAudio: (c) => live.current?.feed(c), onSegment: handle
+          onAudio: (c) => live.current?.feed(c), onSegment: handle,
+          onEnded: () => { void stop() }
         })
         mic.current = m
         await m.start()
@@ -113,6 +169,21 @@ function LiveTranslate(): JSX.Element {
   }
   const stop = async (): Promise<void> => {
     release.current?.(); release.current = null
+    if (phone.current) {
+      const { unsub } = phone.current
+      phone.current = null
+      try {
+        await window.api.phoneStt.stop()
+      } catch {
+        // El motor ya estaba detenido.
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 120))
+      unsub()
+      speaker.current.stop()
+      setOn(false); setLevel(0); setDraft('')
+      await queue.current
+      return
+    }
     live.current?.stop(); live.current = null
     partial.current?.stop(); partial.current = null
     await mic.current?.stop(); mic.current = null

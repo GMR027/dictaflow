@@ -3,7 +3,7 @@
 // El audio se escribe a disco mientras se graba: no se guarda en memoria (una
 // hora son más de 100 MB) y se puede volver a transcribir o escuchar después.
 import { createWriteStream, mkdirSync, readFileSync, writeFileSync, type WriteStream } from 'fs'
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import { dataDir } from './paths'
 import { encodeWav } from './wav'
 
@@ -72,6 +72,14 @@ export async function stopAudio(sessionId: string): Promise<{ path: string; dura
       resolve({ path: s.path, durationSec: s.samples / SAMPLE_RATE })
     })
   })
+}
+
+/** Lee el WAV de una reunión para escucharlo dentro de la app. */
+export function readAudio(path: string): Uint8Array {
+  const dir = resolve(join(dataDir, 'reuniones'))
+  const abs = resolve(path)
+  if (!abs.startsWith(dir + sep)) throw new Error('El audio no está en la carpeta de reuniones.')
+  return new Uint8Array(readFileSync(abs))
 }
 
 /** Borra la grabación de una sesión (si se cancela). */

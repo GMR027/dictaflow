@@ -5,7 +5,6 @@
 // notas, MP3, copias de seguridad) Rust abre el selector de Android: el usuario elige carpeta y
 // nombre (Descargas, Drive, la carpeta de Obsidian…).
 import { invoke } from '@tauri-apps/api/core'
-import { Mp3Encoder } from '@breezystack/lamejs'
 
 /** Bytes → base64, en trozos (String.fromCharCode con millones de argumentos revienta la pila). */
 export function toBase64(data: Uint8Array | string): string {
@@ -54,20 +53,31 @@ export function wavSamples(wav: Uint8Array): { pcm: Float32Array; rate: number }
  * MP3 que se escribe por partes en un archivo propio de la app: un libro entero no cabe en memoria.
  * Mismo codificador que en escritorio (lamejs, mono, 96 kbps).
  */
+interface EncoderMp3 {
+  encodeBuffer: (pcm: Int16Array) => Uint8Array | Int8Array
+  flush: () => Uint8Array | Int8Array
+}
+
 export class Mp3File {
-  private encoder: Mp3Encoder
+  private encoder: Promise<EncoderMp3> | null = null
   private pending: Uint8Array[] = []
   private pendingBytes = 0
   private started = false
 
-  constructor(private path: string, private rate: number, kbps = 96) {
-    this.encoder = new Mp3Encoder(1, rate, kbps)
+  constructor(private path: string, private rate: number, private kbps = 96) {}
+
+  /** lamejs solo se carga al exportar audio, no al abrir la app. */
+  private motor(): Promise<EncoderMp3> {
+    this.encoder ??= import('@breezystack/lamejs').then(({ Mp3Encoder }) =>
+      new Mp3Encoder(1, this.rate, this.kbps) as unknown as EncoderMp3)
+    return this.encoder
   }
 
   async push(pcm: Float32Array): Promise<void> {
+    const encoder = await this.motor()
     const i16 = new Int16Array(pcm.length)
     for (let i = 0; i < pcm.length; i++) i16[i] = Math.round(Math.max(-1, Math.min(1, pcm[i])) * 32767)
-    for (let o = 0; o < i16.length; o += 1152) this.add(this.encoder.encodeBuffer(i16.subarray(o, o + 1152)))
+    for (let o = 0; o < i16.length; o += 1152) this.add(encoder.encodeBuffer(i16.subarray(o, o + 1152)))
     // Se escribe cada ~256 KB (unos 20 s de audio).
     if (this.pendingBytes >= 256 * 1024) await this.flush()
   }
@@ -80,7 +90,8 @@ export class Mp3File {
   }
 
   async finish(): Promise<void> {
-    this.add(this.encoder.flush())
+    const encoder = await this.motor()
+    this.add(encoder.flush())
     await this.flush()
   }
 

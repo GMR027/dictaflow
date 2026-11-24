@@ -8,7 +8,7 @@
 //     de Rust, que se van añadiendo por fases;
 //   • lo que no existe en Android (Ollama, agentes CLI, audio del sistema, píldora, desinstalar)
 //     falla con un mensaje claro; la interfaz oculta esas opciones con `api.platform`.
-import { invoke as tauriInvoke } from '@tauri-apps/api/core'
+import { addPluginListener, Channel, invoke as tauriInvoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getVersion } from '@tauri-apps/api/app'
 import type { IpcChannel, IpcContract, IpcEvent, IpcEvents, IpcReq, IpcRes, SttPriority, TranscribeResult } from '@shared/ipc'
@@ -17,14 +17,17 @@ import { normalizeModel } from '@shared/providers'
 import { applyDictionary } from '@shared/dictionary'
 import { pcmToB64, whisperPrompt } from './pcm'
 import { KOKORO_MODEL, KOKORO_VOICES, kokoroId, kokoroLabel, kokoroVoice } from '@shared/kokoro'
-import { createLlmTasks, type ContentAction, type LlmLimits } from '@shared/llm-tasks'
+import { createLlmTasks, systemPrompt, type CompleteOpts, type ContentAction, type LlmLimits } from '@shared/llm-tasks'
 import { companions, liveModelFor, LOCAL_MODELS, localVoice, totalBytes, localVoiceSample, modelReady, type DeviceInfo, type LocalModel, type LocalModelFile, type LocalModelProgress } from '@shared/local-models'
 import { VOICE_META } from '@shared/voice-catalog'
 import type { VoiceStatus } from '@shared/voice'
 import type { UpdateInfo } from '@shared/update'
+import type { PhoneSttApi, PhoneSttInfo, PhoneSttStartResult } from '@shared/phone-stt'
+import type { NativeMicApi, NativeMicResult } from '@shared/native-mic'
 import { createApi, type Invoke, type On } from '../../../preload/api'
 import { createDataHandlers, netGuard } from './android-datos'
 import { auraBusy, watchPlayback } from '../aura'
+import { record } from '../metrics'
 
 /** Error para lo que aún no existe en Android (o no existirá). */
 class NoDisponible extends Error {
@@ -47,8 +50,12 @@ const docSet = (name: string, data: unknown): Promise<void> => tauriInvoke('doc_
 // normalizado. Se escriben de inmediato (no hay cierre de proceso que esperar en Android).
 let settings: Settings | null = null
 
-/** En Android no hay modelo de voz hasta que el usuario descarga uno (los de escritorio no sirven). */
-const ANDROID_DEFAULTS: Partial<Settings> = { sttModel: '', localLlm: '' }
+/**
+ * En Android no hay modelo de voz hasta que el usuario descarga uno (los de escritorio no sirven).
+ * La redacción es «inteligente» por defecto: el dictado limpio se queda en 0 s y el LLM solo se
+ * usa cuando la frase lo necesita.
+ */
+const ANDROID_DEFAULTS: Partial<Settings> = { sttModel: '', localLlm: '', sttPhone: 'auto', rewritePolicy: 'smart' }
 
 async function getSettings(): Promise<Settings> {
   if (settings) return settings
@@ -101,15 +108,99 @@ const ANDROID_LIMITS: LlmLimits = { chunkChars: 8_000, maxChars: 8_000, minutesC
 
 interface LlmRespuesta { text: string; prompt_tokens: number; reused_tokens: number; tokens: number; prompt_ms: number; ms: number }
 
-async function localComplete(system: string, msgs: ChatMsg[], temperature = 0.4): Promise<string> {
+async function localComplete(system: string, msgs: ChatMsg[], temperature = 0.4, opts: CompleteOpts = {}): Promise<string> {
   const model = (await getSettings()).localLlm
   if (!model) throw new Error('Descarga un modelo de redacción en Ajustes → Servicios de IA.')
-  const r = await tauriInvoke<LlmRespuesta>('llm_complete', { model, system, msgs, temperature })
+  const peticion = { model, system, msgs, temperature, maxTokens: opts.maxTokens }
+  let r: LlmRespuesta
+  if (opts.onToken) {
+    // Channel de Tauri: cada token llega a la interfaz según se genera, sin esperar al final.
+    const stream = new Channel<string>()
+    stream.onmessage = (t) => opts.onToken?.(t)
+    r = await tauriInvoke<LlmRespuesta>('llm_complete_stream', { peticion, stream })
+  } else {
+    r = await tauriInvoke<LlmRespuesta>('llm_complete', { peticion })
+  }
+  record('llm_prompt_ms', r.prompt_ms)
   console.debug(`[llm] ${r.prompt_tokens} tokens (${r.reused_tokens} ya leídos) en ${r.prompt_ms} ms · ${r.tokens} generados · ${r.ms} ms en total`)
   return r.text
 }
 
 const llm = createLlmTasks({ complete: localComplete, settings: getSettings, limits: ANDROID_LIMITS })
+
+// ── Micrófono nativo ─────────────────────────────────────────────────────────────────────
+const NATIVE_MIC_PLUGIN = 'captura'
+
+const nativeMic: NativeMicApi = {
+  start: async (opts) => {
+    await tauriInvoke('captura_iniciar', { wav: opts.wav, session: opts.session })
+  },
+  stop: (discard) => tauriInvoke<NativeMicResult>('captura_detener', { descartar: discard }),
+  cancel: async () => {
+    await tauriInvoke('captura_cancelar')
+  },
+  onAudio: async (cb) => {
+    const listener = await addPluginListener<{ data: string }>(NATIVE_MIC_PLUGIN, 'audio', (p) => {
+      const raw = p.data ?? ''
+      if (!raw) return
+      const bin = atob(raw)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      cb(bytes)
+    })
+    return () => void listener.unregister()
+  },
+  onStop: async (cb) => {
+    const listener = await addPluginListener<{ wavPath: string | null; durationSec: number }>(
+      NATIVE_MIC_PLUGIN, 'detenido',
+      (p) => cb({ wavPath: p.wavPath ?? null, durationSec: p.durationSec ?? 0 })
+    )
+    return () => void listener.unregister()
+  }
+}
+
+// ── Motor de voz del teléfono ─────────────────────────────────────────────────────────────
+/**
+ * Solo on-device: si el teléfono no lo trae, `iniciar` falla y el dictado cae a Whisper. Los
+ * eventos llegan por el plugin nativo (`ReconocimientoPlugin.kt`) con `addPluginListener`.
+ */
+const PHONE_STT_PLUGIN = 'reconocimiento'
+
+const phoneStt: PhoneSttApi = {
+  available: () => tauriInvoke<PhoneSttInfo>('reconocimiento_disponibilidad'),
+  start: (opts) => tauriInvoke<PhoneSttStartResult>('reconocimiento_iniciar', {
+    lang: opts.lang,
+    continuo: opts.continuous,
+    offline: true,
+    bias: opts.bias
+  }),
+  stop: async () => {
+    await tauriInvoke('reconocimiento_detener')
+  },
+  cancel: async () => {
+    await tauriInvoke('reconocimiento_cancelar')
+  },
+  on: async (handlers) => {
+    const unsubs: (() => void)[] = []
+    const listen = async <T>(event: string, cb: (p: T) => void): Promise<void> => {
+      const l = await addPluginListener<T>(PHONE_STT_PLUGIN, event, cb)
+      unsubs.push(() => void l.unregister())
+    }
+    try {
+      await listen<{ texto: string }>('parcial', (p) => handlers.onPartial(p.texto ?? ''))
+      await listen<{ texto: string }>('final', (p) => handlers.onFinal(p.texto ?? ''))
+      await listen<{ nivel: number }>('nivel', (p) => handlers.onLevel(p.nivel ?? 0))
+      await listen<{ mensaje: string }>('error', (p) => handlers.onError(p.mensaje ?? 'Error del motor de voz.'))
+      await listen<{ estado: string }>('estado', (p) => handlers.onState?.(p.estado ?? ''))
+    } catch (e) {
+      for (const u of unsubs) u()
+      throw e
+    }
+    return () => {
+      for (const u of unsubs) u()
+    }
+  }
+}
 
 // ── Descargas de modelos ────────────────────────────────────────────────────────────────────
 const listModels = (): Promise<LocalModelFile[]> => tauriInvoke<LocalModelFile[]>('models_list')
@@ -360,8 +451,12 @@ const handlers: Handlers = {
   'history:save': ({ items }) => docSet('history', items),
 
   'llm:warm': async () => {
-    const model = (await getSettings()).localLlm
-    if (model) await tauriInvoke('llm_load', { model }).catch(() => undefined)
+    const s = await getSettings()
+    if (!s.localLlm) return
+    await tauriInvoke('llm_load', { model: s.localLlm }).catch(() => undefined)
+    // Deja leído el prompt de sistema: la primera frase no paga su lectura.
+    const system = systemPrompt({ text: '', lang: s.primaryLang, tone: s.tone, mode: 'rewrite' }, '')
+    await tauriInvoke('llm_prepare', { peticion: { model: s.localLlm, system } }).catch(() => undefined)
   },
   'llm:rewrite': async (req) => {
     // Modo programador: el destino sale de los ajustes; en el teléfono no hay carpeta de proyecto.
@@ -478,4 +573,17 @@ const on: On = <K extends IpcEvent>(channel: K, cb: (payload: IpcEvents[K]) => v
 // El contrato completo debe seguir siendo el de escritorio: si cambia, el compilador avisa aquí.
 export type _Contract = IpcContract
 
-window.api = createApi(invoke, on, 'android')
+const api = createApi(invoke, on, 'android')
+api.phoneStt = phoneStt
+api.nativeMic = nativeMic
+api.initialView = () => tauriInvoke<{ vista: string | null; texto: string | null }>('vista_inicial').catch(() => null)
+
+/** En Android la redacción se transmite token a token desde llama.cpp. */
+api.rewriteStream = async (req, onToken) => {
+  if (req.mode !== 'rewrite') req = { ...req, target: (await getSettings()).promptTarget }
+  const r = await llm.rewriteGuarded(req, { onToken })
+  if (r.reverted) emitLocal('llm:notice', 'La redacción cambiaba cifras u horas: se conservó el texto dictado.')
+  return r.text
+}
+
+window.api = api

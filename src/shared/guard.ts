@@ -67,6 +67,11 @@ export function numberValues(text: string): number[] {
   return out.filter((v) => v !== 1)
 }
 
+/** true si el texto contiene alguna cifra, hora o cantidad que merezca protegerse. */
+export function hasNumbers(text: string): boolean {
+  return numberValues(text).length > 0
+}
+
 /** true si el texto redactado conserva exactamente los mismos valores numéricos que el original. */
 export function numbersPreserved(original: string, rewritten: string): boolean {
   const a = numberValues(original).sort((x, y) => x - y)

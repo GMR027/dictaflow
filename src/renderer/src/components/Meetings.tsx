@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Meeting, MeetingTask, Segment } from '@shared/types'
-import { Mic, Segmenter } from '../audio'
+import { createMic, Segmenter, type MicLike } from '../audio'
 import { fmtTime, toSubtitles } from '../audioio'
 import { download } from '../textutil'
 import { useApp } from '../store'
@@ -17,6 +17,8 @@ type Source = 'mic' | 'system' | 'both'
 const SRC: Record<Source, string> = { mic: '🎤 Micrófono', system: '🔊 Audio del sistema', both: '🎤+🔊 Ambos' }
 /** Android no deja captar el audio de otras apps: en el teléfono las reuniones son por micrófono. */
 const SOURCES = (Object.keys(SRC) as Source[]).filter((k) => window.api.platform !== 'android' || k === 'mic')
+/** En Android el micrófono es nativo y el WAV lo escribe el servicio de captura. */
+const NATIVE = window.api.platform === 'android'
 
 const toMarkdown = (m: Meeting): string =>
   `# ${m.title}\n\n_${new Date(m.createdAt).toLocaleString()} · ${fmtTime(m.durationSec)}_\n\n${m.summary ? m.summary + '\n\n---\n\n' : ''}## Transcripción\n\n` +
@@ -60,7 +62,9 @@ export function Meetings(): JSX.Element {
   const [level, setLevel] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [draft, setDraft] = useState('')
-  const mic = useRef<Mic | null>(null)
+  const [audioUrl, setAudioUrl] = useState('')
+  const [audioError, setAudioError] = useState('')
+  const mic = useRef<MicLike | null>(null)
   const sysSeg = useRef<Segmenter | null>(null)
   const unsub = useRef<(() => void) | null>(null)
   const backlog = useRef<Pending[]>([])
@@ -82,6 +86,8 @@ export function Meetings(): JSX.Element {
   const record = (chunk: Float32Array): void => {
     if (!session.current) return
     live$.current?.feed(chunk)
+    // En Android el WAV lo escribe CapturaService; no hay que mandar audio por el puente.
+    if (NATIVE) return
     audioBuf.current.push(chunk)
     const total = audioBuf.current.reduce((n, c) => n + c.length, 0)
     if (total < 16000) return
@@ -113,6 +119,28 @@ export function Meetings(): JSX.Element {
 
   const persist = (next: Meeting[]): void => { setMeetings(next); void window.api.saveCollection('meetings', next) }
   const current = meetings.find((m) => m.id === sel) ?? null
+
+  /** El WAV de la reunión se lee al abrirla y se reproduce dentro de la app. */
+  useEffect(() => {
+    let url = ''
+    let vivo = true
+    setAudioUrl('')
+    setAudioError('')
+    if (!current?.audioPath) return
+    void window.api.meetingAudio(current.audioPath).then((bytes) => {
+      if (!vivo) return
+      // Copia a un ArrayBuffer normal: el tipo de `Uint8Array` de Tauri puede ser ArrayBufferLike.
+      const buffer = bytes.slice().buffer as ArrayBuffer
+      url = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }))
+      setAudioUrl(url)
+    }).catch(() => {
+      if (vivo) setAudioError('No se pudo cargar el audio de la reunión.')
+    })
+    return () => {
+      vivo = false
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [current?.id, current?.audioPath])
 
   /** Guarda la reunión en curso tal como va (cada pocas frases), para no perderla si Android cierra la app. */
   const checkpoint = (force = false): void => {
@@ -170,7 +198,8 @@ export function Meetings(): JSX.Element {
     const tag = (s: string): string | undefined => (source === 'both' ? s : undefined)
     const clock = performance.now()
     session.current = crypto.randomUUID()
-    await window.api.startMeetingAudio(session.current)
+    // En Android el WAV lo escribe el micrófono nativo; en escritorio, el proceso principal.
+    if (!NATIVE) await window.api.startMeetingAudio(session.current)
     const now = new Date()
     const m: Meeting = {
       id: session.current, title: `Reunión ${now.toLocaleDateString()} ${now.toLocaleTimeString().slice(0, 5)}`,
@@ -181,7 +210,12 @@ export function Meetings(): JSX.Element {
     try {
       if (source !== 'system') {
         micOffset.current = (performance.now() - clock) / 1000
-        mic.current = new Mic({ deviceId: settings.micDeviceId, mode: 'continuous', onLevel: setLevel, filters: settings.micFilters, onAudio: record, onSegment: (p, t) => enqueue(p, t, micOffset.current, tag('Yo')) })
+        mic.current = createMic({
+          deviceId: settings.micDeviceId, mode: 'continuous', onLevel: setLevel, filters: settings.micFilters,
+          onAudio: record, onSegment: (p, t) => enqueue(p, t, micOffset.current, tag('Yo')),
+          wav: NATIVE, session: session.current,
+          onEnded: () => { void stop() }
+        })
         await mic.current.start()
         live$.current = await LiveTranscriber.create(settings.primaryLang, setDraft)
       }
@@ -200,15 +234,18 @@ export function Meetings(): JSX.Element {
     if (!session.current) return
     const id = session.current
     release.current?.(); release.current = null
-    await mic.current?.stop(); mic.current = null
+    const micResult = await mic.current?.stop(discard); mic.current = null
     live$.current?.stop(); live$.current = null
     if (sysSeg.current) { await window.api.stopSystemAudio(); unsub.current?.(); sysSeg.current.flush(); sysSeg.current = null }
     setRecording(false); setLevel(0); setDraft('')
     await drain()
-    const audio = await window.api.stopMeetingAudio(id)
+    const nativeAudio = micResult && typeof micResult === 'object' && micResult.wavPath
+      ? { path: micResult.wavPath, durationSec: micResult.durationSec ?? 0 }
+      : null
+    const audio = NATIVE ? nativeAudio : await window.api.stopMeetingAudio(id)
     session.current = ''
     if (discard || !segs.current.length) {
-      if (discard) await window.api.discardMeetingAudio(id)
+      if (discard && !NATIVE) await window.api.discardMeetingAudio(id)
       setMeetings((all) => { const next = all.filter((m) => m.id !== id); void window.api.saveCollection('meetings', next); return next })
       return
     }
@@ -254,6 +291,18 @@ export function Meetings(): JSX.Element {
 
   const shown = recording ? live : current?.segments ?? []
   const done = meetings.filter((m) => m.id !== session.current)
+
+  /** En Android el WAV vive en `archivos/capturas`; se pasa la ruta relativa al selector. */
+  const saveAudio = async (m: Meeting): Promise<void> => {
+    if (!m.audioPath) return
+    try {
+      const ruta = NATIVE ? (m.audioPath.split('/archivos/')[1] ?? m.audioPath) : m.audioPath
+      const nombre = await window.api.exportFile(ruta)
+      if (nombre) flash(`💾 Audio guardado: ${nombre}`)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   const exportPdf = async (m: Meeting): Promise<void> => {
     try {
@@ -329,9 +378,19 @@ export function Meetings(): JSX.Element {
               <MoreMenu items={[
                 { label: '📄 Exportar PDF', onClick: () => void exportPdf(current) },
                 { label: '⬇ Subtítulos (.srt)', onClick: () => void download(`${current.title}.srt`, toSubtitles(current.segments, 'srt')) },
+                ...(current.audioPath ? [{ label: '💾 Guardar audio', onClick: () => void saveAudio(current) }] : []),
                 { label: '🗑 Eliminar reunión', danger: true, onClick: () => { persist(meetings.filter((m) => m.id !== current.id)); setSel(null) } }
               ]} />
             </div>
+            {current.audioPath && (
+              <div className="player">
+                {audioUrl
+                  ? <audio controls preload="metadata" src={audioUrl} aria-label="Audio de la reunión" />
+                  : audioError
+                    ? <span className="warn">{audioError}</span>
+                    : <span className="muted">Cargando audio…</span>}
+              </div>
+            )}
             {busy && <BotTyping label={busy.replace(/…$/, '')} />}
           </>
         )}

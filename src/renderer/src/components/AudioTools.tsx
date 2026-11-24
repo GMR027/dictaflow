@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Lang, Segment } from '@shared/types'
-import { Mic, SAMPLE_RATE, concat } from '../audio'
+import { createMic, SAMPLE_RATE, concat, type MicLike } from '../audio'
 import { decodeToMono16k, encodeWav, fmtTime, toSubtitles, wavToPcm } from '../audioio'
 import { Speaker } from '../speech'
 import { download, splitText } from '../textutil'
@@ -36,7 +36,7 @@ function SpeechToText(): JSX.Element {
   const [drag, setDrag] = useState(false)
   const [modelReady, setModelReady] = useState<boolean | null>(null)
   const [prep, setPrep] = useState('')
-  const mic = useRef<Mic | null>(null)
+  const mic = useRef<MicLike | null>(null)
   const lang = settings.primaryLang
 
   useEffect(() => {
@@ -75,9 +75,10 @@ function SpeechToText(): JSX.Element {
       await mic.current.stop(); mic.current = null; setRecording(false); setLevel(0)
       return
     }
-    const m = new Mic({
+    const m = createMic({
       deviceId: settings.micDeviceId, mode: 'controlled', onLevel: setLevel, filters: settings.micFilters,
-      onSegment: (p) => void load(`grabacion-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.wav`, encodeWav(p), p)
+      onSegment: (p) => void load(`grabacion-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.wav`, encodeWav(p), p),
+      onEnded: () => { setRecording(false); setLevel(0) }
     })
     try { await m.start(); mic.current = m; setRecording(true) } catch (e) { setStatus(`Micrófono: ${(e as Error).message}`) }
   }

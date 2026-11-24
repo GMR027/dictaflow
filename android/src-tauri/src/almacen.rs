@@ -28,6 +28,7 @@ pub fn nombre_valido(nombre: &str) -> Result<&str, String> {
     if ok { Ok(nombre) } else { Err(format!("Nombre de documento no válido: «{nombre}».")) }
 }
 
+#[derive(Clone)]
 pub struct Almacen {
     dir: PathBuf,
 }
@@ -59,7 +60,8 @@ impl Almacen {
     pub fn escribir(&self, nombre: &str, data: Value) -> Result<(), String> {
         let ruta = self.ruta(nombre)?;
         let doc = Documento { version: VERSION_FORMATO, data };
-        escribir_atomico(&ruta, serde_json::to_vec_pretty(&doc).map_err(|e| e.to_string())?.as_slice())
+        // Sin pretty: los documentos no se editan a mano y en el teléfono cada byte cuenta.
+        escribir_atomico(&ruta, serde_json::to_vec(&doc).map_err(|e| e.to_string())?.as_slice())
     }
 
     /// Borra un documento. Si no existe, no pasa nada.

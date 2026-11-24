@@ -6,7 +6,9 @@ import { AIServices } from './AIServices'
 import { LocalModels } from './LocalModels'
 import { BackupCard, DiagnosticsPanel } from './Diagnostics'
 import { Performance } from './Performance'
+import { PhoneSttSettings } from './PhoneStt'
 import { Updates } from './Updates'
+import { UiIcon } from './UiIcon'
 import { useTtsStatus } from './TtsSetup'
 
 /** En Android se ocultan las secciones que solo existen en escritorio (Piper, Ollama, atajos, desinstalar…). */
@@ -76,8 +78,8 @@ function General(): JSX.Element {
         <section className="card">
           <h2>Apariencia</h2>
           <div className="seg" role="radiogroup" aria-label="Tema">
-            {([['system', '📱 Sistema'], ['dark', '🌙 Oscuro'], ['light', '☀ Claro']] as const).map(([t, label]) => (
-              <button key={t} role="radio" aria-checked={settings.theme === t} className={settings.theme === t ? 'on' : ''} onClick={() => void patchSettings({ theme: t })}>{label}</button>
+            {([['system', 'Sistema', 'monitor'], ['dark', 'Oscuro', 'moon'], ['light', 'Claro', 'sun']] as const).map(([t, label, icon]) => (
+              <button key={t} role="radio" aria-checked={settings.theme === t} className={settings.theme === t ? 'on' : ''} onClick={() => void patchSettings({ theme: t })}><UiIcon id={icon} /> {label}</button>
             ))}
           </div>
         </section>
@@ -251,19 +253,24 @@ export function Settings(): JSX.Element {
     return (
       <div className="view">
         <div className="seg tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}>General</button>
-          <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>🤖 Servicios de IA</button>
+          <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}><UiIcon id="sliders" /> General</button>
+          <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}><UiIcon id="sparkles" /> Servicios de IA</button>
         </div>
-        {tab === 'ai' ? <section className="card"><h2>Modelos de IA en este teléfono</h2><LocalModels /></section> : <General />}
+        {tab === 'ai' ? (
+          <>
+            <PhoneSttSettings />
+            <section className="card"><h2>Modelos de IA en este teléfono</h2><LocalModels /></section>
+          </>
+        ) : <General />}
       </div>
     )
   }
   return (
     <div className="view">
       <div className="seg tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}>General</button>
-        <button role="tab" aria-selected={tab === 'perf'} className={tab === 'perf' ? 'on' : ''} onClick={() => setTab('perf')}>⚡ Rendimiento</button>
-        <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}>🤖 Servicios de IA</button>
+        <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}><UiIcon id="sliders" /> General</button>
+        <button role="tab" aria-selected={tab === 'perf'} className={tab === 'perf' ? 'on' : ''} onClick={() => setTab('perf')}><UiIcon id="gauge" /> Rendimiento</button>
+        <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}><UiIcon id="sparkles" /> Servicios de IA</button>
       </div>
       {tab === 'general' ? <General /> : tab === 'ai' ? <AIServices /> : <Performance />}
     </div>

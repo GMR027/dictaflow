@@ -28,6 +28,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'ui-dist'),
     emptyOutDir: true,
+    // Las pantallas se cargan con React.lazy; no hace falta forzar trozos a mano.
     rollupOptions: { input: resolve(root, 'src/renderer/index.html') }
   }
 })

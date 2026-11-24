@@ -27,7 +27,7 @@ import { diagnostics } from './diagnostics'
 import { createBackup, restoreFromBuffer } from './backup'
 import { generatePdf } from './pdf'
 import { dueEventReminders, dueReminders, fromIcs, listEvents, listReminders, removeEvent, removeReminder, saveEvent, saveReminder, toIcs } from './calendar'
-import { discardAudio, pushAudio, startAudio, stopAudio } from './meeting-audio'
+import { discardAudio, pushAudio, readAudio, startAudio, stopAudio } from './meeting-audio'
 import { listAutomations, removeAutomation, runAutomation, saveAutomation, STEP_INFO, type StepType } from './automations'
 import {
   checkEngine, cloneEngineUrl, listGenerated, listPersonalVoices, listRecordings,
@@ -298,6 +298,7 @@ function registerIpc(): void {
   handle('meeting:audio-chunk', (_e, req) => { pushAudio(req.sessionId, req.pcm) })
   handle('meeting:audio-stop', (_e, req) => stopAudio(req.sessionId))
   handle('meeting:audio-discard', (_e, req) => { discardAudio(req.sessionId) })
+  handle('meeting:audio-read', (_e, req) => readAudio(req.path))
 
   handle('pv:list', () => listPersonalVoices())
   handle('pv:save', (_e, req) => savePersonalVoice(req.voice))

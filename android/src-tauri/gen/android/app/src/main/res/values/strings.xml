@@ -1,4 +1,8 @@
 <resources>
     <string name="app_name">"DictaFlow"</string>
     <string name="main_activity_title">"DictaFlow"</string>
+    <string name="shortcut_dictar">Dictar</string>
+    <string name="shortcut_dictar_long">Empezar a dictar</string>
+    <string name="shortcut_traducir">Traducir</string>
+    <string name="shortcut_traducir_long">Traducción en vivo</string>
 </resources>

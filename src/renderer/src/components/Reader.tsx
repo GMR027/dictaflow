@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Lang, LibraryDoc, LibraryMeta } from '@shared/types'
 import { concat } from '../audio'
-import { importDocument } from '../docs'
 import { Speaker } from '../speech'
 import { splitText } from '../textutil'
 import { useApp } from '../store'
@@ -45,6 +44,8 @@ export function Reader(): JSX.Element {
     if (!f) return
     setError(''); setBusy('Importando…')
     try {
+      // PDF.js y JSZip solo se cargan al importar un documento, no al abrir el lector.
+      const { importDocument } = await import('../docs')
       const d = await importDocument(f.name, new Uint8Array(await f.arrayBuffer()))
       await window.api.saveLibraryDoc(d)
       refreshList()

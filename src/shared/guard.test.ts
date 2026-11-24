@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { numberValues, numbersPreserved } from './guard'
+import { hasNumbers, numberValues, numbersPreserved } from './guard'
+
+describe('hasNumbers', () => {
+  it('solo activa la protección cuando hay algo que proteger', () => {
+    expect(hasNumbers('nos vemos a las 10')).toBe(true)
+    expect(hasNumbers('treinta personas')).toBe(true)
+    expect(hasNumbers('hola, ¿qué tal?')).toBe(false)
+    expect(hasNumbers('una casa')).toBe(false)
+  })
+})
 
 describe('numberValues', () => {
   it('entiende dígitos con separadores', () => {

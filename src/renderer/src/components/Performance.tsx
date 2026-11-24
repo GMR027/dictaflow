@@ -196,6 +196,15 @@ export function Performance(): JSX.Element {
           <input type="checkbox" checked={settings.autoRewrite} onChange={(e) => void patchSettings({ autoRewrite: e.target.checked })} /> Redactar automáticamente
         </label>
         <Help>Redacta solo cuando termina de transcribir. La transcripción original se muestra siempre primero, sin esperar a la IA. Si lo apagas, redactas con el botón cuando quieras.</Help>
+        {settings.autoRewrite && (
+          <label>Cuándo redactar
+            <select value={settings.rewritePolicy} onChange={(e) => void patchSettings({ rewritePolicy: e.target.value as 'smart' | 'always' })}>
+              <option value="smart">Inteligente: solo si la frase lo necesita (recomendado en el teléfono)</option>
+              <option value="always">Siempre: toda frase pasa por la IA</option>
+            </select>
+          </label>
+        )}
+        <Help>«Inteligente» no llama al modelo cuando el dictado ya llega limpio y corto (con puntuación). Así el texto aparece al instante; el LLM queda para frases largas, con muletillas o cuando eliges un tono. En el teléfono la espera se limita a 0,4 s para que la redacción vaya por delante del dictado.</Help>
         <label>Espera antes de redactar: {(settings.rewriteDelayMs / 1000).toFixed(1)} s
           <input type="range" min={500} max={6000} step={250} value={settings.rewriteDelayMs} onChange={(e) => void patchSettings({ rewriteDelayMs: Number(e.target.value) })} />
         </label>

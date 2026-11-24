@@ -6,17 +6,21 @@ interface FakeMic { opts: { pauseMs?: number; mode: string; onSegment: (p: Float
 const mics: FakeMic[] = []
 const partials: { started: boolean; stopped: boolean }[] = []
 
-vi.mock('./audio', () => ({
-  Mic: class {
+vi.mock('./audio', () => {
+  class MicFalso {
     started = false
     stopped: boolean | 'discard' = false
     constructor(public opts: FakeMic['opts']) { mics.push(this as unknown as FakeMic) }
     async start(): Promise<void> { if (failMic) throw new Error('sin permiso'); this.started = true }
     snapshot(): null { return null }
     async stop(discard = false): Promise<void> { this.stopped = discard ? 'discard' : true }
-  },
-  listMics: async () => []
-}))
+  }
+  return {
+    Mic: MicFalso,
+    createMic: (opts: FakeMic['opts']) => new MicFalso(opts),
+    listMics: async () => []
+  }
+})
 vi.mock('./partial', () => ({
   PartialTranscriber: class {
     s = { started: false, stopped: false }
@@ -35,24 +39,51 @@ const defer = <T,>(): Deferred<T> => {
   return { promise, resolve, reject }
 }
 
-let api: Record<string, ReturnType<typeof vi.fn>>
+let api: Record<string, any>
 let settings: Settings
+let phoneHandlers: {
+  onPartial: (t: string) => void
+  onFinal: (t: string) => void
+  onLevel: (n: number) => void
+  onError: (m: string) => void
+} | null = null
 const seg = (): Float32Array => new Float32Array(16000)
 const tick = async (ms = 0): Promise<void> => { await vi.advanceTimersByTimeAsync(ms) }
 
 async function load(over: Partial<Settings> = {}) {
   vi.resetModules()
-  mics.length = 0; partials.length = 0; failMic = false
+  mics.length = 0; partials.length = 0; failMic = false; phoneHandlers = null
   settings = { ...DEFAULT_SETTINGS, mode: 'continuous', ...over }
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    writable: true,
+    value: { mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } }
+  })
   api = {
     getSettings: vi.fn(async () => settings),
     saveSettings: vi.fn(async (p: Partial<Settings>) => (settings = { ...settings, ...p })),
     onSttProgress: vi.fn(), onToggleDictation: vi.fn(), onLlmNotice: vi.fn(),
+    initialView: vi.fn(async () => null),
     loadStt: vi.fn(async () => undefined), warmLLM: vi.fn(async () => undefined),
     transcribe: vi.fn(async () => ({ text: 'hola', segments: [], ms: 1 })),
     rewrite: vi.fn(async (r: { text: string }) => `R(${r.text})`),
     copy: vi.fn(), setPill: vi.fn(), notify: vi.fn()
   }
+  api.platform = 'linux'
+  api.phoneStt = {
+    available: vi.fn(async () => ({ onDevice: false, sistema: false, motor: 'ninguno' })),
+    start: vi.fn(async () => ({ onDevice: false })),
+    stop: vi.fn(async () => undefined),
+    cancel: vi.fn(async () => undefined),
+    on: vi.fn(async (h: typeof phoneHandlers) => { phoneHandlers = h; return () => { phoneHandlers = null } })
+  }
+  // La interfaz usa `rewriteStream`; en la prueba se resuelve con el mismo simulador de `rewrite`.
+  api.rewriteStream = vi.fn(async (r: { text: string }, onToken: (t: string) => void) => {
+    const rewrite = api.rewrite as unknown as (req: { text: string }) => Promise<unknown>
+    const out = (await rewrite(r)) as string
+    onToken(out)
+    return out
+  })
   ;(globalThis as Record<string, unknown>).window = { api }
   const { useApp } = await import('./store')
   await useApp.getState().init()
@@ -300,6 +331,60 @@ describe('redacción automática', () => {
     expect(api.rewrite).not.toHaveBeenCalled()
     await app.getState().rewrite('rewrite')
     expect(api.rewrite).toHaveBeenCalledOnce()
+  })
+
+  it('con política inteligente no llama al LLM para una frase limpia y corta', async () => {
+    const app = await load({ rewritePolicy: 'smart', rewriteDelayMs: 100 })
+    api.transcribe.mockResolvedValueOnce({ text: 'Hola, ¿qué tal?', segments: [], ms: 1 })
+    await app.getState().start()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(1000)
+    expect(api.rewrite).not.toHaveBeenCalled()
+    expect(app.getState().raw).toBe('Hola, ¿qué tal?')
+  })
+
+  it('con el motor del teléfono no abre el micrófono del WebView y usa el texto final', async () => {
+    const app = await load({ sttPhone: 'auto' })
+    api.platform = 'android'
+    api.phoneStt.available.mockResolvedValue({ onDevice: true, sistema: true, motor: 'on-device' })
+    api.phoneStt.start.mockResolvedValue({ onDevice: true, lang: 'es-ES' })
+    await app.getState().start()
+    expect(app.getState().recording).toBe(true)
+    expect(mics).toHaveLength(0)
+    expect(api.phoneStt.start).toHaveBeenCalledOnce()
+    phoneHandlers!.onPartial('hola')
+    await tick()
+    expect(app.getState().draft).toBe('hola')
+    phoneHandlers!.onFinal('hola, ¿qué tal?')
+    await tick()
+    expect(app.getState().raw).toBe('hola, ¿qué tal?')
+    expect(app.getState().draft).toBe('')
+    const stopping = app.getState().stop()
+    await tick(200)
+    await stopping
+    expect(api.phoneStt.stop).toHaveBeenCalledOnce()
+    expect(app.getState().recording).toBe(false)
+  })
+
+  it('cae a Whisper si el teléfono no tiene motor on-device', async () => {
+    const app = await load({ sttPhone: 'auto' })
+    api.platform = 'android'
+    api.phoneStt.available.mockResolvedValue({ onDevice: false, sistema: true, motor: 'sistema' })
+    await app.getState().start()
+    expect(api.phoneStt.start).not.toHaveBeenCalled()
+    expect(app.getState().recording).toBe(true)
+    expect(mics).toHaveLength(1)
+    expect(mics[0].started).toBe(true)
+  })
+
+  it('con política inteligente añade la frase limpia a lo que ya estaba redactado', async () => {
+    const app = await load({ rewritePolicy: 'smart', rewriteDelayMs: 100 })
+    api.transcribe.mockResolvedValueOnce({ text: 'eh, uno', segments: [], ms: 1 }).mockResolvedValueOnce({ text: 'Dos, limpio.', segments: [], ms: 1 })
+    await app.getState().start()
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(100)
+    expect(app.getState().polished).toBe('R(eh, uno)')
+    mics[0].opts.onSegment(seg(), 0, { silenceMs: 900, speechMs: 1000 }); await tick(1000)
+    expect(api.rewrite).toHaveBeenCalledOnce()
+    expect(app.getState().polished).toBe('R(eh, uno) Dos, limpio.')
   })
 })
 

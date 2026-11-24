@@ -5,9 +5,28 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data:" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DictaFlow</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #1f1f1f; }
+      #root .boot {
+        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 14px; background: #1f1f1f; color: #a6a6a6;
+        font: 15px system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      #root .boot p { margin: 0; }
+      #root .boot-mark { width: 48px; height: 48px; border-radius: 14px; background: #3584e4; }
+      @media (prefers-color-scheme: light) {
+        html, body, #root .boot { background: #f6f5f4; }
+        #root .boot { color: #667075; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot">
+        <div class="boot-mark"></div>
+        <p>Cargando DictaFlow…</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

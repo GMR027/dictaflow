@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Lang, PersonalVoice, VoiceRecording } from '@shared/types'
 import type { GeneratedClip } from '@shared/voice'
 import { REFERENCE_SCRIPT, TEST_PHRASES } from '@shared/voice-phrases'
-import { Mic, SAMPLE_RATE } from '../audio'
+import { createMic, SAMPLE_RATE, type MicLike } from '../audio'
 import { decodeToMono16k, encodeWav } from '../audioio'
 import { useApp } from '../store'
 import { useTtsStatus, VoicePicker } from './TtsSetup'
@@ -44,7 +44,7 @@ export function MyVoices(): JSX.Element {
   const [recording, setRecording] = useState(false)
   const [level, setLevel] = useState(0)
   const [recSec, setRecSec] = useState(0)
-  const mic = useRef<Mic | null>(null)
+  const mic = useRef<MicLike | null>(null)
   const recStart = useRef(0)
 
   const refresh = (): void => {
@@ -110,14 +110,15 @@ export function MyVoices(): JSX.Element {
       await mic.current.stop(); mic.current = null; setRecording(false); setLevel(0)
       return
     }
-    const m = new Mic({
+    const m = createMic({
       deviceId: settings.micDeviceId, mode: 'controlled', onLevel: setLevel,
       // Sin supresión de ruido ni ganancia automática: la muestra debe sonar como tu voz real.
       filters: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
       onSegment: (pcm) => {
         if (pcm.length < SAMPLE_RATE * 5) { setError('La muestra es muy corta: lee el texto completo (unos 30 segundos).'); return }
         void saveRecording(`muestra-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.wav`, pcm).catch((e: Error) => setError(e.message))
-      }
+      },
+      onEnded: () => { setRecording(false); setLevel(0) }
     })
     try { await m.start(); mic.current = m; recStart.current = Date.now(); setRecSec(0); setRecording(true) }
     catch (e) { setError(`Micrófono: ${(e as Error).message}`) }

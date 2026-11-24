@@ -232,12 +232,15 @@ pub fn contexto_audio(muestras: usize) -> i32 {
 
 /// Contexto máximo del LLM en el teléfono: 8 K tokens (la caché ocupa RAM y el prompt tarda en leerse).
 const CTX_MAX: u32 = 8192;
-/// Respuesta más larga que se genera (un acta o unas notas caben de sobra).
-const RESPUESTA_MAX: usize = 2048;
+/// Respuesta más larga que se genera por defecto (un acta o unas notas caben de sobra).
+pub const RESPUESTA_MAX: usize = 2048;
+/// Reserva mínima para que el modelo pueda responder algo.
+const RESPUESTA_MIN: usize = 64;
 
 /// Tamaño del contexto y máximo de tokens a generar para un prompt de `prompt` tokens, en un
-/// modelo entrenado con `entrenado` tokens de contexto. Error si el texto no cabe.
-pub fn contexto_llm(prompt: usize, entrenado: u32) -> Result<(u32, usize), String> {
+/// modelo entrenado con `entrenado` tokens de contexto. `respuesta_max` acota la respuesta: una
+/// frase de dictado no necesita reservar 2048 tokens. Error si el texto no cabe.
+pub fn contexto_llm(prompt: usize, entrenado: u32, respuesta_max: usize) -> Result<(u32, usize), String> {
     let limite = if entrenado == 0 { CTX_MAX } else { entrenado.min(CTX_MAX) } as usize;
     // Hace falta sitio para al menos una respuesta corta.
     if prompt + 256 > limite {
@@ -246,10 +249,37 @@ pub fn contexto_llm(prompt: usize, entrenado: u32) -> Result<(u32, usize), Strin
             limite - 256
         ));
     }
-    let nuevos = RESPUESTA_MAX.min(limite - prompt);
+    let nuevos = respuesta_max.max(RESPUESTA_MIN).min(limite - prompt);
     // Se reserva solo lo necesario, redondeado a 256: menos RAM para textos cortos.
     let ctx = (prompt + nuevos).div_ceil(256) * 256;
     Ok((ctx.min(limite) as u32, nuevos))
+}
+
+/// Saca de `buf` el texto UTF-8 completo que haya y deja el sufijo incompleto para el siguiente
+/// token. Sin esto, un carácter multibyte partido entre dos tokens se enviaría como «�».
+pub fn utf8_listo(buf: &mut Vec<u8>) -> Option<String> {
+    match std::str::from_utf8(buf) {
+        Ok(s) => {
+            let out = s.to_string();
+            buf.clear();
+            Some(out)
+        }
+        Err(e) => {
+            let n = e.valid_up_to();
+            if n > 0 {
+                let out = String::from_utf8(buf[..n].to_vec()).ok()?;
+                buf.drain(..n);
+                Some(out)
+            } else if let Some(malos) = e.error_len() {
+                // Bytes inválidos: se reemplazan para no bloquear el resto de la respuesta.
+                let out = String::from_utf8_lossy(&buf[..malos]).into_owned();
+                buf.drain(..malos);
+                Some(out)
+            } else {
+                None
+            }
+        }
+    }
 }
 
 /// Cuántos tokens del principio de `nuevo` ya están leídos en la caché del modelo. Siempre deja
@@ -400,11 +430,30 @@ mod pruebas {
 
     #[test]
     fn contexto_del_llm() {
-        assert_eq!(contexto_llm(300, 32768).unwrap(), (2560, 2048));
-        assert_eq!(contexto_llm(7000, 32768).unwrap(), (8192, 1192));
-        assert_eq!(contexto_llm(300, 2048).unwrap(), (2048, 1748));
-        assert_eq!(contexto_llm(300, 0).unwrap(), (2560, 2048));
-        assert!(contexto_llm(8000, 32768).is_err());
+        assert_eq!(contexto_llm(300, 32768, 2048).unwrap(), (2560, 2048));
+        assert_eq!(contexto_llm(300, 32768, 256).unwrap(), (768, 256));
+        assert_eq!(contexto_llm(7000, 32768, 2048).unwrap(), (8192, 1192));
+        assert_eq!(contexto_llm(300, 2048, 2048).unwrap(), (2048, 1748));
+        assert_eq!(contexto_llm(300, 0, 2048).unwrap(), (2560, 2048));
+        assert_eq!(contexto_llm(300, 32768, 0).unwrap(), (512, 64));
+        assert!(contexto_llm(8000, 32768, 2048).is_err());
+    }
+
+    #[test]
+    fn texto_utf8_por_trozos() {
+        let mut b = vec![0xC3]; // primera mitad de «é»
+        assert_eq!(utf8_listo(&mut b), None);
+        b.extend_from_slice(&[0xA9]); // segunda mitad
+        assert_eq!(utf8_listo(&mut b).as_deref(), Some("é"));
+        assert!(b.is_empty());
+
+        let mut b = b"hola".to_vec();
+        assert_eq!(utf8_listo(&mut b).as_deref(), Some("hola"));
+        assert!(b.is_empty());
+
+        let mut b = vec![0xFF];
+        assert_eq!(utf8_listo(&mut b).as_deref(), Some("\u{FFFD}"));
+        assert!(b.is_empty());
     }
 
     #[test]

@@ -4,10 +4,17 @@
 // prompts; cada plataforma solo aporta `complete` (cómo se habla con el modelo) y los límites de
 // tamaño de su modelo.
 import { TRANS_LANGS, type ChatMsg, type DictEntry, type Lang, type MeetingMinutes, type RewriteRequest, type Tone, type TransLang } from './types'
-import { numbersPreserved } from './guard'
+import { hasNumbers, numbersPreserved } from './guard'
 import { extractJson } from './json'
 
-export type Complete = (system: string, msgs: ChatMsg[], temperature?: number) => Promise<string>
+export interface CompleteOpts {
+  /** Recibe el texto según se genera. Si la plataforma no hace streaming, se llama una vez al final. */
+  onToken?: (text: string) => void
+  /** Tope de tokens de la respuesta: evita respuestas interminables y contextos innecesarios. */
+  maxTokens?: number
+}
+
+export type Complete = (system: string, msgs: ChatMsg[], temperature?: number, opts?: CompleteOpts) => Promise<string>
 
 export interface LlmLimits {
   /** Tamaño máximo (caracteres) que se envía de una vez al modelo al procesar por partes. */
@@ -67,8 +74,36 @@ const MINUTOS_PROMPT = `Analiza esta transcripción de una reunión y devuelve S
 No inventes nada: si no se habla de decisiones, deja el array vacío. Usa el idioma del texto.`
 
 export function termsLine(dictionary: DictEntry[]): string {
-  const terms = dictionary.map((d) => d.to || d.from).filter(Boolean)
+  const terms = dictionary.map((d) => d.to || d.from).filter(Boolean).slice(0, 40)
   return terms.length ? `Respeta exactamente la escritura de estos términos: ${terms.join(', ')}.` : ''
+}
+
+const norm = (s: string): string => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+/**
+ * Solo los términos del diccionario que aparecen en el texto. Enviar el diccionario entero
+ * alarga el prompt de cada frase sin aportar nada: en el teléfono eso se paga en milisegundos.
+ */
+export function termsLineFor(text: string, dictionary: DictEntry[]): string {
+  const looked = norm(text)
+  const terms = dictionary
+    // Se busca tanto lo que se dictó (`from`) como la forma correcta (`to`): si dices «dicta flow»,
+    // el modelo debe recibir «DictaFlow» aunque esa forma exacta no aparezca en el texto.
+    .filter((d) => {
+      const formas = [d.from, d.to].map((f) => norm(f.trim())).filter(Boolean)
+      return formas.some((f) => looked.includes(f))
+    })
+    .map((d) => (d.to || d.from).trim())
+    .filter(Boolean)
+    .slice(0, 20)
+  return terms.length ? `Respeta exactamente: ${terms.join(', ')}.` : ''
+}
+
+/** Tokens aproximados para devolver un texto parecido al dictado (≈3 caracteres por token). */
+function rewriteMaxTokens(text: string, mode: RewriteRequest['mode'] = 'rewrite'): number {
+  const base = Math.ceil(text.length / 3) + 32
+  // Un prompt o unas instrucciones de cambio pueden ser más largos que lo dictado.
+  return mode === 'rewrite' ? Math.min(1024, Math.max(96, base)) : Math.min(1536, Math.max(512, base * 2))
 }
 
 export function systemPrompt(req: RewriteRequest, terms: string): string {
@@ -95,13 +130,15 @@ export function systemPrompt(req: RewriteRequest, terms: string): string {
       terms
     ].filter(Boolean).join('\n')
   }
+  // Prompt corto a propósito: en el teléfono la lectura del prompt es parte del tiempo de cada
+  // frase. El tono neutro no necesita instrucción y el diccionario se filtra en `termsLineFor`.
+  const tono = req.tone === 'neutral' ? '' : ` Usa ${TONES[req.tone]}.`
   return [
-    `Reescribe el texto dictado en ${lang} con mejor redacción: ${TONES[req.tone]}.`,
-    'Elimina muletillas y repeticiones, corrige puntuación y gramática, conserva el significado y no añadas información.',
-    'Conserva exactamente las cifras, horas, cantidades y nombres propios dichos; no los conviertas ni los cambies.',
-    'Responde SOLO con el texto reescrito, sin comillas ni explicaciones.',
+    `Corrige puntuación, mayúsculas y muletillas del texto dictado en ${lang}.${tono}`,
+    'Conserva el significado, las cifras, las horas y los nombres propios. No añadas información.',
+    'Responde SOLO con el texto corregido, sin comillas ni explicaciones.',
     terms
-  ].filter(Boolean).join('\n')
+  ].filter(Boolean).join(' ')
 }
 
 export function userPrompt(req: RewriteRequest): string {
@@ -148,26 +185,44 @@ export function parseMinutes(out: string): MeetingMinutes | null {
 
 export function createLlmTasks({ complete, settings, limits = DESKTOP_LIMITS }: LlmDeps) {
   const terms = async (): Promise<string> => termsLine((await settings()).dictionary)
+  const termsFor = async (text: string): Promise<string> => termsLineFor(text, (await settings()).dictionary)
 
-  async function rewrite(req: RewriteRequest): Promise<string> {
-    return complete(systemPrompt(req, await terms()), [{ role: 'user', content: userPrompt(req) }], req.previous ? 0.9 : 0.4)
+  async function rewrite(req: RewriteRequest, opts: CompleteOpts = {}): Promise<string> {
+    const terminos = req.mode === 'rewrite' ? await termsFor(req.text) : await terms()
+    return complete(
+      systemPrompt(req, terminos),
+      [{ role: 'user', content: userPrompt(req) }],
+      req.previous ? 0.9 : 0.4,
+      { ...opts, maxTokens: opts.maxTokens ?? rewriteMaxTokens(req.text, req.mode) }
+    )
   }
 
   /**
    * Redacción con protección de cifras: si el modelo cambia horas, cantidades o números, se reintenta una vez
    * con temperatura baja y, si persiste, se conserva el texto dictado (`reverted`) en vez de entregar datos alterados.
+   * Con `fast` no hay reintento: se conserva lo dictado y se avisa (camino automático de Android).
    */
-  async function rewriteGuarded(req: RewriteRequest): Promise<{ text: string; reverted: boolean }> {
-    const out = await rewrite(req)
-    if (req.mode !== 'rewrite' || !(await settings()).guardNumbers || numbersPreserved(req.text, out)) return { text: out, reverted: false }
-    const retry = await complete(systemPrompt(req, await terms()) + '\nIMPORTANTE: tu respuesta anterior alteró cifras. Copia las cifras y horas tal como las dijo el usuario.', [{ role: 'user', content: userPrompt(req) }], 0.1)
+  async function rewriteGuarded(req: RewriteRequest, opts: CompleteOpts = {}): Promise<{ text: string; reverted: boolean }> {
+    const out = await rewrite(req, opts)
+    if (req.mode !== 'rewrite' || !(await settings()).guardNumbers || !hasNumbers(req.text) || numbersPreserved(req.text, out)) {
+      return { text: out, reverted: false }
+    }
+    if (req.fast) return { text: req.text.trim(), reverted: true }
+    const retryTerms = req.mode === 'rewrite' ? await termsFor(req.text) : await terms()
+    const retry = await complete(
+      systemPrompt(req, retryTerms) + '\nIMPORTANTE: tu respuesta anterior alteró cifras. Copia las cifras y horas tal como las dijo el usuario.',
+      [{ role: 'user', content: userPrompt(req) }],
+      0.1,
+      { maxTokens: opts.maxTokens ?? rewriteMaxTokens(req.text, req.mode) }
+    )
     return numbersPreserved(req.text, retry) ? { text: retry, reverted: false } : { text: req.text.trim(), reverted: true }
   }
 
-  async function translate(text: string, to: TransLang): Promise<string> {
+  async function translate(text: string, to: TransLang, opts: CompleteOpts = {}): Promise<string> {
     return complete(
       `Traduce al ${TRANS_LANGS[to].llm}. Responde SOLO con la traducción, sin comentarios. ${await terms()}`,
-      [{ role: 'user', content: text }], 0.2
+      [{ role: 'user', content: text }], 0.2,
+      { ...opts, maxTokens: opts.maxTokens ?? Math.min(1024, Math.max(64, Math.ceil(text.length / 3) + 32)) }
     )
   }
 
@@ -181,7 +236,7 @@ export function createLlmTasks({ complete, settings, limits = DESKTOP_LIMITS }: 
     if (full.length <= limits.maxChars) {
       return complete(
         `${ACTIONS[action]} Escribe en ${LANG_NAME[lang]}. Usa solo información presente en el texto; no inventes. ${t}`,
-        [{ role: 'user', content: full }], 0.3
+        [{ role: 'user', content: full }], 0.3, { maxTokens: 1024 }
       )
     }
 
@@ -190,7 +245,7 @@ export function createLlmTasks({ complete, settings, limits = DESKTOP_LIMITS }: 
     for (let i = 0; i < chunks.length; i++) {
       partes.push(await complete(
         `${ACTIONS[action]} Escribe en ${LANG_NAME[lang]}. Usa solo información presente en el texto; no inventes. ${t}\nEsta es la parte ${i + 1} de ${chunks.length}: no repitas lo de otras partes.`,
-        [{ role: 'user', content: chunks[i] }], 0.3
+        [{ role: 'user', content: chunks[i] }], 0.3, { maxTokens: 1024 }
       ))
     }
     // Los capítulos se concatenan; lo demás se une en un solo texto.
@@ -198,7 +253,7 @@ export function createLlmTasks({ complete, settings, limits = DESKTOP_LIMITS }: 
     try {
       return await complete(
         `Une estas partes en un solo texto en ${LANG_NAME[lang]}, con las mismas secciones y sin repetir contenido. No inventes nada que no esté en las partes. ${t}`,
-        [{ role: 'user', content: partes.map((p, i) => `--- Parte ${i + 1} ---\n${p}`).join('\n\n') }], 0.3
+        [{ role: 'user', content: partes.map((p, i) => `--- Parte ${i + 1} ---\n${p}`).join('\n\n') }], 0.3, { maxTokens: 2048 }
       )
     } catch {
       // Si la unión falla, al menos se entrega todo el material.
@@ -215,7 +270,7 @@ export function createLlmTasks({ complete, settings, limits = DESKTOP_LIMITS }: 
     const out = await complete(
       `${MINUTOS_PROMPT}\n${await terms()}`,
       [{ role: 'user', content: `Transcripción:\n${text.slice(0, limits.minutesChars)}` }],
-      0.2
+      0.2, { maxTokens: 2048 }
     )
     return parseMinutes(out)
   }

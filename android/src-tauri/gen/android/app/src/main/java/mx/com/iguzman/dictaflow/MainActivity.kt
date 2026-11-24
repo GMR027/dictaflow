@@ -1,5 +1,6 @@
 package mx.com.iguzman.dictaflow
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
@@ -17,7 +18,14 @@ import androidx.core.view.WindowInsetsCompat
  *    getUserMedia, Android muestra el diálogo si RECORD_AUDIO está en el manifiesto.
  */
 class MainActivity : TauriActivity() {
+  companion object {
+    /** Atajo o texto compartido pendiente de que la interfaz lo recoja. */
+    @Volatile var vistaInicial: String? = null
+    @Volatile var textoCompartido: String? = null
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
+    leerIntento(intent)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
 
@@ -35,5 +43,28 @@ class MainActivity : TauriActivity() {
       WindowInsetsCompat.CONSUMED
     }
     ViewCompat.requestApplyInsets(raiz)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    leerIntento(intent)
+  }
+
+  /** Atajos de la app y «Compartir con DictaFlow». */
+  private fun leerIntento(intent: Intent?) {
+    when (intent?.action) {
+      "mx.com.iguzman.dictaflow.DICTAR" -> vistaInicial = "dictado"
+      "mx.com.iguzman.dictaflow.TRADUCIR" -> vistaInicial = "traduccion"
+      Intent.ACTION_SEND -> {
+        if (intent.type?.startsWith("text/") == true) {
+          val texto = intent.getStringExtra(Intent.EXTRA_TEXT)
+          if (!texto.isNullOrBlank()) {
+            textoCompartido = texto
+            vistaInicial = "dictado"
+          }
+        }
+      }
+    }
   }
 }

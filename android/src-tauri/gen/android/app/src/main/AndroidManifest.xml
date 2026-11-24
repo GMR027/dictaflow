@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Dictado: el WebView pide el micrófono (getUserMedia) y Android lo concede tras preguntar. -->
+    <!-- Dictado: el WebView pide el micrófono (getUserMedia) y Android lo concede tras preguntar;
+         el micrófono nativo (CapturaService) sigue grabando con la pantalla apagada. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- Agenda: los avisos suenan a su hora exacta aunque la app esté cerrada (el plugin de
          notificaciones añade POST_NOTIFICATIONS, que Android pide al usuario la primera vez). -->
@@ -15,8 +19,12 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
-    <!-- Android 11+: para ver el motor de texto a voz del teléfono (VozSistemaPlugin.kt). -->
+    <!-- Android 11+: para ver el motor de voz y el de texto a voz del teléfono
+         (ReconocimientoPlugin.kt y VozSistemaPlugin.kt). -->
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
@@ -40,7 +48,18 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
+
+        <service
+            android:name=".CapturaService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <provider
           android:name="androidx.core.content.FileProvider"

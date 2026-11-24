@@ -11,6 +11,8 @@ import type { UpdateInfo } from '@shared/update'
 import type { GeneratedClip, VoiceStatus } from '@shared/voice'
 import type { Automation, StepType } from '@shared/automation'
 import type { DeviceInfo, LocalModel, LocalModelFile, LocalModelProgress } from '@shared/local-models'
+import type { PhoneSttApi } from '@shared/phone-stt'
+import type { NativeMicApi } from '@shared/native-mic'
 
 /** Invoca un canal del contrato: el nombre y los argumentos están verificados por el compilador. */
 export type Invoke = <K extends IpcChannel>(channel: K, req?: IpcReq<K>) => Promise<IpcRes<K>>
@@ -22,6 +24,27 @@ export type Platform = 'linux' | 'android'
 export function createApi(invoke: Invoke, on: On, platform: Platform) {
   return {
     platform,
+
+    // Solo Android: vista inicial de un atajo o texto compartido con DictaFlow.
+    initialView: (): Promise<{ vista: string | null; texto: string | null } | null> => Promise.resolve(null),
+
+    // Solo Android: micrófono nativo (AudioRecord + servicio en primer plano).
+    nativeMic: {
+      start: () => Promise.reject(new Error('El micrófono nativo solo existe en Android.')),
+      stop: () => Promise.reject(new Error('El micrófono nativo solo existe en Android.')),
+      cancel: () => Promise.reject(new Error('El micrófono nativo solo existe en Android.')),
+      onAudio: async () => () => undefined,
+      onStop: async () => () => undefined
+    } as NativeMicApi,
+
+    // Solo Android: motor de voz del teléfono (on-device). En escritorio no existe.
+    phoneStt: {
+      available: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
+      start: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
+      stop: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
+      cancel: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
+      on: async () => () => undefined
+    } as PhoneSttApi,
 
     // Solo Android: modelos de IA locales del teléfono
     deviceInfo: (): Promise<DeviceInfo> => invoke('models:device'),
@@ -101,6 +124,7 @@ export function createApi(invoke: Invoke, on: On, platform: Platform) {
     pushMeetingAudio: (sessionId: string, pcm: Float32Array): Promise<void> => invoke('meeting:audio-chunk', { sessionId, pcm }),
     stopMeetingAudio: (sessionId: string): Promise<{ path: string; durationSec: number } | null> => invoke('meeting:audio-stop', { sessionId }),
     discardMeetingAudio: (sessionId: string): Promise<void> => invoke('meeting:audio-discard', { sessionId }),
+    meetingAudio: (path: string): Promise<Uint8Array> => invoke('meeting:audio-read', { path }),
 
     listPersonalVoices: (): Promise<PersonalVoice[]> => invoke('pv:list'),
     savePersonalVoice: (voice: PersonalVoice): Promise<PersonalVoice> => invoke('pv:save', { voice }),
@@ -142,6 +166,12 @@ export function createApi(invoke: Invoke, on: On, platform: Platform) {
     onSystemAudio: (cb: (pcm: Float32Array) => void) => on('sysaudio:chunk', cb),
 
     rewrite: (req: RewriteRequest): Promise<string> => invoke('llm:rewrite', req),
+    /**
+     * Redacción con streaming: `onToken` recibe el texto según se genera. En escritorio, que
+     * todavía no transmite tokens, se llama una vez con el resultado completo.
+     */
+    rewriteStream: (req: RewriteRequest, onToken: (text: string) => void): Promise<string> =>
+      invoke('llm:rewrite', req).then((text) => { onToken(text); return text }),
     warmLLM: (): Promise<void> => invoke('llm:warm'),
     testLLM: (): Promise<string> => invoke('llm:test'),
     listModels: (kind: LLMKind): Promise<ProviderModels> => invoke('llm:models', { kind }),

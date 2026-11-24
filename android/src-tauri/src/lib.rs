@@ -41,7 +41,7 @@ mod vivo;
 use almacen::{Almacen, Documento};
 use archivos::{Archivos, Entrada};
 use descargas::{espacio_libre, ArchivoModelo, Descargas};
-use llm::{Llm, Mensaje, Respuesta};
+use llm::{Llm, Peticion, Preparacion, Respuesta};
 use stt::{Stt, Transcripcion};
 use vivo::{Parcial, Vivo};
 use tts::Tts;
@@ -62,8 +62,12 @@ fn doc_get(name: String, datos: tauri::State<'_, Datos>) -> Result<Option<Docume
 }
 
 #[tauri::command]
-fn doc_set(name: String, data: Value, datos: tauri::State<'_, Datos>) -> Result<(), String> {
-    datos.0.escribir(&name, data)
+async fn doc_set(name: String, data: Value, datos: tauri::State<'_, Datos>) -> Result<(), String> {
+    // La escritura incluye `fsync`: fuera del hilo principal para no congelar la interfaz.
+    let almacen = datos.0.clone();
+    tauri::async_runtime::spawn_blocking(move || almacen.escribir(&name, data))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -228,17 +232,44 @@ fn llm_loaded(llm: tauri::State<'_, Arc<Llm>>) -> Option<String> {
 /// Respuesta del modelo local a una conversación. Los prompts los arma la interfaz
 /// (`src/shared/llm-tasks.ts`, los mismos que en escritorio).
 #[tauri::command]
-async fn llm_complete(
-    model: String,
-    system: String,
-    msgs: Vec<Mensaje>,
-    temperature: f32,
+async fn llm_complete(peticion: Peticion, llm: tauri::State<'_, Arc<Llm>>) -> Result<Respuesta, String> {
+    let llm = llm.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || llm.completar(&peticion, &mut |_| {}))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Igual que `llm_complete`, pero envía cada trozo de texto por un canal de Tauri según se genera.
+#[tauri::command]
+async fn llm_complete_stream(
+    peticion: Peticion,
+    stream: tauri::ipc::Channel<String>,
     llm: tauri::State<'_, Arc<Llm>>,
 ) -> Result<Respuesta, String> {
     let llm = llm.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || llm.completar(&model, &system, &msgs, temperature))
+    tauri::async_runtime::spawn_blocking(move || {
+        llm.completar(&peticion, &mut |texto| {
+            // Si la interfaz se fue, el error no impide terminar la generación.
+            let _ = stream.send(texto.to_string());
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Deja leído el prompt de sistema en la caché del modelo, para que la primera frase no lo pague.
+#[tauri::command]
+async fn llm_prepare(peticion: Preparacion, llm: tauri::State<'_, Arc<Llm>>) -> Result<usize, String> {
+    let llm = llm.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || llm.preparar(&peticion))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Detiene la generación en curso en el siguiente token.
+#[tauri::command]
+fn llm_cancel(llm: tauri::State<'_, Arc<Llm>>) {
+    llm.cancelar();
 }
 
 /// Lee un texto con una voz descargada. Devuelve un WAV como datos binarios (no como lista JSON).
@@ -457,6 +488,158 @@ fn plugin_instalador() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
+/// Plugin propio (gen/android/…/VistaPlugin.kt): vista inicial de atajos y texto compartido.
+struct Vista(tauri::plugin::PluginHandle<tauri::Wry>);
+
+fn plugin_vista() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("vista")
+        .setup(|app, api| {
+            #[cfg(target_os = "android")]
+            app.manage(Vista(api.register_android_plugin("mx.com.iguzman.dictaflow", "VistaPlugin")?));
+            #[cfg(not(target_os = "android"))]
+            let _ = (app, api);
+            Ok(())
+        })
+        .build()
+}
+
+/// Vista que pidió un atajo (`dictado`/`traduccion`) o texto recibido al compartir. Se consume una vez.
+#[tauri::command]
+async fn vista_inicial(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let v = app.try_state::<Vista>().ok_or("La vista inicial solo existe en Android.")?;
+        v.0.run_mobile_plugin::<Value>("inicial", serde_json::json!({})).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Plugin propio (gen/android/…/CapturaPlugin.kt): micrófono nativo y WAV de reuniones.
+struct Captura(tauri::plugin::PluginHandle<tauri::Wry>);
+
+fn plugin_captura() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("captura")
+        .setup(|app, api| {
+            #[cfg(target_os = "android")]
+            app.manage(Captura(api.register_android_plugin("mx.com.iguzman.dictaflow", "CapturaPlugin")?));
+            #[cfg(not(target_os = "android"))]
+            let _ = (app, api);
+            Ok(())
+        })
+        .build()
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CapturaResult {
+    wav_path: Option<String>,
+    duration_sec: f64,
+}
+
+#[tauri::command]
+async fn captura_iniciar(wav: bool, session: Option<String>, app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Captura>().ok_or("El micrófono nativo solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>("iniciar", serde_json::json!({ "wav": wav, "sesion": session }))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn captura_detener(descartar: bool, app: tauri::AppHandle) -> Result<CapturaResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Captura>().ok_or("El micrófono nativo solo existe en Android.")?;
+        r.0.run_mobile_plugin::<CapturaResult>("detener", serde_json::json!({ "descartar": descartar }))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn captura_cancelar(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Captura>().ok_or("El micrófono nativo solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>("cancelar", serde_json::json!({}))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Plugin propio (gen/android/…/ReconocimientoPlugin.kt): voz a texto con el motor del teléfono.
+struct Reconocimiento(tauri::plugin::PluginHandle<tauri::Wry>);
+
+fn plugin_reconocimiento() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("reconocimiento")
+        .setup(|app, api| {
+            #[cfg(target_os = "android")]
+            app.manage(Reconocimiento(api.register_android_plugin("mx.com.iguzman.dictaflow", "ReconocimientoPlugin")?));
+            #[cfg(not(target_os = "android"))]
+            let _ = (app, api);
+            Ok(())
+        })
+        .build()
+}
+
+/// ¿Hay motor de voz on-device en este teléfono? Solo se ofrece el on-device; si no existe, la
+/// interfaz usa Whisper. Nada de audio a la nube.
+#[tauri::command]
+async fn reconocimiento_disponibilidad(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Reconocimiento>().ok_or("El motor de voz del teléfono solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>("disponibilidad", serde_json::json!({})).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Abre una sesión de dictado con el motor del teléfono. Los resultados llegan como eventos del
+/// plugin (`parcial`, `final`, `nivel`, `estado`, `error`).
+#[tauri::command]
+async fn reconocimiento_iniciar(
+    lang: String,
+    continuo: bool,
+    offline: bool,
+    bias: Vec<String>,
+    app: tauri::AppHandle,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Reconocimiento>().ok_or("El motor de voz del teléfono solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>(
+            "iniciar",
+            serde_json::json!({ "lang": lang, "continuo": continuo, "offline": offline, "bias": bias }),
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn reconocimiento_detener(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Reconocimiento>().ok_or("El motor de voz del teléfono solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>("detener", serde_json::json!({})).map(|_| ()).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn reconocimiento_cancelar(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Reconocimiento>().ok_or("El motor de voz del teléfono solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>("cancelar", serde_json::json!({})).map(|_| ()).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Plugin propio (gen/android/…/VozSistemaPlugin.kt): voces del motor de texto a voz del teléfono.
 struct VozSistema(tauri::plugin::PluginHandle<tauri::Wry>);
 
@@ -590,6 +773,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(plugin_instalador())
+        .plugin(plugin_vista())
+        .plugin(plugin_captura())
+        .plugin(plugin_reconocimiento())
         .plugin(plugin_voz_sistema())
         .invoke_handler(tauri::generate_handler![
             doc_get,
@@ -613,8 +799,19 @@ pub fn run() {
             llm_load,
             llm_loaded,
             llm_complete,
+            llm_complete_stream,
+            llm_prepare,
+            llm_cancel,
             tts_synth,
             tts_sample,
+            vista_inicial,
+            captura_iniciar,
+            captura_detener,
+            captura_cancelar,
+            reconocimiento_disponibilidad,
+            reconocimiento_iniciar,
+            reconocimiento_detener,
+            reconocimiento_cancelar,
             voz_sistema_voces,
             voz_sistema_sintetizar,
             file_write,

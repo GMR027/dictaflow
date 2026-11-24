@@ -5,7 +5,6 @@
 // escritorio) y los archivos (audio, exportaciones a medias) viven en la carpeta propia de la app
 // (`./archivos`). Lo que sale del teléfono pasa por el selector de archivos de Android.
 import { invoke } from '@tauri-apps/api/core'
-import JSZip from 'jszip'
 import type { IpcChannel, IpcReq, IpcRes } from '@shared/ipc'
 import type { Lang, LibraryDoc, LibraryMeta, NetEvent, PersonalVoice, Settings, VoiceRecording } from '@shared/types'
 import type { CalendarEvent, Reminder } from '@shared/calendar'
@@ -13,8 +12,6 @@ import type { GeneratedClip } from '@shared/voice'
 import type { Job } from '@shared/job'
 import { STEP_INFO, type Automation, type StepType } from '@shared/automation'
 import type { ContentAction } from '@shared/llm-tasks'
-import { buildPdf } from '@shared/pdf'
-import { parseIcs, toIcs } from '@shared/ics'
 import { splitText } from '@shared/text'
 import { localVoice, modelReady } from '@shared/local-models'
 import { migrateSettings } from '../../../main/migrate'
@@ -252,6 +249,7 @@ export function createDataHandlers(d: DataDeps): Handlers {
         case 'minutes': text = await d.generate('meeting', text, lang); details.push('Acta generada'); break
         case 'pdf': {
           const f = exportName(title, 'pdf')
+          const { buildPdf } = await import('@shared/pdf')
           await fileWrite(f, await buildPdf(title, text))
           files.push(f); details.push('PDF listo'); break
         }
@@ -340,8 +338,12 @@ export function createDataHandlers(d: DataDeps): Handlers {
       await d.docSet('calendar', (await events()).filter((e) => e.id !== id))
       await cancelNotice([noticeId('e', id)])
     },
-    'cal:export': async () => saveAs('dictaflow-calendario', 'ics', { data: toIcs(await events()) }),
+    'cal:export': async () => {
+      const { toIcs } = await import('@shared/ics')
+      return saveAs('dictaflow-calendario', 'ics', { data: toIcs(await events()) })
+    },
     'cal:import': async ({ data }) => {
+      const { parseIcs } = await import('@shared/ics')
       const evs = parseIcs(data)
       for (const e of evs) await saveEvent({ id: crypto.randomUUID(), ...e, reminder: false, remindBeforeMin: 0 })
       return evs.length
@@ -395,7 +397,10 @@ export function createDataHandlers(d: DataDeps): Handlers {
     },
 
     'note:export': ({ title, body, tags }) => saveAs(`${today()}-${slug(title)}`, 'md', { data: noteMarkdown(title, body, tags) }),
-    'pdf:generate': async ({ title, body, name }) => saveAs(name ?? 'documento', 'pdf', { data: await buildPdf(title, body) }),
+    'pdf:generate': async ({ title, body, name }) => {
+      const { buildPdf } = await import('@shared/pdf')
+      return saveAs(name ?? 'documento', 'pdf', { data: await buildPdf(title, body) })
+    },
     'file:save': ({ name, data }) => saveAs(name, extOf(name) || 'txt', { data }),
     'file:open': ({ exts }) => pickFile(exts),
     'file:export': ({ path }) => saveAs(path.split('/').pop()!.replace(/\.[^.]+$/, ''), extOf(path) || 'bin', { path }),
@@ -423,6 +428,11 @@ export function createDataHandlers(d: DataDeps): Handlers {
       await meetingFlush(s)
       const durationSec = await invoke<number>('wav_close', { path: s.path })
       return { path: s.path, durationSec }
+    },
+    'meeting:audio-read': async ({ path }) => {
+      // La reunión guarda la ruta absoluta; `file_read` trabaja dentro de `archivos`.
+      const rel = path.split('/archivos/')[1] ?? path
+      return fileRead(rel)
     },
     'meeting:audio-discard': async ({ sessionId }) => {
       const s = meetings.get(sessionId)
@@ -485,6 +495,7 @@ export function createDataHandlers(d: DataDeps): Handlers {
     },
 
     'backup:create': async () => {
+      const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
       const contents: string[] = []
       for (const doc of await invoke<string[]>('doc_list')) {
@@ -509,6 +520,7 @@ export function createDataHandlers(d: DataDeps): Handlers {
       return { file, createdAt: Date.now(), sizeMB: Math.round((data.length / 1048576) * 10) / 10, contents }
     },
     'backup:restore': async ({ data }) => {
+      const { default: JSZip } = await import('jszip')
       const zip = await JSZip.loadAsync(data)
       const restored: string[] = []
       const skipped: string[] = []

@@ -6,6 +6,8 @@
   "local": true,
   "permissions": [
     "core:event:default",
-    "core:app:allow-version"
+    "core:app:allow-version",
+    "captura:default",
+    "reconocimiento:default"
   ]
 }

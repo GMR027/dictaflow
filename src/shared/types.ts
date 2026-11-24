@@ -57,6 +57,11 @@ export interface Settings {
   promptTarget: PromptTarget
   vaultDir: string
   sttProvider: SttProvider
+  /**
+   * Android: usar el motor de voz on-device del teléfono cuando exista. Si no, se usa Whisper.
+   * Nunca se usa el reconocedor en la nube sin que el usuario lo pida.
+   */
+  sttPhone: 'auto' | 'off'
   ttsProvider: TtsProvider
   ttsVoice: Record<Lang, string>
   ttsSpeed: number
@@ -74,6 +79,13 @@ export interface Settings {
   rewriteDelayMs: number
   /** Redacción automática: solo se redacta lo nuevo y se añade, en vez de rehacer todo el texto */
   rewriteIncremental: boolean
+  /**
+   * Cuándo se redacta automáticamente:
+   *  - `always`: toda frase pasa por el LLM (comportamiento de escritorio).
+   *  - `smart`: solo si la frase lo necesita (muletillas, repeticiones, sin puntuación o larga).
+   *    En Android es el valor por defecto: el dictado limpio se queda en 0 s.
+   */
+  rewritePolicy: 'always' | 'smart'
   /** Descarta la redacción si cambia cifras, horas o cantidades */
   guardNumbers: boolean
   /** Filtros del micrófono. Apagarlos suele mejorar la precisión de Whisper. */
@@ -113,6 +125,7 @@ export const DEFAULT_SETTINGS: Settings = {
   promptTarget: 'generic',
   vaultDir: '',
   sttProvider: 'local',
+  sttPhone: 'off',
   ttsProvider: 'piper',
   ttsVoice: { es: 'es_ES-davefx-medium', en: 'en_US-lessac-medium' },
   ttsSpeed: 1,
@@ -124,6 +137,7 @@ export const DEFAULT_SETTINGS: Settings = {
   draftsEnabled: true,
   rewriteDelayMs: 2500,
   rewriteIncremental: true,
+  rewritePolicy: 'always',
   guardNumbers: true,
   micFilters: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   localLlm: ''
@@ -161,6 +175,11 @@ export interface RewriteRequest {
   /** modo programador: destino y contexto del repositorio */
   target?: PromptTarget
   projectContext?: string
+  /**
+   * Sin reintento si la redacción cambia cifras: se conserva el texto dictado y se avisa.
+   * En Android se usa en la redacción automática para no duplicar la latencia.
+   */
+  fast?: boolean
 }
 
 export interface ChatMsg {

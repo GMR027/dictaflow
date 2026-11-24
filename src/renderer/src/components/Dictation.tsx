@@ -53,6 +53,8 @@ export function Dictation(): JSX.Element {
   const controlled = st.mode === 'controlled'
   const hasText = !!(s.polished || s.raw)
   const noRaw = !s.raw.trim() || s.rewriting
+  /** Texto ya dictado que se muestra al instante mientras la IA (si hace falta) lo mejora. */
+  const preview = !s.polished && !s.polishedTouched && st.autoRewrite && s.raw ? s.raw : ''
   const pickProject = async (): Promise<void> => void s.patchSettings({ projectDir: (await window.api.pickProject()) || st.projectDir })
   const exportPdf = async (): Promise<void> => {
     try {
@@ -138,7 +140,10 @@ export function Dictation(): JSX.Element {
 
       <section className="card grow">
         <header>
-          <h2>2 · Redacción con IA {done && <span className="field-done-tag">✓ Lista</span>}</h2>
+          <h2>
+            2 · Redacción con IA {done && <span className="field-done-tag">✓ Lista</span>}
+            {preview && <span className="muted"> · vista previa sin redactar</span>}
+          </h2>
           <label className="inline check">
             <input type="checkbox" checked={st.autoRewrite}
               onChange={(e) => void s.patchSettings({ autoRewrite: e.target.checked })} /> Automática
@@ -151,8 +156,10 @@ export function Dictation(): JSX.Element {
           ))}
         </div>
         <div className={`field ${s.rewriting ? 'live' : done ? 'done' : ''}`}>
-          <textarea value={s.polished} onChange={(e) => { s.setPolished(e.target.value); setDone(false) }}
-            placeholder="Aquí aparecerá el texto mejorado por la IA." />
+          <textarea value={s.polished || preview} onChange={(e) => { s.setPolished(e.target.value); setDone(false) }}
+            placeholder={st.autoRewrite
+              ? 'El texto dictado aparece aquí al instante; la IA lo mejora si hace falta.'
+              : 'Aquí aparecerá el texto mejorado por la IA.'} />
           {s.rewriting && <BotTyping label="Redactando" />}
         </div>
         <div className="actions">

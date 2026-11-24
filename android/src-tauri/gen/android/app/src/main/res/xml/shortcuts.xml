@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="dictar"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_dictar"
+        android:shortcutLongLabel="@string/shortcut_dictar_long">
+        <intent
+            android:action="mx.com.iguzman.dictaflow.DICTAR"
+            android:targetPackage="mx.com.iguzman.dictaflow"
+            android:targetClass="mx.com.iguzman.dictaflow.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="traducir"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_traducir"
+        android:shortcutLongLabel="@string/shortcut_traducir_long">
+        <intent
+            android:action="mx.com.iguzman.dictaflow.TRADUCIR"
+            android:targetPackage="mx.com.iguzman.dictaflow"
+            android:targetClass="mx.com.iguzman.dictaflow.MainActivity" />
+    </shortcut>
+</shortcuts>
