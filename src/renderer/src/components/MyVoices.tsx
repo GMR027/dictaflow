@@ -4,6 +4,7 @@ import type { GeneratedClip } from '@shared/voice'
 import { REFERENCE_SCRIPT, TEST_PHRASES } from '@shared/voice-phrases'
 import { createMic, SAMPLE_RATE, type MicLike } from '../audio'
 import { decodeToMono16k, encodeWav } from '../audioio'
+import { ensureService } from '../services'
 import { useApp } from '../store'
 import { useTtsStatus, VoicePicker } from './TtsSetup'
 import { RecButton } from './RecButton'
@@ -158,6 +159,10 @@ export function MyVoices(): JSX.Element {
 
   const test = async (v: PersonalVoice): Promise<void> => {
     setError('')
+    // La voz personal usa una voz Piper concreta; si está instalada, no hace falta
+    // pasar por el modal aunque la lectura general esté desactivada.
+    const piperReady = !v.piperVoice || (!!tts?.voices.includes(v.piperVoice) && (!!tts?.piperInstalled || window.api.platform === 'android'))
+    if (!piperReady && !(await ensureService('tts', { lang: v.lang }))) return
     try {
       const r = await window.api.synthesizePersonal(v.id, v.testPhrase)
       flash(`Audio generado: ${r.path}`)
@@ -306,7 +311,10 @@ export function MyVoices(): JSX.Element {
             <div className="actions">
               <button className="primary" onClick={() => void addVoice()} disabled={!name.trim() || !authorizedBy.trim() || (engineKind === 'piper' && !piperVoice)}>💾 Guardar voz</button>
               {engineKind === 'piper' && piperVoice && (
-                <button className="link" onClick={() => void patchSettings({ ttsVoice: { ...settings.ttsVoice, [lang]: piperVoice } })}>Usar esta voz también en Texto → Voz</button>
+                <button className="link" onClick={() => {
+                  const now = useApp.getState().settings
+                  void patchSettings({ ttsVoice: { ...now.ttsVoice, [lang]: piperVoice }, features: { ...now.features, tts: true } })
+                }}>Usar esta voz también en Texto → Voz</button>
               )}
             </div>
           </div>

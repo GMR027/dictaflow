@@ -65,7 +65,8 @@ export function AIServices(): JSX.Element {
 
   const choose = (kind: LLMKind): void => {
     if (kind === active) return
-    void patchSettings(connectPatch(settings, kind))
+    const now = useApp.getState().settings
+    void patchSettings({ ...connectPatch(settings, kind), features: { ...now.features, ai: true } })
   }
   const saveKey = async (): Promise<void> => {
     if (!p.secret) return

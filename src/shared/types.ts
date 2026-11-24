@@ -37,8 +37,22 @@ export interface LLMConfig {
   baseUrl?: string
 }
 
+/** Funciones que el usuario puede activar desde Ajustes o desde el modal de complementos. */
+export interface FeatureSettings {
+  /** Redacción, traducción y resúmenes con IA. */
+  ai: boolean
+  /** Leer en voz alta. */
+  tts: boolean
+  /** Texto provisional palabra a palabra mientras hablas. */
+  liveText: boolean
+}
+
 export interface Settings {
   onboarded: boolean
+  /** Mostrar los controles técnicos: modelos, motores, claves y URLs. */
+  advancedUI: boolean
+  /** Funciones activadas por el usuario; no borra los archivos al desactivarlas. */
+  features: FeatureSettings
   primaryLang: Lang
   secondaryLang: Lang | null
   sttModel: string
@@ -107,6 +121,8 @@ export type HwProfileSetting = 'auto' | HwProfile
 
 export const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
+  advancedUI: false,
+  features: { ai: true, tts: true, liveText: false },
   primaryLang: 'es',
   secondaryLang: 'en',
   sttModel: 'Xenova/whisper-small',

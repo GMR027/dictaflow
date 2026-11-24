@@ -5,6 +5,7 @@ import { fmtTime, toSubtitles } from '../audioio'
 import { download } from '../textutil'
 import { useApp } from '../store'
 import { takeNext, withRetry, type Pending } from '../meeting-queue'
+import { ensureService, ensureWhisper } from '../services'
 import { keepAwake } from '../wakelock'
 import { LiveTranscriber } from '../live'
 import { ToolIcon } from './ToolIcon'
@@ -192,6 +193,8 @@ export function Meetings(): JSX.Element {
   }
 
   const start = async (): Promise<void> => {
+    // Las reuniones se transcriben con Whisper (archivo/reunión), no con el motor del teléfono.
+    if (!(await ensureWhisper())) return
     setError(''); segs.current = []; setLive([]); setSel(null); setElapsed(0); setDraft('')
     backlog.current = []
     t0.current = Date.now()
@@ -217,7 +220,9 @@ export function Meetings(): JSX.Element {
           onEnded: () => { void stop() }
         })
         await mic.current.start()
-        live$.current = await LiveTranscriber.create(settings.primaryLang, setDraft)
+        live$.current = settings.features.liveText
+          ? await LiveTranscriber.create(settings.primaryLang, setDraft)
+          : null
       }
       if (source !== 'mic') {
         sysOffset.current = (performance.now() - clock) / 1000
@@ -257,6 +262,7 @@ export function Meetings(): JSX.Element {
   /** Genera el acta estructurada: resumen, temas, decisiones, acuerdos y tareas. */
   const makeMinutes = async (): Promise<void> => {
     if (!current) return
+    if (!(await ensureService('ai'))) return
     setBusy('Generando el acta…'); setError('')
     try {
       const text = current.segments.map((s) => `[${fmtTime(s.start)}]${s.speaker ? ' ' + s.speaker : ''}: ${s.text}`).join('\n')

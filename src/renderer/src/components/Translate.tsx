@@ -5,6 +5,7 @@ import { createMic, Segmenter, type MicLike } from '../audio'
 import { LiveTranscriber } from '../live'
 import { PartialTranscriber } from '../partial'
 import { ensureMicPermission, phoneSttBias, phoneSttDisponible } from '../phone-mic'
+import { ensureService, ensureWhisper } from '../services'
 import { Speaker } from '../speech'
 import { useApp } from '../store'
 import { keepAwake } from '../wakelock'
@@ -105,6 +106,12 @@ function LiveTranslate(): JSX.Element {
 
   const start = async (): Promise<void> => {
     setError(''); setDraft('')
+    // El motor del teléfono solo traduce al vuelo si el idioma es español o inglés;
+    // en el resto (o con audio del sistema) la frase se transcribe con Whisper.
+    const phoneOk = source === 'mic' && (from === 'es' || from === 'en') && await phoneSttDisponible(settings)
+    if (!phoneOk && !(await ensureWhisper())) return
+    if (!(await ensureService('ai'))) return
+    if (speak && hasVoice(to) && !(await ensureService('tts', { lang: to }))) return
     try {
       if (source === 'mic') {
         // En Android, el motor on-device traduce la frase en cuanto se cierra, sin Whisper.
@@ -147,7 +154,7 @@ function LiveTranslate(): JSX.Element {
         })
         mic.current = m
         await m.start()
-        live.current = await LiveTranscriber.create(from, setDraft)
+        live.current = settings.features.liveText ? await LiveTranscriber.create(from, setDraft) : null
         // Sin modelo de texto en vivo: borradores de Whisper, solo cuando no hay nada traduciéndose.
         if (!live.current && settings.sttProvider === 'local' && settings.draftsEnabled) {
           partial.current = new PartialTranscriber({
@@ -235,7 +242,13 @@ function LiveTranslate(): JSX.Element {
       <div className="recorder">
         <RecButton recording={on} level={level} onClick={() => void (on ? stop() : start())} idle="Empezar" active="Detener" />
         <label className="inline switch">
-          <input type="checkbox" role="switch" checked={speak} disabled={!hasVoice(to)} onChange={(e) => setSpeak(e.target.checked)} />
+          <input type="checkbox" role="switch" checked={speak} disabled={!hasVoice(to)}
+            onChange={(e) => {
+              const next = e.target.checked
+              if (next && hasVoice(to)) {
+                void ensureService('tts', { lang: to }).then((ok) => { if (ok) setSpeak(true) })
+              } else setSpeak(false)
+            }} />
           <span className="slider" aria-hidden="true" /> Leer en voz alta{!hasVoice(to) && ' (solo español e inglés)'}
         </label>
       </div>
@@ -253,6 +266,7 @@ function TextTranslate(): JSX.Element {
   const [error, setError] = useState('')
 
   const run = async (): Promise<void> => {
+    if (!(await ensureService('ai'))) return
     setBusy(true); setError('')
     try { setResult(await window.api.translate(text.trim(), to)) }
     catch (e) { setError((e as Error).message) }

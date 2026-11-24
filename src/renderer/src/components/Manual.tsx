@@ -22,7 +22,7 @@ const TOPICS: Topic[] = [
     android: (<>
       <p>DictaFlow convierte tu voz en texto, lo redacta mejor con IA y te lo deja listo para copiar, guardar o escuchar. <b>Todo ocurre dentro del teléfono</b>: no se envía tu voz ni tus textos a ningún servidor.</p>
       <ol>
-        <li>En el asistente inicial eliges tus idiomas y descargas los modelos (usa Wi-Fi: son de 60 MB a 1 GB).</li>
+        <li>En el asistente inicial eliges tus idiomas y qué preparar: en el teléfono puede usar el motor y las voces del sistema sin descargar nada; si eliges voces naturales o IA, verás el tamaño antes de descargar (usa Wi-Fi).</li>
         <li>En <b>🎤 Dictado</b> pulsa el botón del micrófono, habla y vuelve a pulsarlo.</li>
         <li>Revisa la redacción y cópiala con <b>📋 Copiar</b> para pegarla en WhatsApp, el correo o cualquier app.</li>
       </ol>
@@ -44,7 +44,7 @@ const TOPICS: Topic[] = [
   {
     id: 'actualizaciones', title: 'Actualizaciones', onlyAndroid: true,
     body: (<>
-      <p>Al abrir la app se comprueba si hay una versión nueva en la web de DictaFlow; también puedes buscarla en <b>Ajustes → General → Actualizaciones</b>. Si la hay, ves sus novedades y eliges <b>Actualizar ahora</b> o <b>Ahora no</b>.</p>
+      <p>Al abrir la app se comprueba si hay una versión nueva en la web de DictaFlow; también puedes buscarla en <b>Ajustes → Actualizaciones</b>. Si la hay, ves sus novedades y eliges <b>Actualizar ahora</b> o <b>Ahora no</b>.</p>
       <p>La app descarga la versión nueva, comprueba que sea idéntica a la publicada y abre el instalador de Android. Tus datos y modelos se conservan. La primera vez Android te pedirá activar <b>«Permitir de esta fuente»</b> para DictaFlow: actívalo, vuelve y toca <b>Reintentar</b>.</p>
     </>)
   },
@@ -54,7 +54,7 @@ const TOPICS: Topic[] = [
       <p>El botón redondo del micrófono es la acción principal: su anillo se mueve con tu voz para que sepas que te escucha. El micrófono se elige en <b>Opciones del micrófono</b>, bajo el botón.</p>
       <p>Mientras se transcribe aparece un bot escribiendo y el borde del texto se anima; cuando la redacción con IA está lista, su borde queda en verde.</p>
       <h4>Texto en vivo</h4>
-      <p>Con el modelo «Texto en vivo» descargado (en el teléfono, Ajustes → Servicios de IA; en el equipo, Ajustes → Audio → Modelos de voz) ves lo que dices palabra a palabra mientras hablas, en Dictado, Reuniones y Traducción. Al cerrarse la frase, Whisper pone el texto definitivo con puntuación. Sin ese modelo, el texto provisional lo da Whisper cada pocos segundos.</p>
+      <p>Con el modelo «Texto en vivo» descargado (en <b>Ajustes → Servicios → Texto en vivo</b>) ves lo que dices palabra a palabra mientras hablas, en Dictado, Reuniones y Traducción. Al cerrarse la frase, Whisper pone el texto definitivo con puntuación. Sin ese modelo, el texto provisional lo da Whisper cada pocos segundos.</p>
       <h4>Parlante controlado</h4>
       <p>Pulsas <b>Pulsar para hablar</b>, hablas todo lo que quieras y pulsas <b>Detener y transcribir</b>. El micrófono solo está abierto entre esos dos clics.</p>
       <h4>Parlante activo</h4>
@@ -77,9 +77,11 @@ const TOPICS: Topic[] = [
     </>)
   },
   {
-    id: 'proveedores', title: 'Cuentas y modelos de IA',
+    id: 'proveedores', title: 'Servicios de IA y voz',
     body: (<>
-      <p>En <b>Ajustes → Cuentas y servicios</b> eliges quién redacta:</p>
+      <p>En <b>Ajustes → Servicios</b> activas con un interruptor lo que quieras usar: dictado, redacción con IA, lectura en voz alta y texto en vivo. Cada fila explica para qué sirve y si falta descargar algo.</p>
+      <p>Cuando una herramienta necesita un complemento, aparece una ventana para descargarlo y activarlo sin salir de ella. Al terminar, la acción continúa sola.</p>
+      <p>Para elegir proveedor, modelo, motor o clave, activa <b>Opciones avanzadas</b> al final de Ajustes. Ahí está <b>Servicios de IA</b> con todo el detalle:</p>
       <ul>
         <li><b>Ollama:</b> modelo local, privado y gratuito. Si no lo tienes, el botón <b>Instalar Ollama</b> (en el asistente y en Ajustes) lo instala con el instalador oficial; antes te muestra el comando y el sistema te pide tu contraseña. Si ya está instalado pero parado, aparece <b>Iniciar Ollama</b>.</li>
         <li><b>Claude (API key):</b> tu clave se guarda cifrada con el llavero del sistema.</li>
@@ -88,11 +90,13 @@ const TOPICS: Topic[] = [
       </ul>
       <p>Usa «Probar conexión» tras configurar. La voz a texto siempre es local.</p>
     </>),
-    androidTitle: 'Modelos de IA del teléfono',
+    androidTitle: 'Servicios y modelos del teléfono',
     android: (<>
-      <p>En <b>Ajustes → 🤖 Servicios de IA</b> descargas los modelos que usa la app. Cada uno indica si es el <b>★ Recomendado</b> para tu teléfono según su memoria.</p>
+      <p>En <b>Ajustes → Servicios</b> activas el dictado, la redacción con IA, la lectura en voz alta y el texto en vivo con un interruptor. Cada fila dice para qué sirve y cuánto ocupa la descarga.</p>
+      <p>Si el teléfono ya trae motor de voz y voces del sistema, el dictado y la lectura funcionan <b>sin descargar nada</b>. La app los elige primero; las voces naturales son opcionales.</p>
+      <p>Para ver cada modelo con su tamaño y licencia, activa <b>Opciones avanzadas</b> al final de Ajustes → <b>Servicios de IA</b>. Cada modelo indica si es el <b>★ Recomendado</b> para tu teléfono según su memoria.</p>
       <ul>
-        <li><b>Voz → texto (Whisper):</b> transcribe lo que dictas. «Small» es el más preciso; «Base» y «Tiny» van más rápido en teléfonos modestos.</li>
+        <li><b>Voz → texto (Whisper):</b> transcribe lo que dictas. «Equilibrada» es la opción recomendada; «Rápida» y «Básica» van mejor en teléfonos modestos.</li>
         <li><b>Redacción con IA:</b> pule, traduce y resume. Con <b>Probar redacción</b> compruebas que funciona.</li>
         <li><b>Lectura en voz alta:</b> una voz por idioma. Con ▶ la escuchas antes de descargarla.</li>
       </ul>
@@ -148,11 +152,11 @@ const TOPICS: Topic[] = [
       <p>Arrastra un archivo (mp3, wav, ogg, flac, m4a, webm…) o graba con el micrófono. Transcribe con marcas de tiempo y exporta .txt, .srt o .vtt. <b>💾 Guardar audio</b> conserva el audio original.</p>
       <p>Con IA puedes generar resumen, capítulos con tiempos, post para redes, notas o apuntes de estudio, y traducir.</p>
       <h4>🔊 Texto → Voz</h4>
-      <p>Escribe o pega texto, elige idioma, voz y velocidad, escucha y descarga en <b>WAV o MP3</b>. También puedes usar un servicio en la nube en Ajustes → Audio.</p>
+      <p>Escribe o pega texto, elige idioma, voz y velocidad, escucha y descarga en <b>WAV o MP3</b>. También puedes usar un servicio en la nube en <b>Ajustes avanzados → General → Audio</b>.</p>
       <p>Hay tres tipos de voz local, agrupados en el selector:</p>
       <ul>
         <li><b>Supertonic:</b> 10 voces y 31 idiomas en una sola descarga de unos 145 MB, a 44.1 kHz. Una voz muy natural; también la más pesada. Ideal para el lector y los audiolibros. Licencia OpenRAIL-M (Supertone).</li>
-        <li><b>Kokoro:</b> las más naturales después de Supertonic (3 en español y 28 en inglés), en una sola descarga de unos 155 MB en Ajustes → Audio → Modelos de voz o con ⬇ Descargar en el selector.</li>
+        <li><b>Kokoro:</b> las más naturales después de Supertonic (3 en español y 28 en inglés), en una sola descarga de unos 155 MB en <b>Ajustes avanzados → Audio → Modelos de voz</b> o con ⬇ Descargar en el selector.</li>
         <li><b>Piper:</b> una descarga por voz (60–120 MB), muy rápidas. El motor (~25 MB) se instala solo la primera vez.</li>
       </ul>
     </>),
@@ -166,7 +170,7 @@ const TOPICS: Topic[] = [
       <ul>
         <li><b>Voces del teléfono:</b> las del motor de voz de Android (Google, Samsung…), sin descargas. Son rápidas; las encuentras o añades en los ajustes de Android → Texto a voz.</li>
         <li><b>Supertonic:</b> 10 voces y 31 idiomas en una sola descarga de unos 145 MB, a 44.1 kHz. Una voz muy natural; también la más pesada. Ideal para el lector y los audiolibros. Licencia OpenRAIL-M (Supertone).</li>
-        <li><b>Kokoro:</b> muy naturales (3 en español y 28 en inglés), en una descarga de unos 155 MB en Ajustes → Servicios de IA. Son más lentas: ideales para el lector y los audiolibros.</li>
+        <li><b>Kokoro:</b> muy naturales (3 en español y 28 en inglés), en una descarga de unos 155 MB en <b>Ajustes avanzados → Servicios de IA</b>. Son más lentas: ideales para el lector y los audiolibros.</li>
         <li><b>Piper:</b> una descarga por voz (60–120 MB), rápidas y sin conexión.</li>
       </ul>
     </>)
@@ -243,12 +247,12 @@ const TOPICS: Topic[] = [
   {
     id: 'diagnostico', title: 'Diagnóstico y copias de seguridad',
     body: (<>
-      <p>En <b>Ajustes → Diagnóstico</b> ves, de un vistazo, la versión, el equipo, los motores instalados, los modelos, las voces, el espacio que se usa y los problemas que el propio programa ha detectado. Puedes copiar el informe entero para mandarlo a quien te ayude.</p>
+      <p>En <b>Ajustes avanzados → Diagnóstico</b> ves, de un vistazo, la versión, el equipo, los motores instalados, los modelos, las voces, el espacio que se usa y los problemas que el propio programa ha detectado. Puedes copiar el informe entero para mandarlo a quien te ayude.</p>
       <p>Desde ahí también se crea una <b>copia de seguridad</b> en ZIP con todo lo que has creado (ajustes, biblioteca, reuniones, prompts, historial, voces y modelos) y se restaura en otro equipo. <b>Las claves de los servicios en la nube no se copian</b>: van cifradas con el llavero de tu sistema y no se pueden llevar a otro equipo, así que al restaurar hay que volver a escribirlas.</p>
     </>),
     androidTitle: 'Copias de seguridad',
     android: (<>
-      <p>En <b>Ajustes → General → Copia de seguridad</b> guardas un ZIP con todo lo que has creado: ajustes, biblioteca, reuniones, prompts, historial, agenda, automatizaciones y «Mis voces». Eliges dónde guardarlo (Descargas, Drive…).</p>
+      <p>En <b>Ajustes → Copia de seguridad</b> guardas un ZIP con todo lo que has creado: ajustes, biblioteca, reuniones, prompts, historial, agenda, automatizaciones y «Mis voces». Eliges dónde guardarlo (Descargas, Drive…).</p>
       <p>Es el mismo formato que en la computadora: sirve para pasar tus datos de un lado a otro. Los modelos de IA no se copian (se vuelven a descargar) y al restaurar se conservan los del teléfono.</p>
     </>)
   },
@@ -273,7 +277,7 @@ const TOPICS: Topic[] = [
   {
     id: 'desinstalar', title: 'Desinstalar',
     body: (<>
-      <p>En <b>Ajustes → Desinstalar</b> la app detecta cómo la instalaste y te muestra el comando exacto (<code>apt</code>, <code>dnf</code>, <code>pacman</code> o borrar el AppImage). El botón <b>Desinstalar aplicación</b> lo ejecuta por ti: el sistema te pide la contraseña en su propio diálogo y antes se te pide confirmación.</p>
+      <p>En <b>Ajustes avanzados → Desinstalar</b> la app detecta cómo la instalaste y te muestra el comando exacto (<code>apt</code>, <code>dnf</code>, <code>pacman</code> o borrar el AppImage). El botón <b>Desinstalar aplicación</b> lo ejecuta por ti: el sistema te pide la contraseña en su propio diálogo y antes se te pide confirmación.</p>
       <p>Si marcas «Borrar también mis datos» se eliminan los modelos, voces, ajustes, biblioteca y reuniones. Tus notas y audios exportados no se tocan.</p>
     </>),
     android: (<>
@@ -286,7 +290,7 @@ const TOPICS: Topic[] = [
       <p>Abajo a la izquierda eliges el tema: 🖥 Sistema (sigue al sistema operativo), 🌙 Oscuro o ☀ Claro.</p>
     </>),
     android: (<>
-      <p>En <b>Ajustes → General → Apariencia</b> eliges el tema: 📱 Sistema (sigue al teléfono), 🌙 Oscuro o ☀ Claro.</p>
+      <p>En <b>Ajustes → Apariencia</b> eliges el tema: 📱 Sistema (sigue al teléfono), 🌙 Oscuro o ☀ Claro.</p>
     </>)
   },
   {
@@ -301,7 +305,7 @@ const TOPICS: Topic[] = [
   {
     id: 'rendimiento', title: 'Rendimiento y latencias',
     body: (<>
-      <p>En <b>Ajustes → Rendimiento</b> hay tres perfiles (<b>Ligero</b>, <b>Equilibrado</b>, <b>Acelerado</b>) y un modo automático que los elige según tu equipo, con una prueba corta de la voz.</p>
+      <p>En <b>Ajustes avanzados → Rendimiento</b> hay tres perfiles (<b>Ligero</b>, <b>Equilibrado</b>, <b>Acelerado</b>) y un modo automático que los elige según tu equipo, con una prueba corta de la voz.</p>
       <p>Debajo están las <b>latencias medidas</b> por etapas: cuánto se espera al silencio, cuánto tarda la inferencia de voz, cuánto desde que se cierra la frase hasta que aparece el texto y cuánto tarda la redacción. Es la forma de saber si el atasco está en la voz, en la IA o en la configuración.</p>
       <p>El texto provisional <b>no</b> retrasa la transcripción final: la definitiva va siempre primero y el borrador se descarta si llega tarde. Si en tu equipo va justo, apaga el texto provisional.</p>
     </>),

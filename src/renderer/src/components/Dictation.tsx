@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DictationMode, Lang, PromptTarget, Tone } from '@shared/types'
 import { listMics } from '../audio'
 import { COMMAND_SPECS } from '../commands'
+import { ensureService, useServices } from '../services'
 import { modeLabel, useApp } from '../store'
 import { BotTyping } from './BotTyping'
 import { MoreMenu } from './MoreMenu'
@@ -26,6 +27,8 @@ export function Dictation(): JSX.Element {
   /** La redacción con IA acaba de terminar: el borde queda verde hasta que se edita o se vuelve a grabar. */
   const [done, setDone] = useState(false)
   const wasRewriting = useRef(false)
+  const services = useServices()
+  const aiReady = services.isReady('ai')
 
   useEffect(() => { void listMics().then(setMics) }, [])
   useEffect(() => {
@@ -39,6 +42,16 @@ export function Dictation(): JSX.Element {
     await s.copyPolished()
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
+  }
+  /** El dictado necesita un modelo o el motor del teléfono: si falta, se prepara desde el modal. */
+  const toggleRecording = async (): Promise<void> => {
+    if (!s.recording && !(await ensureService('dictation'))) return
+    await s.toggleRecording()
+  }
+  /** Las acciones de IA se activan desde su modal si el servicio está desactivado o incompleto. */
+  const withAI = async (run: () => Promise<void>): Promise<void> => {
+    if (!(await ensureService('ai'))) return
+    await run()
   }
   const remove = (): void => {
     s.clearAll()
@@ -97,7 +110,7 @@ export function Dictation(): JSX.Element {
           {busy && !s.draft && <BotTyping label="Transcribiendo" />}
         </div>
 
-        <RecButton recording={s.recording} level={s.level} onClick={() => void s.toggleRecording()}
+        <RecButton recording={s.recording} level={s.level} onClick={() => void toggleRecording()}
           idle={controlled ? 'Pulsa para hablar' : 'Activar parlante'}
           active={controlled ? 'Detener y transcribir' : 'Desactivar parlante'}
           hint={status && !busy ? status : undefined} />
@@ -114,7 +127,7 @@ export function Dictation(): JSX.Element {
           {st.stopEnabled && (s.recording || busy) && (
             <button className="danger" onClick={() => void s.cancel()} title="Interrumpe la grabación y descarta el audio">✕ Descartar</button>
           )}
-          {!st.autoRewrite && <button onClick={() => void s.rewrite('rewrite')} disabled={noRaw}>✨ Redactar</button>}
+          {!st.autoRewrite && <button onClick={() => void withAI(() => s.rewrite('rewrite'))} disabled={noRaw}>✨ Redactar</button>}
         </div>
 
         <details className="opts">
@@ -144,10 +157,15 @@ export function Dictation(): JSX.Element {
             2 · Redacción con IA {done && <span className="field-done-tag">✓ Lista</span>}
             {preview && <span className="muted"> · vista previa sin redactar</span>}
           </h2>
-          <label className="inline check">
-            <input type="checkbox" checked={st.autoRewrite}
-              onChange={(e) => void s.patchSettings({ autoRewrite: e.target.checked })} /> Automática
-          </label>
+          <div className="row tight">
+            {services.loaded && (!st.features.ai || !aiReady) && (
+              <button className="chip" onClick={() => void ensureService('ai')}>✨ Activar IA</button>
+            )}
+            <label className="inline check">
+              <input type="checkbox" checked={st.autoRewrite}
+                onChange={(e) => void s.patchSettings({ autoRewrite: e.target.checked })} /> Automática
+            </label>
+          </div>
         </header>
         <div className="tones" role="radiogroup" aria-label="Tono">
           {(Object.entries(TONES) as [Tone, string][]).map(([k, v]) => (
@@ -164,12 +182,12 @@ export function Dictation(): JSX.Element {
         </div>
         <div className="actions">
           <button className="primary" onClick={() => void copy()} disabled={!hasText}>{copied ? '✓ Copiado' : '📋 Copiar'}</button>
-          <button onClick={() => void s.rewrite('rewrite', true)} disabled={noRaw}>🔄 Rehacer</button>
+          <button onClick={() => void withAI(() => s.rewrite('rewrite', true))} disabled={noRaw}>🔄 Rehacer</button>
           <button onClick={() => void s.exportNote()} disabled={!hasText}>📝 A notas</button>
           <MoreMenu items={[
             { label: '📄 Exportar PDF', onClick: () => void exportPdf(), disabled: !hasText },
-            { label: '💻 Convertir en prompt', onClick: () => void s.rewrite('prompt'), disabled: noRaw },
-            { label: '🛠 Instrucciones de cambio', onClick: () => void s.rewrite('changes'), disabled: noRaw },
+            { label: '💻 Convertir en prompt', onClick: () => void withAI(() => s.rewrite('prompt')), disabled: noRaw },
+            { label: '🛠 Instrucciones de cambio', onClick: () => void withAI(() => s.rewrite('changes')), disabled: noRaw },
             { label: '💾 Guardar prompt', onClick: () => void s.savePrompt(), disabled: !s.polished },
             { label: '🗑 Eliminar todo', onClick: remove, disabled: !hasText, danger: true }
           ]} />

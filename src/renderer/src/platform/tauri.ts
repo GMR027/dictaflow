@@ -61,13 +61,14 @@ const ANDROID_DEFAULTS: Partial<Settings> = { sttModel: '', localLlm: '', sttPho
 async function getSettings(): Promise<Settings> {
   if (settings) return settings
   const stored = await docGet<Partial<Settings>>('settings', {})
-  const merged = { ...DEFAULT_SETTINGS, ...ANDROID_DEFAULTS, ...stored }
+  const merged = { ...DEFAULT_SETTINGS, ...ANDROID_DEFAULTS, ...stored, features: { ...DEFAULT_SETTINGS.features, ...(stored.features ?? {}) } }
   settings = { ...merged, llm: { ...merged.llm, model: normalizeModel(merged.llm.kind, merged.llm.model) } }
   return settings
 }
 
 async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
-  const merged = { ...(await getSettings()), ...patch }
+  const current = await getSettings()
+  const merged = { ...current, ...patch, features: { ...current.features, ...(patch.features ?? {}) } }
   settings = { ...merged, llm: { ...merged.llm, model: normalizeModel(merged.llm.kind, merged.llm.model) } }
   await docSet('settings', settings)
   return settings
@@ -111,7 +112,7 @@ interface LlmRespuesta { text: string; prompt_tokens: number; reused_tokens: num
 
 async function localComplete(system: string, msgs: ChatMsg[], temperature = 0.4, opts: CompleteOpts = {}): Promise<string> {
   const model = (await getSettings()).localLlm
-  if (!model) throw new Error('Descarga un modelo de redacción en Ajustes → Servicios de IA.')
+  if (!model) throw new Error('Activa la redacción con IA desde la herramienta o en Ajustes → Servicios.')
   const peticion = { model, system, msgs, temperature, maxTokens: opts.maxTokens }
   let r: LlmRespuesta
   if (opts.onToken) {
@@ -304,13 +305,13 @@ async function synthesize(text: string, lang: Lang, voiceId?: string): Promise<U
   const id = voiceId ?? s.ttsVoice[lang]
   const k = kokoroVoice(id)
   if (k) {
-    if (!modelReady(KOKORO_MODEL, await listModels())) throw new Error('Falta descargar Kokoro (Ajustes → Servicios de IA → Lectura en voz alta).')
+    if (!modelReady(KOKORO_MODEL, await listModels())) throw new Error('Falta descargar Kokoro (Ajustes avanzados → Servicios de IA → Lectura en voz alta).')
     return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_synth', { voice: 'kokoro', text, speed: s.ttsSpeed, sid: k.sid, lang: k.accent }))
   }
   const st = supertonicVoice(id)
   if (st) {
     if (!modelReady(SUPERTONIC_MODEL, await listModels())) {
-      throw new Error('Falta descargar Supertonic (Ajustes → Servicios de IA → Lectura en voz alta).')
+      throw new Error('Falta descargar Supertonic (Ajustes avanzados → Servicios de IA → Lectura en voz alta).')
     }
     return new Uint8Array(await tauriInvoke<ArrayBuffer>('tts_synth', {
       voice: 'supertonic', text, speed: s.ttsSpeed, sid: st.sid, lang
@@ -325,8 +326,8 @@ async function synthesize(text: string, lang: Lang, voiceId?: string): Promise<U
   if (!voiceId && (!m || !modelReady(m, files))) {
     m = LOCAL_MODELS.find((x) => x.kind === 'tts' && x.voice && x.lang === lang && modelReady(x, files)) ?? m
   }
-  if (!m) throw new Error(`La voz ${id} no está disponible en Android: elige otra en Ajustes → Servicios de IA.`)
-  if (!modelReady(m, files)) throw new Error(`Falta descargar la voz ${m.label} (Ajustes → Servicios de IA).`)
+  if (!m) throw new Error(`La voz ${id} no está disponible en Android: elige otra en Ajustes → Servicios.`)
+  if (!modelReady(m, files)) throw new Error(`Falta descargar la voz ${m.label} (Ajustes → Servicios).`)
   const wav = await tauriInvoke<ArrayBuffer>('tts_synth', { voice: m.voice, text, speed: s.ttsSpeed })
   return new Uint8Array(wav)
 }

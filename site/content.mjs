@@ -45,7 +45,7 @@ export const T = {
     ],
     android: ['Android', 'APK for phones (arm64, Android 8+). Speech, writing and voices run on the phone; the app offers updates by itself.', 'Download APK'],
     installTitle: 'Install',
-    installSub: 'Pick your distribution. Each download is a single file; the app downloads speech models on first run (about 0.5–1.5 GB, only once).',
+    installSub: 'Pick your distribution. On first run DictaFlow asks what you want to prepare and downloads only what you choose. On Android it can use the phone’s speech engine and voices without downloading anything; AI is optional.',
     distros: {
       deb: ['Ubuntu · Debian · Zorin OS · Mint · Pop!_OS', '.deb package'],
       rpm: ['Fedora · RHEL · Rocky · Alma', '.rpm package'],
@@ -65,8 +65,9 @@ export const T = {
       ['Is it really free?', 'Yes. DictaFlow is MIT-licensed. If you use a paid AI service you pay that provider; local models cost nothing.'],
       ['Does it send my voice anywhere?', 'Not by default. Speech recognition is local. Text goes out only if you pick a cloud AI, and the app shows when that happens.'],
       ['Which languages?', 'Spanish and English today; the app asks for your languages on first run.'],
+      ['Do I have to download models?', 'No. On Android DictaFlow uses the phone’s speech engine and voices when available; on Linux it asks what to prepare and downloads only what you choose. AI is optional and can be enabled later from Settings or from the tool that needs it.'],
       ['How do I dictate into other apps?', 'Register a keyboard shortcut once (instructions in Settings). Press it, speak, press again, and paste with Ctrl+V.'],
-      ['How do I uninstall it?', 'Settings → Uninstall shows the exact command for your installation and can run it for you, optionally deleting your data.']
+      ['How do I uninstall it?', 'Settings → Advanced options → Uninstall shows the exact command for your installation and can run it for you, optionally deleting your data.']
     ],
     footer: { license: 'MIT licensed', notAffiliated: 'DictaFlow is an independent project, not affiliated with OpenAI, Anthropic, Ollama or Zorin.', third: 'Third-party software' }
   },
@@ -102,7 +103,7 @@ export const T = {
     ],
     android: ['Android', 'APK para teléfonos (arm64, Android 8+). La voz, la redacción y las voces corren en el teléfono; la app avisa sola de las actualizaciones.', 'Descargar APK'],
     installTitle: 'Instalar',
-    installSub: 'Elige tu distribución. Cada descarga es un solo archivo; la app descarga los modelos de voz al primer uso (0,5–1,5 GB, una sola vez).',
+    installSub: 'Elige tu distribución. En el primer inicio DictaFlow te pregunta qué quieres preparar y descarga solo lo que elijas. En Android puede usar el motor y las voces del teléfono sin descargar nada; la IA es opcional.',
     distros: {
       deb: ['Ubuntu · Debian · Zorin OS · Mint · Pop!_OS', 'paquete .deb'],
       rpm: ['Fedora · RHEL · Rocky · Alma', 'paquete .rpm'],
@@ -122,8 +123,9 @@ export const T = {
       ['¿De verdad es gratis?', 'Sí. DictaFlow tiene licencia MIT. Si usas un servicio de IA de pago, pagas a ese proveedor; los modelos locales no cuestan nada.'],
       ['¿Envía mi voz a algún sitio?', 'No por defecto. El reconocimiento de voz es local. El texto solo sale si eliges una IA en la nube, y la app avisa cuando ocurre.'],
       ['¿Qué idiomas admite?', 'Español e inglés por ahora; la app te pide tus idiomas al primer inicio.'],
+      ['¿Tengo que descargar modelos?', 'No necesariamente. En Android usa el motor y las voces del teléfono cuando están disponibles; en Linux te pregunta qué preparar y descarga solo lo que elijas. La IA es opcional y se puede activar después desde Ajustes o desde la herramienta que la necesite.'],
       ['¿Cómo dicto en otras aplicaciones?', 'Registra un atajo de teclado una vez (instrucciones en Ajustes). Púlsalo, habla, púlsalo de nuevo y pega con Ctrl+V.'],
-      ['¿Cómo la desinstalo?', 'Ajustes → Desinstalar muestra el comando exacto de tu instalación y puede ejecutarlo por ti, borrando opcionalmente tus datos.']
+      ['¿Cómo la desinstalo?', 'Ajustes → Opciones avanzadas → Desinstalar muestra el comando exacto de tu instalación y puede ejecutarlo por ti, borrando opcionalmente tus datos.']
     ],
     footer: { license: 'Licencia MIT', notAffiliated: 'DictaFlow es un proyecto independiente, sin relación con OpenAI, Anthropic, Ollama ni Zorin.', third: 'Software de terceros' }
   }

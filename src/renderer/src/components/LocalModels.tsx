@@ -64,13 +64,20 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
         const m = LOCAL_MODELS.find((x) => x.id === p.id)
         const s = useApp.getState().settings
         if (m?.kind === 'stt' && !s.sttModel) void patchSettings({ sttModel: m.id })
-        if (m?.kind === 'llm' && !s.localLlm) void patchSettings({ localLlm: m.id })
+        if (m?.kind === 'llm' && !s.localLlm) void patchSettings({ localLlm: m.id, features: { ...s.features, ai: true } })
+        if (m?.kind === 'live') void patchSettings({ features: { ...s.features, liveText: true } })
         // Voz: se elige si la del idioma aún no está descargada (la de fábrica no lo está).
         if (m?.kind === 'tts' && m.voice && m.lang) {
           const { voice, lang } = m
           void window.api.listLocalModels().then((fs) => {
             const actual = LOCAL_MODELS.find((x) => x.kind === 'tts' && x.voice === useApp.getState().settings.ttsVoice[lang])
-            if (!actual || !modelReady(actual, fs)) void patchSettings({ ttsVoice: { ...useApp.getState().settings.ttsVoice, [lang]: voice } })
+            if (!actual || !modelReady(actual, fs)) {
+              const now = useApp.getState().settings
+              void patchSettings({
+                ttsVoice: { ...now.ttsVoice, [lang]: voice },
+                features: { ...now.features, tts: true }
+              })
+            }
           })
         }
       }
@@ -82,10 +89,15 @@ export function LocalModels({ only, kinds: shownKinds, pick }: {
   const active = (m: LocalModel): boolean =>
     m.kind === 'live' || (m.kind === 'tts' && !m.voice) ? modelReady(m, files)
       : m.kind === 'tts' ? !!m.lang && settings.ttsVoice[m.lang] === m.voice : (m.kind === 'stt' ? settings.sttModel : settings.localLlm) === m.id
-  const select = (m: LocalModel): Promise<void> =>
-    m.kind === 'tts' && m.lang && m.voice
-      ? patchSettings({ ttsVoice: { ...settings.ttsVoice, [m.lang]: m.voice } })
-      : patchSettings(m.kind === 'stt' ? { sttModel: m.id } : { localLlm: m.id })
+  const select = (m: LocalModel): Promise<void> => {
+    const now = useApp.getState().settings
+    if (m.kind === 'tts' && m.lang && m.voice) {
+      return patchSettings({ ttsVoice: { ...now.ttsVoice, [m.lang]: m.voice }, features: { ...now.features, tts: true } })
+    }
+    if (m.kind === 'stt') return patchSettings({ sttModel: m.id })
+    if (m.kind === 'llm') return patchSettings({ localLlm: m.id, features: { ...now.features, ai: true } })
+    return patchSettings({ features: { ...now.features, liveText: true } })
+  }
   const unselect = (m: LocalModel): Partial<typeof settings> | null =>
     m.kind === 'tts' || m.kind === 'live' ? null : m.kind === 'stt' ? { sttModel: '' } : { localLlm: '' }
 

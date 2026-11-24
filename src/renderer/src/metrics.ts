@@ -40,7 +40,7 @@ export const STAGES: { key: string; label: string; note: string }[] = [
   { key: 'llm_prompt_ms', label: 'Lectura del prompt', note: 'Lo que tarda el modelo en leer el contexto (el resto ya estaba en caché se descuenta).' },
   { key: 'rewrite_ms', label: 'Redacción con IA', note: 'Lo que tarda el modelo en redactar (completo).' },
   { key: 'first_token_ms', label: 'Primer token de la redacción', note: 'Lo que tarda en aparecer el primer trozo de texto redactado.' },
-  { key: 'rewrite_wait_ms', label: 'Espera antes de redactar', note: 'Configurada en Ajustes → Rendimiento.' }
+  { key: 'rewrite_wait_ms', label: 'Espera antes de redactar', note: 'Configurada en Ajustes avanzados → Rendimiento.' }
 ]
 
 ;(globalThis as Record<string, unknown>).__dictaflowMetrics = summary

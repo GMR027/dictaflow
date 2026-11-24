@@ -3,6 +3,7 @@ import type { Lang, Segment } from '@shared/types'
 import { createMic, SAMPLE_RATE, concat, type MicLike } from '../audio'
 import { decodeToMono16k, encodeWav, fmtTime, toSubtitles, wavToPcm } from '../audioio'
 import { Speaker } from '../speech'
+import { ensureService, ensureWhisper } from '../services'
 import { download, splitText } from '../textutil'
 import { useApp } from '../store'
 import { TtsSetup, useTtsStatus, VoicePicker } from './TtsSetup'
@@ -85,6 +86,8 @@ function SpeechToText(): JSX.Element {
 
   const transcribe = async (): Promise<void> => {
     if (!pcm) return
+    // Un archivo se transcribe con Whisper; el motor del teléfono no procesa archivos.
+    if (!(await ensureWhisper())) return
     setBusy(true); setPhase('stt')
     const segs: Segment[] = []
     try {
@@ -108,6 +111,7 @@ function SpeechToText(): JSX.Element {
   }
 
   const ai = async (action: string): Promise<void> => {
+    if (!(await ensureService('ai'))) return
     setBusy(true); setPhase('ai'); setOut('')
     try {
       const timed = segments.map((s) => `[${fmtTime(s.start)}] ${s.text}`).join('\n')
@@ -115,6 +119,7 @@ function SpeechToText(): JSX.Element {
     } catch (e) { setOut(`Error: ${(e as Error).message}`) } finally { setBusy(false); setPhase('') }
   }
   const translate = async (): Promise<void> => {
+    if (!(await ensureService('ai'))) return
     const to: Lang = settings.secondaryLang ?? (lang === 'es' ? 'en' : 'es')
     setBusy(true); setPhase('ai'); setOut('')
     try { setOut(await window.api.translate(text, to)) } catch (e) { setOut(`Error: ${(e as Error).message}`) } finally { setBusy(false); setPhase('') }
@@ -136,14 +141,14 @@ function SpeechToText(): JSX.Element {
         <p className="muted">{status || (window.api.platform === 'android' ? 'Elige un audio (mp3, wav, ogg, m4a…) o graba con el micrófono.' : 'Arrastra aquí un audio (mp3, wav, ogg, flac, m4a…), elige un archivo o graba con el micrófono.')}</p>
       </div>
 
-      {settings.sttProvider === 'local' && settings.sttEngine === 'transformers' && modelReady === false && (
+      {window.api.platform !== 'android' && settings.sttProvider === 'local' && settings.sttEngine === 'transformers' && modelReady === false && (
         <div className="row">
           <button onClick={() => void prepareModel()} disabled={!!prep}>⬇ Preparar modelo de voz ({settings.sttModel.split('/').pop()})</button>
           <span className="muted">{prep || 'Se descarga una sola vez y luego funciona sin conexión.'}</span>
         </div>
       )}
-      {settings.sttProvider === 'local' && settings.sttEngine === 'whispercpp' && (
-        <p className="muted">Motor whisper.cpp seleccionado. Sus modelos se gestionan en Ajustes → Rendimiento.</p>
+      {window.api.platform !== 'android' && settings.sttProvider === 'local' && settings.sttEngine === 'whispercpp' && (
+        <p className="muted">Motor whisper.cpp seleccionado. Sus modelos se gestionan en Ajustes avanzados → Rendimiento.</p>
       )}
 
       <div className="actions">
@@ -200,10 +205,12 @@ function TextToSpeech(): JSX.Element {
         : 'Voz local (Piper)'
 
   const play = async (): Promise<void> => {
+    if (!(await ensureService('tts', { lang }))) return
     setError(''); setBusy('Reproduciendo…')
     try { await speaker.current.readAll(splitText(text), lang, 0, () => undefined) } catch (e) { setError((e as Error).message) } finally { setBusy('') }
   }
   const render = async (fmt: 'wav' | 'mp3'): Promise<void> => {
+    if (!(await ensureService('tts', { lang }))) return
     setError('')
     try {
       if (fmt === 'mp3') {

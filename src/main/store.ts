@@ -21,7 +21,7 @@ export function getSettings(): Settings {
   //Si hay un guardado pendiente, ese es el estado actual: el disco puede ir retrasado.
   if (pending) return pending
   const stored = readVersioned<Partial<Settings>>(settingsFile, {}, migrateSettings)
-  const settings = { ...DEFAULT_SETTINGS, ...stored }
+  const settings = { ...DEFAULT_SETTINGS, ...stored, features: { ...DEFAULT_SETTINGS.features, ...(stored.features ?? {}) } }
   // Un valor viejo pudo guardar el nombre visible de opencode en vez de su ID.
   return { ...settings, llm: { ...settings.llm, model: normalizeModel(settings.llm.kind, settings.llm.model) } }
 }
@@ -32,7 +32,8 @@ export function getSettings(): Settings {
  * `flushSettings` fuerza la escritura (al cerrar la aplicación).
  */
 export function saveSettings(patch: Partial<Settings>): Settings {
-  const merged = { ...getSettings(), ...patch }
+  const current = getSettings()
+  const merged = { ...current, ...patch, features: { ...current.features, ...(patch.features ?? {}) } }
   const next = { ...merged, llm: { ...merged.llm, model: normalizeModel(merged.llm.kind, merged.llm.model) } }
   pending = next
   if (!settingsTimer) settingsTimer = setTimeout(flushSettings, 300)

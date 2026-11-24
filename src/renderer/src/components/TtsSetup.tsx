@@ -22,7 +22,7 @@ export function useTtsStatus(): [TtsInfo | null, () => void] {
  * No aparece si usas la nube o ya está todo instalado.
  */
 export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo | null; onChanged: () => void }): JSX.Element | null {
-  const { settings } = useApp()
+  const { settings, patchSettings } = useApp()
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
@@ -43,6 +43,8 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
     try {
       if (needEngine) await window.api.installPiper()
       if (needVoice) await window.api.installVoice(voice)
+      const now = useApp.getState().settings
+      await patchSettings({ features: { ...now.features, tts: true } })
       onChanged()
     } catch (e) {
       setError((e as Error).message)
@@ -61,7 +63,7 @@ export function TtsSetup({ lang, info, onChanged }: { lang: Lang; info: TtsInfo 
       </p>
       <div className="row">
         <button className="primary" onClick={() => void run()} disabled={busy}>{busy ? `Descargando… ${progress}` : '⬇ Descargar'}</button>
-        <span className="muted">O usa la nube en Ajustes → Audio.</span>
+        <span className="muted">O usa la nube en Ajustes avanzados → Audio.</span>
       </div>
       {error && <p className="warn" role="alert">{error}</p>}
     </div>
@@ -117,6 +119,8 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
     try {
       if (!info?.piperInstalled && !id.startsWith('kokoro:') && !id.startsWith('supertonic:')) await window.api.installPiper()
       await window.api.installVoice(id)
+      const now = useApp.getState().settings
+      await useApp.getState().patchSettings({ features: { ...now.features, tts: true } })
       onChanged()
     } catch (e) {
       setError((e as Error).message)
@@ -128,7 +132,11 @@ export function VoicePicker({ lang, value, onChange, info, onChanged }: {
   return (
     <div className="voice-picker">
       <label>Voz
-        <select value={value} onChange={(e) => onChange(e.target.value)} disabled={!voices.length}>
+        <select value={value} onChange={(e) => {
+          onChange(e.target.value)
+          const now = useApp.getState().settings
+          void useApp.getState().patchSettings({ features: { ...now.features, tts: true } })
+        }} disabled={!voices.length}>
           {!voices.length && <option value="">Sin voces para este idioma</option>}
           {GROUPS.map(([engines, title]) => {
             const group = voices.filter((v) => engines.includes(v.engine))

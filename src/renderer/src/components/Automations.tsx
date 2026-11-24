@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Automation, StepType } from '@shared/automation'
+import { ensureService } from '../services'
 import { useApp } from '../store'
 
 const STEPS: { type: StepType; icon: string; label: string; detail: string }[] = [
@@ -45,6 +46,9 @@ export function Automations(): JSX.Element {
   const run = async (a: Automation): Promise<void> => {
     setError('')
     if (!text.trim()) { setError('Primero escribe o pega abajo el texto que quieres procesar.'); return }
+    // Los pasos de IA y de voz piden su complemento desde el modal, sin salir de aquí.
+    if (a.steps.some((s) => s.type === 'summary' || s.type === 'notes' || s.type === 'minutes') && !(await ensureService('ai'))) return
+    if (a.steps.some((s) => s.type === 'tts') && !(await ensureService('tts', { lang: settings.primaryLang }))) return
     try {
       const job = await window.api.runAutomation(a.id, a.name, text, settings.primaryLang)
       flash(`Automatización en marcha: ${job.title}. Puedes seguir usando la app; el avance aparece en Trabajos.`)

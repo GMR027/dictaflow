@@ -52,19 +52,27 @@ interface State {
 type Run = (get: () => State, set: (p: Partial<State>) => void) => void | Promise<void>
 const tone = (t: Tone) => async (get: () => State) => { await get().patchSettings({ tone: t }); await get().rewrite('rewrite') }
 const endWith = (sep: string): Run => (g, s) => s({ raw: g().raw.replace(/\s+$/, '') + sep })
+/** Si la IA está desactivada, el comando de voz avisa en vez de quedarse en silencio. */
+const withAi = (run: Run): Run => (g, s) => {
+  if (!g().settings.features.ai) {
+    g().flash('La IA está desactivada: actívala en Ajustes → Servicios.')
+    return
+  }
+  return run(g, s)
+}
 
 const RUN: Record<CommandId, Run> = {
   clear: (g) => g().clearAll(),
   paragraph: endWith('\n\n'),
   newline: endWith('\n'),
   copy: (g) => g().copyPolished(),
-  redo: (g) => g().rewrite('rewrite', true),
-  rewrite: (g) => g().rewrite('rewrite'),
-  formal: (g) => tone('formal')(g),
-  concise: (g) => tone('concise')(g),
-  casual: (g) => tone('casual')(g),
-  prompt: (g) => g().rewrite('prompt'),
-  changes: (g) => g().rewrite('changes'),
+  redo: withAi((g) => g().rewrite('rewrite', true)),
+  rewrite: withAi((g) => g().rewrite('rewrite')),
+  formal: withAi((g) => tone('formal')(g)),
+  concise: withAi((g) => tone('concise')(g)),
+  casual: withAi((g) => tone('casual')(g)),
+  prompt: withAi((g) => g().rewrite('prompt')),
+  changes: withAi((g) => g().rewrite('changes')),
   savePrompt: (g) => g().savePrompt(),
   pause: (g) => g().stop()
 }
@@ -171,7 +179,7 @@ export const useApp = create<State>((set, get) => ({
             set({ polished: append(get().polished, text) })
             autoBase = get().raw
           }
-        } else if (!cmd && cfg.autoRewrite && !anywhereSession) {
+        } else if (!cmd && cfg.autoRewrite && cfg.features.ai && !anywhereSession) {
           clearTimeout(debounce)
           // En el teléfono se adelanta la redacción para que vaya por delante del dictado.
           const delay = window.api.platform === 'android' ? Math.min(cfg.rewriteDelayMs, 400) : cfg.rewriteDelayMs
@@ -303,7 +311,9 @@ export const useApp = create<State>((set, get) => ({
       await mic.start()
       if (!anywhere) {
         const m = mic
-        const l = await LiveTranscriber.create(settings.primaryLang, (draft) => set({ draft }))
+        const l = settings.features.liveText
+          ? await LiveTranscriber.create(settings.primaryLang, (draft) => set({ draft }))
+          : null
         // Si se detuvo mientras cargaba el modelo, la sesión no se queda abierta.
         if (mic === m) live = l
         else l?.stop()
@@ -380,6 +390,8 @@ export const useApp = create<State>((set, get) => ({
   rewrite: async (mode, redo = false, auto = false) => {
     const { raw, settings, polished } = get()
     if (!raw.trim()) return
+    // La IA desactivada no se usa nunca: las herramientas la reactivan desde su modal.
+    if (!settings.features.ai) return
     if (get().rewriting) {
       // Antes se descartaba: las frases dictadas durante una redacción se quedaban sin redactar
       if (auto) rewriteAgain = true

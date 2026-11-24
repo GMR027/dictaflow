@@ -7,6 +7,7 @@ import { LocalModels } from './LocalModels'
 import { BackupCard, DiagnosticsPanel } from './Diagnostics'
 import { Performance } from './Performance'
 import { PhoneSttSettings } from './PhoneStt'
+import { SimpleSettings } from './SimpleSettings'
 import { Updates } from './Updates'
 import { UiIcon } from './UiIcon'
 import { useTtsStatus } from './TtsSetup'
@@ -59,6 +60,8 @@ function General(): JSX.Element {
     try {
       if (!tts?.piperInstalled) await window.api.installPiper()
       await window.api.installVoice(id)
+      const now = useApp.getState().settings
+      await patchSettings({ features: { ...now.features, tts: true } })
       refreshTts()
     } catch (e) { setDlMsg((e as Error).message) } finally { off(); setDlBusy('') }
   }
@@ -88,7 +91,10 @@ function General(): JSX.Element {
         <h2>Idiomas</h2>
         <div className="row">
           <label>Principal
-            <select value={settings.primaryLang} onChange={(e) => void patchSettings({ primaryLang: e.target.value as Lang })}>
+            <select value={settings.primaryLang} onChange={(e) => {
+              const primary = e.target.value as Lang
+              void patchSettings({ primaryLang: primary, secondaryLang: settings.secondaryLang === primary ? null : settings.secondaryLang })
+            }}>
               <option value="es">Español</option><option value="en">English</option>
             </select>
           </label>
@@ -248,10 +254,19 @@ function General(): JSX.Element {
 }
 
 export function Settings(): JSX.Element {
+  const { settings, patchSettings } = useApp()
   const [tab, setTab] = useState<'general' | 'ai' | 'perf'>('general')
+  if (!settings.advancedUI) return <SimpleSettings />
+  const advancedHead = (
+    <div className="advanced-head">
+      <span className="muted">Opciones avanzadas</span>
+      <button className="link" onClick={() => void patchSettings({ advancedUI: false })}>← Volver a la vista simple</button>
+    </div>
+  )
   if (ANDROID) {
     return (
       <div className="view">
+        {advancedHead}
         <div className="seg tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}><UiIcon id="sliders" /> General</button>
           <button role="tab" aria-selected={tab === 'ai'} className={tab === 'ai' ? 'on' : ''} onClick={() => setTab('ai')}><UiIcon id="sparkles" /> Servicios de IA</button>
@@ -267,6 +282,7 @@ export function Settings(): JSX.Element {
   }
   return (
     <div className="view">
+      {advancedHead}
       <div className="seg tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'general'} className={tab === 'general' ? 'on' : ''} onClick={() => setTab('general')}><UiIcon id="sliders" /> General</button>
         <button role="tab" aria-selected={tab === 'perf'} className={tab === 'perf' ? 'on' : ''} onClick={() => setTab('perf')}><UiIcon id="gauge" /> Rendimiento</button>

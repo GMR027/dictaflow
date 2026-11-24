@@ -61,13 +61,13 @@ Habla y obtén texto pulido. DictaFlow convierte tu voz en redacción, prompts d
 
 ### Instalación
 
-Descarga desde [Releases](https://github.com/GMR027/dictaflow/releases/latest) (o desde la web del proyecto) y usa el comando de la tabla de arriba para tu distribución. Verifica con `sha256sum -c SHA256SUMS.txt`. Al primer inicio la app detecta tu hardware y descarga los modelos de voz (0,5–1,5 GB, una sola vez). Ollama es opcional y la app puede instalarlo.
+Descarga desde [Releases](https://github.com/GMR027/dictaflow/releases/latest) (o desde la web del proyecto) y usa el comando de la tabla de arriba para tu distribución. Verifica con `sha256sum -c SHA256SUMS.txt`. Al primer inicio la app te propone preparar lo esencial (voz y, si quieres, IA) y muestra cuánto ocupa cada descarga; en el teléfono puede usar el motor y las voces del sistema sin descargar nada. Ollama es opcional y la app puede instalarlo.
 
-**Desinstalar:** *Ajustes → Desinstalar* muestra el comando exacto de tu instalación y puede ejecutarlo (con opción de borrar tus datos).
+**Desinstalar:** *Ajustes avanzados → Desinstalar* muestra el comando exacto de tu instalación y puede ejecutarlo (con opción de borrar tus datos).
 
 **Requisitos:** Linux x86-64 con sesión gráfica (probado en GNOME/Wayland, Zorin OS) y PipeWire para capturar el audio del sistema.
 
-**Limitaciones:** sin OCR para PDF escaneados · **sin diarización automática**: en reuniones los hablantes solo se separan por origen («Yo»/«Sistema»), aunque puedes renombrar a cualquiera a mano · **sin motor de clonación incluido**: *Mis voces* funciona con las voces locales de Piper (sin conexión) y, si quieres clonar, se conecta a un servicio local que pongas tú en marcha (los que hay pesan 2–3 GB y algunos, como XTTS-v2, no se pueden usar comercialmente) · el texto dictado va al portapapeles, no se escribe solo en otras apps (Wayland no lo permite sin permisos arriesgados; registra el atajo en *Ajustes → Dictar en cualquier app*).
+**Limitaciones:** sin OCR para PDF escaneados · **sin diarización automática**: en reuniones los hablantes solo se separan por origen («Yo»/«Sistema»), aunque puedes renombrar a cualquiera a mano · **sin motor de clonación incluido**: *Mis voces* funciona con las voces locales de Piper (sin conexión) y, si quieres clonar, se conecta a un servicio local que pongas tú en marcha (los que hay pesan 2–3 GB y algunos, como XTTS-v2, no se pueden usar comercialmente) · el texto dictado va al portapapeles, no se escribe solo en otras apps (Wayland no lo permite sin permisos arriesgados; registra el atajo en *Ajustes avanzados → Dictar en cualquier app*).
 
 ---
 

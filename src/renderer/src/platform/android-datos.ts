@@ -152,7 +152,7 @@ export function createDataHandlers(d: DataDeps): Handlers {
     const m = v.piperVoice ? localVoice(v.piperVoice) : undefined
     return m && modelReady(m, await d.listModels())
       ? { available: true }
-      : { available: false, unavailableReason: 'Falta descargar esa voz en Ajustes → Servicios de IA.' }
+      : { available: false, unavailableReason: 'Falta descargar esa voz en Ajustes → Servicios.' }
   }
 
   // ── Reuniones: el audio se escribe a disco mientras se graba ──

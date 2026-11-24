@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Lang, LibraryDoc, LibraryMeta } from '@shared/types'
 import { concat } from '../audio'
+import { ensureService } from '../services'
 import { Speaker } from '../speech'
 import { splitText } from '../textutil'
 import { useApp } from '../store'
@@ -64,6 +65,7 @@ export function Reader(): JSX.Element {
   const stop = (): void => { speaker.current.stop(); setPlaying(false) }
   const play = async (from: number): Promise<void> => {
     if (!doc) return
+    if (!(await ensureService('tts', { lang }))) return
     stop(); setError(''); setPlaying(true)
     try {
       await speaker.current.readAll(units, lang, from, (i) => { setActive(i); setProgress({ paragraph: i }) })
@@ -76,6 +78,7 @@ export function Reader(): JSX.Element {
    */
   const audiobook = async (): Promise<void> => {
     if (!doc) return
+    if (!(await ensureService('tts', { lang }))) return
     setError('')
     try {
       const job = await window.api.startAudiobook(doc.id, lang, settings.ttsVoice[lang])
@@ -85,6 +88,7 @@ export function Reader(): JSX.Element {
 
   const ask = async (kind: 'summary' | 'ask' | 'translate'): Promise<void> => {
     if (!chapter) return
+    if (!(await ensureService('ai'))) return
     setBusy('Consultando a la IA…'); setAi('')
     try {
       if (kind === 'summary') setAi(await window.api.generate('summary', chapter.text, lang))

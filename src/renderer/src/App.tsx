@@ -6,9 +6,11 @@ import { Onboarding } from './components/Onboarding'
 import { UpdatePrompt } from './components/Updates'
 import { Aura } from './components/Aura'
 import { NavIcon } from './components/NavIcon'
+import { SetupSheet } from './components/SetupSheet'
 import { UiIcon, type UiGlyph } from './components/UiIcon'
 
 import type { Theme } from '@shared/types'
+import { useServices } from './services'
 import { useApp, type View } from './store'
 
 const ANDROID = window.api.platform === 'android'
@@ -84,6 +86,18 @@ export function App(): JSX.Element | null {
   const narrow = useNarrow()
   const [more, setMore] = useState(false)
   useEffect(() => { void init() }, [init])
+  // Estado de modelos y voces una vez cargados los ajustes: las herramientas y la
+  // vista simple de Ajustes lo consultan sin lanzar consultas cada vez.
+  useEffect(() => { if (ready) void useServices.getState().refresh() }, [ready])
+  // Al cambiar de modelo, voz o servicio, el estado se vuelve a leer: una descarga
+  // hecha en Ajustes avanzados se refleja en la vista simple y en el modal.
+  useEffect(() => {
+    if (!ready) return
+    void useServices.getState().refresh()
+  }, [
+    ready, settings.llm.kind, settings.localLlm,
+    settings.sttModel, settings.sttPhone, settings.ttsVoice.es, settings.ttsVoice.en
+  ])
   // Al cambiar de sección o volver al escritorio, la hoja «Más» se cierra.
   useEffect(() => { setMore(false) }, [view, narrow])
   // «Sistema» = sin atributo: manda prefers-color-scheme. Oscuro/Claro fijan la paleta con independencia del SO.
@@ -95,7 +109,7 @@ export function App(): JSX.Element | null {
   // Teléfono: la barra inferior se desliza sola hasta la sección activa.
   useEffect(() => { document.querySelector('aside nav button.on')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }, [view, ready])
   if (!ready) return <Cargando overlay label="Cargando DictaFlow…" />
-  if (!settings.onboarded) return <><Onboarding /><UpdatePrompt />{ANDROID && <Aura />}</>
+  if (!settings.onboarded) return <><Onboarding /><UpdatePrompt />{ANDROID && <Aura />}<SetupSheet /></>
 
   // Nube = cualquier proveedor que no sea un servidor en este mismo equipo. En Android la IA
   // corre siempre dentro del teléfono.
@@ -209,6 +223,7 @@ export function App(): JSX.Element | null {
       )}
       <UpdatePrompt />
       {ANDROID && <Aura />}
+      <SetupSheet />
     </div>
   )
 }

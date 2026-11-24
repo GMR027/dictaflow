@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { applyDictionary } from '@shared/dictionary'
 import { createMic, type MicLike } from './audio'
 import { ensureMicPermission, phoneSttBias, phoneSttDisponible } from './phone-mic'
+import { ensureService } from './services'
 import { useApp } from './store'
 
 /** Dictado rápido a un campo de texto (pulsar para hablar, volver a pulsar para transcribir). */
@@ -41,6 +42,7 @@ export function useQuickDictation(onText: (text: string) => void): { recording: 
       return
     }
     setError('')
+    if (!(await ensureService('dictation'))) return
     if (await phoneSttDisponible(settings)) {
       let unsub: (() => void) | null = null
       let fallo = false
