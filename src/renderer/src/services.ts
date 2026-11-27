@@ -5,7 +5,7 @@ import type { HardwareInfo, Lang, LLMKind, Settings, SttStatus, TtsStatus } from
 import type { DeviceInfo, LocalModel, LocalModelFile } from '@shared/local-models'
 import { companions, LOCAL_MODELS, modelReady } from '@shared/local-models'
 import { PROVIDERS } from '@shared/providers'
-import type { PhoneSttInfo } from '@shared/phone-stt'
+import type { PhoneSttInfo, PhoneSttLanguageStatus } from '@shared/phone-stt'
 import type { VoiceStatus } from '@shared/voice'
 import {
   dictationOptions, liveOptions, liveReady, llmOptions, selectedModelReady,
@@ -14,6 +14,7 @@ import {
 } from '@shared/features'
 import { useApp } from './store'
 import { useSetup } from './setup'
+import { downloadPhoneLanguage } from './phone-mic'
 
 const ANDROID = window.api.platform === 'android'
 
@@ -35,6 +36,10 @@ interface ServicesState {
   tts: (TtsStatus & { catalog: VoiceStatus[] }) | null
   stt: SttStatus | null
   phone: PhoneSttInfo | null
+  /** Estado del paquete de idioma del motor del teléfono para el idioma principal. */
+  phoneLang: PhoneSttLanguageStatus | null
+  /** Idioma al que corresponde `phoneLang`; si cambia, hay que volver a consultarlo. */
+  phoneLangFor: Lang | null
   device: DeviceInfo | null
   hw: HardwareInfo | null
   keys: { anthropic: boolean; compat: boolean }
@@ -137,6 +142,8 @@ export const useServices = create<ServicesState>((set, get) => ({
   tts: null,
   stt: null,
   phone: null,
+  phoneLang: null,
+  phoneLangFor: null,
   device: null,
   hw: null,
   keys: { anthropic: false, compat: false },
@@ -159,11 +166,18 @@ export const useServices = create<ServicesState>((set, get) => ({
         window.api.hasSecret('anthropic').catch(() => false),
         window.api.hasSecret('openai-compat').catch(() => false)
       ])
+      const settingsNow = useApp.getState().settings
+      let phoneLang: PhoneSttLanguageStatus | null = null
+      let phoneLangFor: Lang | null = null
+      if (ANDROID && phone?.onDevice) {
+        phoneLang = await window.api.phoneStt.languageStatus(settingsNow.primaryLang).catch(() => null)
+        phoneLangFor = settingsNow.primaryLang
+      }
       const keys = { anthropic, compat }
       set({
-        models, tts, stt, phone, device, hw, keys,
+        models, tts, stt, phone, phoneLang, phoneLangFor, device, hw, keys,
         // Se leen los ajustes al terminar: si cambiaron durante la consulta, manda el valor nuevo.
-        aiActive: aiActive(useApp.getState().settings, models, hw, keys),
+        aiActive: aiActive(settingsNow, models, hw, keys),
         loading: false,
         loaded: true
       })
@@ -182,7 +196,9 @@ export const useServices = create<ServicesState>((set, get) => ({
     switch (service) {
       case 'dictation':
         if (ANDROID) {
-          if (s.sttPhone === 'auto' && st.phone?.onDevice) return true
+          // Android 12 no permite consultar el idioma: se intenta y, si falla, se usa Whisper.
+          const idiomaListo = !st.phoneLang?.checkable || st.phoneLang.installed
+          if (s.sttPhone === 'auto' && st.phone?.onDevice && idiomaListo) return true
           return selectedModelReady(s, st.models)
         }
         if (s.sttProvider === 'openai') return true
@@ -216,7 +232,10 @@ export const useServices = create<ServicesState>((set, get) => ({
           s.sttProvider === 'openai' ||
           (s.sttEngine === 'whispercpp' ? !!st.stt?.cpp.ggml.some((g) => g.installed) : !!st.stt?.modelInstalled)
         )
-        return dictationOptions(window.api.platform, st.device?.ramGB ?? 0, st.models, st.phone?.onDevice ?? null, desktopReady)
+        return dictationOptions(
+          window.api.platform, st.device?.ramGB ?? 0, st.models, st.phone?.onDevice ?? null, desktopReady,
+          st.phone?.onDevice ? { lang: s.primaryLang, status: st.phoneLang } : null
+        )
       }
       case 'ai':
         return ANDROID ? llmOptions(st.device?.ramGB ?? 0, st.models) : []
@@ -290,6 +309,19 @@ export async function installOption(
     await useServices.getState().refresh()
     return
   }
+  if (action.kind === 'phone-lang') {
+    if (current.strictOffline) throw new Error('Modo offline estricto: no se puede descargar el idioma.')
+    const resultado = await downloadPhoneLanguage(action.lang, (pct) => onProgress?.('Idioma del teléfono', pct ?? -1))
+    if (resultado === 'scheduled') {
+      throw new Error('Android descargará el idioma en segundo plano. Mientras tanto, elige Whisper para dictar.')
+    }
+    if (resultado !== 'done') {
+      throw new Error('Android no completó la descarga del idioma. Puedes usar Whisper mientras tanto.')
+    }
+    await patch({ sttPhone: 'auto' })
+    await useServices.getState().refresh()
+    return
+  }
   if (action.kind === 'stt-prepare') {
     const off = window.api.onSttProgress((p) => {
       if (p.status === 'progress') onProgress?.('Whisper', Math.round(p.progress ?? 0))
@@ -352,6 +384,12 @@ export function cancelInstall(option: ServiceOption): void {
 export async function ensureService(service: ServiceId, opts: { lang?: Lang } = {}): Promise<boolean> {
   const store = useServices.getState()
   if (!store.loaded) await store.refresh()
+  // Si el idioma principal cambió, el estado del paquete del teléfono puede ser de otro idioma.
+  const actual = useServices.getState()
+  const idiomaActual = useApp.getState().settings.primaryLang
+  if (ANDROID && service === 'dictation' && actual.phone?.onDevice && actual.phoneLangFor !== idiomaActual) {
+    await actual.refresh()
+  }
   const settings = useApp.getState().settings
   const enabled = serviceEnabled(settings, service)
   if (enabled && useServices.getState().isReady(service, opts.lang)) return true

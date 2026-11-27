@@ -100,6 +100,8 @@ let closing = false
 let phoneUnsub: (() => void) | null = null
 /** El motor nativo falló: se usa Whisper hasta que el usuario cambie el ajuste. */
 let phoneFallo = false
+/** Una parada en curso no debe confundirse con un fallo del motor y relanzar la grabación. */
+let stopping = false
 
 export const useApp = create<State>((set, get) => ({
   ready: false,
@@ -228,8 +230,17 @@ export const useApp = create<State>((set, get) => ({
             phoneFallo = true
             phoneUnsub?.()
             phoneUnsub = null
+            const estabaGrabando = get().recording
             set({ recording: false, level: 0, draft: '' })
-            get().flash(`Voz del teléfono: ${msg} Se usará Whisper.`)
+            console.debug(`[stt] motor del teléfono: ${msg}`)
+            // Si la sesión ya estaba en marcha, se continúa con Whisper sin pedir otro toque.
+            if (estabaGrabando && !stopping) {
+              void (async () => {
+                await window.api.phoneStt.cancel().catch(() => undefined)
+                get().flash('🎙 Seguimos con Whisper')
+                await get().start()
+              })()
+            }
           }
         })
         const r = await window.api.phoneStt.start({
@@ -339,50 +350,60 @@ export const useApp = create<State>((set, get) => ({
   },
 
   stop: async () => {
-    if (phoneUnsub) {
-      const unsub = phoneUnsub
-      phoneUnsub = null
-      try {
-        // El plugin resuelve cuando llega el resultado final o tras un tiempo máximo.
-        await window.api.phoneStt.stop()
-      } catch {
-        // El motor ya estaba detenido.
+    stopping = true
+    try {
+      if (phoneUnsub) {
+        const unsub = phoneUnsub
+        phoneUnsub = null
+        try {
+          // El plugin resuelve cuando llega el resultado final o tras un tiempo máximo.
+          await window.api.phoneStt.stop()
+        } catch {
+          // El motor ya estaba detenido.
+        }
+        // El evento `final` viaja por otro canal: se le da un instante antes de dejar de escuchar.
+        await new Promise<void>((resolve) => setTimeout(resolve, 120))
+        unsub()
+        set({ recording: false, level: 0, draft: '' })
+        await queue
+        return
       }
-      // El evento `final` viaja por otro canal: se le da un instante antes de dejar de escuchar.
-      await new Promise<void>((resolve) => setTimeout(resolve, 120))
-      unsub()
+      await mic?.stop()
+      mic = null
+      partial?.stop(); partial = null
+      live?.stop(); live = null
       set({ recording: false, level: 0, draft: '' })
       await queue
-      return
+    } finally {
+      stopping = false
     }
-    await mic?.stop()
-    mic = null
-    partial?.stop(); partial = null
-    live?.stop(); live = null
-    set({ recording: false, level: 0, draft: '' })
-    await queue
   },
 
   /** Interrumpe la grabación y descarta el audio pendiente y las transcripciones en curso. */
   cancel: async () => {
     if (!get().recording && get().transcribing === 0) return
-    epoch++
-    if (phoneUnsub) {
-      const unsub = phoneUnsub
-      phoneUnsub = null
-      await window.api.phoneStt.cancel().catch(() => undefined)
-      unsub()
+    stopping = true
+    try {
+      epoch++
+      if (phoneUnsub) {
+        const unsub = phoneUnsub
+        phoneUnsub = null
+        await window.api.phoneStt.cancel().catch(() => undefined)
+        unsub()
+        set({ recording: false, level: 0, draft: '' })
+        get().flash('⏹ Transcripción detenida')
+        return
+      }
+      await mic?.stop(true)
+      mic = null
+      partial?.stop(); partial = null
+      live?.stop(); live = null
       set({ recording: false, level: 0, draft: '' })
+      await queue
       get().flash('⏹ Transcripción detenida')
-      return
+    } finally {
+      stopping = false
     }
-    await mic?.stop(true)
-    mic = null
-    partial?.stop(); partial = null
-    live?.stop(); live = null
-    set({ recording: false, level: 0, draft: '' })
-    await queue
-    get().flash('⏹ Transcripción detenida')
   },
 
   toggleRecording: async () => (get().recording ? get().stop() : get().start()),

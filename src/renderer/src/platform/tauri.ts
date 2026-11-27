@@ -23,7 +23,10 @@ import { SUPERTONIC_MODEL, supertonicCatalog, supertonicVoice } from '@shared/su
 import { VOICE_META } from '@shared/voice-catalog'
 import type { VoiceStatus } from '@shared/voice'
 import type { UpdateInfo } from '@shared/update'
-import type { PhoneSttApi, PhoneSttInfo, PhoneSttStartResult } from '@shared/phone-stt'
+import type {
+  PhoneSttApi, PhoneSttDownloadProgress, PhoneSttDownloadResult, PhoneSttInfo,
+  PhoneSttLanguageStatus, PhoneSttStartResult
+} from '@shared/phone-stt'
 import type { NativeMicApi, NativeMicResult } from '@shared/native-mic'
 import { createApi, type Invoke, type On } from '../../../preload/api'
 import { createDataHandlers, netGuard } from './android-datos'
@@ -200,6 +203,32 @@ const phoneStt: PhoneSttApi = {
     }
     return () => {
       for (const u of unsubs) u()
+    }
+  },
+  languageStatus: (lang) => tauriInvoke<PhoneSttLanguageStatus>('reconocimiento_idioma', { lang }),
+  downloadLanguage: async (lang, onProgress) => {
+    let off: (() => void) | null = null
+    if (onProgress) {
+      try {
+        const listener = await addPluginListener<{ state: string; pct?: number; message?: string }>(
+          PHONE_STT_PLUGIN, 'descarga',
+          (p) => {
+            onProgress({
+              state: (p.state ?? 'progress') as PhoneSttDownloadProgress['state'],
+              pct: typeof p.pct === 'number' ? p.pct : undefined,
+              message: p.message
+            })
+          }
+        )
+        off = () => void listener.unregister()
+      } catch {
+        // Sin eventos de progreso: la descarga sigue igual y se espera al resultado.
+      }
+    }
+    try {
+      return await tauriInvoke<PhoneSttDownloadResult>('reconocimiento_descargar_idioma', { lang })
+    } finally {
+      off?.()
     }
   }
 }

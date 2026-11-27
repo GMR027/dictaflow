@@ -75,7 +75,9 @@ async function load(over: Partial<Settings> = {}) {
     start: vi.fn(async () => ({ onDevice: false })),
     stop: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
-    on: vi.fn(async (h: typeof phoneHandlers) => { phoneHandlers = h; return () => { phoneHandlers = null } })
+    on: vi.fn(async (h: typeof phoneHandlers) => { phoneHandlers = h; return () => { phoneHandlers = null } }),
+    languageStatus: vi.fn(async () => ({ checkable: true, installed: true, pending: false, supported: true, downloadable: true })),
+    downloadLanguage: vi.fn(async () => ({ state: 'done' }))
   }
   // La interfaz usa `rewriteStream`; en la prueba se resuelve con el mismo simulador de `rewrite`.
   api.rewriteStream = vi.fn(async (r: { text: string }, onToken: (t: string) => void) => {

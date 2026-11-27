@@ -4,7 +4,7 @@ import { applyDictionary } from '@shared/dictionary'
 import { createMic, Segmenter, type MicLike } from '../audio'
 import { LiveTranscriber } from '../live'
 import { PartialTranscriber } from '../partial'
-import { ensureMicPermission, phoneSttBias, phoneSttDisponible } from '../phone-mic'
+import { ensureMicPermission, phoneSttBias, prepararPhoneStt } from '../phone-mic'
 import { ensureService, ensureWhisper } from '../services'
 import { Speaker } from '../speech'
 import { useApp } from '../store'
@@ -50,6 +50,8 @@ function LiveTranslate(): JSX.Element {
   const partial = useRef<PartialTranscriber | null>(null)
   const phone = useRef<{ unsub: () => void } | null>(null)
   const release = useRef<(() => void) | null>(null)
+  /** El motor del teléfono falló en esta sesión: se sigue con Whisper sin volver a intentarlo. */
+  const sinTelefono = useRef(false)
   const nextId = useRef(1)
   const list = useRef<HTMLDivElement>(null)
   const opts = useRef({ from, to, speak })
@@ -104,20 +106,26 @@ function LiveTranslate(): JSX.Element {
     })
   }
 
-  const start = async (): Promise<void> => {
+  const start = async (auto = false): Promise<void> => {
+    if (!auto) sinTelefono.current = false
     setError(''); setDraft('')
-    // El motor del teléfono solo traduce al vuelo si el idioma es español o inglés;
-    // en el resto (o con audio del sistema) la frase se transcribe con Whisper.
-    const phoneOk = source === 'mic' && (from === 'es' || from === 'en') && await phoneSttDisponible(settings)
-    if (!phoneOk && !(await ensureWhisper())) return
+    // El motor del teléfono solo traduce al vuelo si el idioma es español o inglés; en el resto
+    // (o con audio del sistema) la frase se transcribe con Whisper.
+    // Traducir siempre necesita la IA; se comprueba antes de pedir una descarga de voz.
     if (!(await ensureService('ai'))) return
+    const idiomaTelefono = hasVoice(from) ? from : null
+    const phoneOk = !auto && !sinTelefono.current && source === 'mic' && !!idiomaTelefono &&
+      await prepararPhoneStt(settings, idiomaTelefono)
+    if (!phoneOk && !(await ensureWhisper())) return
     if (speak && hasVoice(to) && !(await ensureService('tts', { lang: to }))) return
     try {
       if (source === 'mic') {
         // En Android, el motor on-device traduce la frase en cuanto se cierra, sin Whisper.
-        if ((from === 'es' || from === 'en') && await phoneSttDisponible(settings)) {
+        if (phoneOk && idiomaTelefono) {
           let unsub: (() => void) | null = null
           let fallo = false
+          let arrancado = false
+          let recuperando = false
           try {
             unsub = await window.api.phoneStt.on({
               onPartial: setDraft,
@@ -129,15 +137,25 @@ function LiveTranslate(): JSX.Element {
               },
               onError: (m) => {
                 fallo = true
-                unsub?.()
-                setError(`Voz del teléfono: ${m}`)
-                void stop()
+                // Si el usuario ya pulsó Detener, phone.current es null y no se relanza nada.
+                const activo = phone.current !== null
+                if (!arrancado || !activo || recuperando) return
+                // El motor falló con la sesión ya en marcha: se sigue con Whisper sin cortar.
+                recuperando = true
+                sinTelefono.current = true
+                console.debug(`[traducción] motor del teléfono: ${m}`)
+                void (async () => {
+                  await stop()
+                  setError('')
+                  await start(true)
+                })()
               }
             })
             await ensureMicPermission()
-            await window.api.phoneStt.start({ lang: from, continuous: true, bias: phoneSttBias(settings) })
+            await window.api.phoneStt.start({ lang: idiomaTelefono, continuous: true, bias: phoneSttBias(settings) })
             if (fallo) throw new Error('El motor de voz del teléfono falló al arrancar.')
             phone.current = { unsub }
+            arrancado = true
             release.current = keepAwake()
             setOn(true)
             return
@@ -145,6 +163,7 @@ function LiveTranslate(): JSX.Element {
             // Si el motor del teléfono falla al arrancar, se usa el micrófono normal.
             unsub?.()
             await window.api.phoneStt.cancel().catch(() => undefined)
+            if (!(await ensureWhisper())) return
           }
         }
         const m = createMic({

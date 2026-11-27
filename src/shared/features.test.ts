@@ -18,6 +18,28 @@ describe('catálogo de servicios', () => {
     expect(whisper.note).not.toMatch(/\.bin|ggml/)
   })
 
+  it('si falta el idioma del teléfono ofrece descargarlo con Android', () => {
+    const status = { checkable: true, installed: false, pending: false, supported: true, downloadable: true }
+    const opts = dictationOptions('android', 8, [], true, false, { lang: 'es', status })
+    const telefono = opts.find((o) => o.id === 'telefono')!
+    expect(telefono).toMatchObject({ installed: false, action: { kind: 'phone-lang', lang: 'es' } })
+    expect(telefono.note).toMatch(/Falta el idioma español/)
+    expect(opts.some((o) => o.id === 'ggml-small-q5_1.bin')).toBe(true)
+  })
+
+  it('mientras Android descarga el idioma no se ofrece otra descarga', () => {
+    const status = { checkable: true, installed: false, pending: true, supported: true, downloadable: true }
+    const opts = dictationOptions('android', 8, [], true, false, { lang: 'es', status })
+    expect(opts.some((o) => o.id === 'telefono')).toBe(false)
+    expect(opts.some((o) => o.id === 'ggml-small-q5_1.bin')).toBe(true)
+  })
+
+  it('si el idioma del teléfono está instalado se usa sin descargas', () => {
+    const status = { checkable: true, installed: true, pending: false, supported: true, downloadable: true }
+    const opts = dictationOptions('android', 8, [], true, false, { lang: 'es', status })
+    expect(opts.find((o) => o.id === 'telefono')).toMatchObject({ installed: true, action: { kind: 'system-stt' } })
+  })
+
   it('en escritorio el dictado se prepara con Whisper y no se ofrece el motor del teléfono', () => {
     const opts = dictationOptions('linux', 8, [], null, false)
     expect(opts).toHaveLength(1)

@@ -614,6 +614,31 @@ async fn reconocimiento_disponibilidad(app: tauri::AppHandle) -> Result<Value, S
     .map_err(|e| e.to_string())?
 }
 
+/// ¿Está instalado el paquete de idioma del motor on-device? (Android 13+)
+#[tauri::command]
+async fn reconocimiento_idioma(lang: String, app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Reconocimiento>().ok_or("El motor de voz del teléfono solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>("idioma", serde_json::json!({ "lang": lang }))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Pide a Android que descargue el paquete de idioma del motor on-device (Android 13+).
+/// El progreso llega como evento `descarga` del plugin.
+#[tauri::command]
+async fn reconocimiento_descargar_idioma(lang: String, app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = app.try_state::<Reconocimiento>().ok_or("El motor de voz del teléfono solo existe en Android.")?;
+        r.0.run_mobile_plugin::<Value>("descargarIdioma", serde_json::json!({ "lang": lang }))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Abre una sesión de dictado con el motor del teléfono. Los resultados llegan como eventos del
 /// plugin (`parcial`, `final`, `nivel`, `estado`, `error`).
 #[tauri::command]
@@ -826,6 +851,8 @@ pub fn run() {
             captura_detener,
             captura_cancelar,
             reconocimiento_disponibilidad,
+            reconocimiento_idioma,
+            reconocimiento_descargar_idioma,
             reconocimiento_iniciar,
             reconocimiento_detener,
             reconocimiento_cancelar,

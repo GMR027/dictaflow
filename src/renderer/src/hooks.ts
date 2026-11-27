@@ -9,6 +9,7 @@ import { useApp } from './store'
 export function useQuickDictation(onText: (text: string) => void): { recording: boolean; busy: boolean; toggle: () => Promise<void>; error: string } {
   const mic = useRef<MicLike | null>(null)
   const phone = useRef<{ unsub: () => void } | null>(null)
+  const sinTelefono = useRef(false)
   const [recording, setRecording] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -41,9 +42,36 @@ export function useQuickDictation(onText: (text: string) => void): { recording: 
       setRecording(false)
       return
     }
+    /** Camino normal: micrófono del WebView y Whisper. */
+    const startWhisper = async (): Promise<void> => {
+      setError('')
+      const m = createMic({
+        deviceId: settings.micDeviceId, mode: 'controlled', onLevel: () => undefined, filters: settings.micFilters,
+        onSegment: async (pcm) => {
+          setBusy(true)
+          try {
+            const r = await window.api.transcribeDetailed(pcm, settings.primaryLang)
+            if (r.text) onText(r.text)
+          } catch (e) {
+            setError((e as Error).message)
+          } finally {
+            setBusy(false)
+          }
+        },
+        onEnded: () => setRecording(false)
+      })
+      try {
+        await m.start()
+        mic.current = m
+        setRecording(true)
+      } catch (e) {
+        setError(`Micrófono: ${(e as Error).message}`)
+      }
+    }
+
     setError('')
     if (!(await ensureService('dictation'))) return
-    if (await phoneSttDisponible(settings)) {
+    if (!sinTelefono.current && await phoneSttDisponible(settings)) {
       let unsub: (() => void) | null = null
       let fallo = false
       try {
@@ -59,8 +87,20 @@ export function useQuickDictation(onText: (text: string) => void): { recording: 
           onError: (m) => {
             fallo = true
             unsub?.()
-            setError(`Voz del teléfono: ${m}`)
-            setRecording(false)
+            unsub = null
+            // Solo se cambia a Whisper si la sesión ya estaba en marcha; durante el arranque
+            // lo resuelve el catch de abajo.
+            const activo = phone.current !== null
+            phone.current = null
+            sinTelefono.current = true
+            console.debug(`[stt] motor del teléfono: ${m}`)
+            if (activo) {
+              void (async () => {
+                await window.api.phoneStt.cancel().catch(() => undefined)
+                setRecording(false)
+                await startWhisper()
+              })()
+            }
           }
         })
         await ensureMicPermission()
@@ -71,31 +111,12 @@ export function useQuickDictation(onText: (text: string) => void): { recording: 
         return
       } catch {
         unsub?.()
+        phone.current = null
+        sinTelefono.current = true
         await window.api.phoneStt.cancel().catch(() => undefined)
       }
     }
-    const m = createMic({
-      deviceId: settings.micDeviceId, mode: 'controlled', onLevel: () => undefined, filters: settings.micFilters,
-      onSegment: async (pcm) => {
-        setBusy(true)
-        try {
-          const r = await window.api.transcribeDetailed(pcm, settings.primaryLang)
-          if (r.text) onText(r.text)
-        } catch (e) {
-          setError((e as Error).message)
-        } finally {
-          setBusy(false)
-        }
-      },
-      onEnded: () => setRecording(false)
-    })
-    try {
-      await m.start()
-      mic.current = m
-      setRecording(true)
-    } catch (e) {
-      setError(`Micrófono: ${(e as Error).message}`)
-    }
+    await startWhisper()
   }
   return { recording, busy, toggle, error }
 }

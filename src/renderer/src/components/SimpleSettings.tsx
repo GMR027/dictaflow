@@ -31,7 +31,8 @@ export function SimpleSettings(): JSX.Element {
   const services = useServices()
   const [busy, setBusy] = useState('')
 
-  useEffect(() => { void useServices.getState().refresh() }, [])
+  // También al cambiar de idioma: el estado del paquete del motor del teléfono depende de él.
+  useEffect(() => { void useServices.getState().refresh() }, [settings.primaryLang])
 
   // Android: si la voz guardada aún no está descargada y el teléfono ya trae voces,
   // se elige una del sistema. Así leer funciona sin descargar nada desde el principio.
@@ -71,9 +72,10 @@ export function SimpleSettings(): JSX.Element {
   }
 
   const dictOptions = services.options('dictation')
+  const telefonoListo = services.phone?.onDevice && (!services.phoneLang?.checkable || services.phoneLang.installed)
   const dictCurrent = window.api.platform !== 'android'
     ? (dictOptions[0]?.id ?? 'whisper')
-    : settings.sttPhone === 'auto' && services.phone?.onDevice
+    : settings.sttPhone === 'auto' && telefonoListo
       ? 'telefono'
       : settings.sttModel || (dictOptions.find((o) => o.installed)?.id ?? '')
 

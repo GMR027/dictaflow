@@ -48,7 +48,9 @@ export function OnboardingSetup({ onDone, onBack }: { onDone: (prepared: boolean
   const aiReady = services.isReady('ai')
   const selected = [dict, voice, withAi ? aiOption : undefined].filter((x): x is NonNullable<typeof x> => !!x)
   const pendingBytes = selected.reduce((n, o) => n + (o.installed ? 0 : o.sizeBytes), 0)
-  const needsPrepare = selected.some((o) => !o.installed && o.action.kind === 'stt-prepare')
+  const needsPrepare = selected.some((o) =>
+    !o.installed && (o.action.kind === 'stt-prepare' || o.action.kind === 'phone-lang')
+  )
 
   const run = async (): Promise<void> => {
     setBusy(true); setError('')
@@ -117,7 +119,7 @@ export function OnboardingSetup({ onDone, onBack }: { onDone: (prepared: boolean
   return (
     <div className="onboard-setup">
       <p>{ANDROID
-        ? 'Prepara lo esencial. Si tu teléfono ya trae motor de voz y voces, no hay que descargar nada.'
+        ? 'Prepara lo esencial. Si tu teléfono ya trae el idioma de voz y las voces, no hay que descargar nada.'
         : 'Elige qué preparar. Las descargas se guardan en tu equipo y después funcionan sin conexión.'}</p>
 
       <div className="setup-step">

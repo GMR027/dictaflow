@@ -10,6 +10,7 @@ import type { LLMKind, Settings } from './types'
 import { LOCAL_MODELS, modelReady, recommendedId, totalBytes, type LocalModel, type LocalModelFile } from './local-models'
 import type { VoiceStatus } from './voice'
 import { speaks } from './voice'
+import type { PhoneSttLanguageStatus } from './phone-stt'
 
 export type ServiceId = 'dictation' | 'ai' | 'tts' | 'live'
 
@@ -51,6 +52,8 @@ export type ServiceAction =
   | { kind: 'voice'; voiceId: string }
   | { kind: 'system-voice'; voiceId: string }
   | { kind: 'system-stt' }
+  /** Android: el idioma del motor del teléfono se descarga con el sistema. */
+  | { kind: 'phone-lang'; lang: 'es' | 'en' }
   /** Escritorio: descarga y carga el modelo de Whisper de Transformers.js. */
   | { kind: 'stt-prepare' }
   /** Escritorio: cambiar a un proveedor de IA (Ollama, Claude, opencode…). */
@@ -117,7 +120,8 @@ export function dictationOptions(
   ramGB: number,
   files: LocalModelFile[],
   phoneAvailable: boolean | null,
-  desktopSttReady = false
+  desktopSttReady = false,
+  phoneLang?: { lang: 'es' | 'en'; status: PhoneSttLanguageStatus | null } | null
 ): ServiceOption[] {
   if (!isAndroid(platform)) {
     return [{
@@ -131,11 +135,27 @@ export function dictationOptions(
 
   const options: ServiceOption[] = []
   if (phoneAvailable) {
-    options.push({
-      id: 'telefono', label: 'Voz del teléfono',
-      note: 'Sin descargas y funciona sin internet. Si falla, DictaFlow usa Whisper.',
-      sizeBytes: 0, installed: true, recommended: true, action: { kind: 'system-stt' }
-    })
+    // En Android 12 no se puede consultar el paquete: se ofrece como antes y, si falla,
+    // el dictado cae a Whisper. En Android 13+ se muestra si falta el idioma.
+    const consultable = phoneLang?.status?.checkable === true
+    const instalado = !consultable || !!phoneLang?.status?.installed
+    const descargable = consultable && !!phoneLang?.status?.supported &&
+      !!phoneLang?.status?.downloadable && !phoneLang?.status?.pending
+    if (instalado) {
+      options.push({
+        id: 'telefono', label: 'Voz del teléfono',
+        note: 'Sin descargas y funciona sin internet. Si falla, DictaFlow usa Whisper.',
+        sizeBytes: 0, installed: true, recommended: true, action: { kind: 'system-stt' }
+      })
+    } else if (descargable && phoneLang) {
+      const nombre = phoneLang.lang === 'en' ? 'inglés' : 'español'
+      options.push({
+        id: 'telefono', label: 'Voz del teléfono',
+        note: `Falta el idioma ${nombre} en el teléfono. Android lo descarga una vez; después funciona sin internet.`,
+        sizeBytes: 0, installed: false, recommended: true,
+        action: { kind: 'phone-lang', lang: phoneLang.lang }
+      })
+    }
   }
   const recommended = recommendedId('stt', ramGB)
   for (const m of LOCAL_MODELS.filter((x) => x.kind === 'stt')) {

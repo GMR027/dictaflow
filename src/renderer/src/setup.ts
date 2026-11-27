@@ -16,6 +16,8 @@ export interface SetupRequest {
   prefer?: string
   /** Dictado para transcribir archivos o reuniones: hace falta Whisper, no vale solo el motor del teléfono. */
   requireModel?: boolean
+  /** Android: falta el paquete de idioma del motor de voz del teléfono. */
+  phoneLang?: 'es' | 'en'
 }
 
 interface SetupState {

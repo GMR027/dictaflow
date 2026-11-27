@@ -1,13 +1,14 @@
 // Modal único de complementos. Se abre desde una herramienta (o desde Ajustes) cuando
 // falta un modelo, una voz o la IA. Desde aquí se descarga y se activa sin salir de la
 // pantalla; al terminar, la acción que lo pidió continúa sola.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Lang, LLMKind, SecretName } from '@shared/types'
 import { formatBytes } from '@shared/local-models'
 import { SERVICES, featureKey, serviceEnabled } from '@shared/features'
 import { PROVIDERS, connectPatch } from '@shared/providers'
 import { useApp } from '../store'
 import { useSetup, type SetupRequest } from '../setup'
+import { downloadPhoneLanguage } from '../phone-mic'
 import { cancelInstall, installOption, useServices, whisperReady } from '../services'
 import { Sheet } from './Sheet'
 import { OllamaSetup } from './OllamaSetup'
@@ -23,6 +24,7 @@ const ACTIVATE: Record<SetupRequest['service'], string> = {
 
 /** Texto de la cabecera según lo que falta. */
 function titleFor(req: SetupRequest, ready: boolean): string {
+  if (req.phoneLang) return 'Preparar la voz del teléfono'
   if (ready && req.disabled) return ACTIVATE[req.service]
   if (req.service === 'tts') return 'Elegir una voz'
   if (req.service === 'dictation') return req.requireModel ? 'Preparar la transcripción' : 'Preparar el dictado'
@@ -38,6 +40,9 @@ export function SetupSheet(): JSX.Element | null {
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState({ what: '', pct: 0 })
   const [error, setError] = useState('')
+  const [phonePhase, setPhonePhase] = useState<'offer' | 'busy' | 'scheduled' | 'error'>('offer')
+  const [phonePct, setPhonePct] = useState<number | null>(null)
+  const phoneCancel = useRef(false)
 
   const lang: Lang = request?.lang ?? settings.primaryLang
   /** Opciones visibles: al transcribir archivos o reuniones no vale el motor del teléfono. */
@@ -67,6 +72,9 @@ export function SetupSheet(): JSX.Element | null {
     setSelected(pick?.id ?? '')
     setError('')
     setBusy(false)
+    setPhonePhase('offer')
+    setPhonePct(null)
+    phoneCancel.current = false
     void useServices.getState().refresh()
     // Solo al abrir una petición nueva; no al refrescar el estado de fondo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,7 +111,7 @@ export function SetupSheet(): JSX.Element | null {
     if (!option) return
     setBusy(true)
     setError('')
-    setProgress({ what: option.label, pct: 0 })
+    setProgress({ what: option.label, pct: option.action.kind === 'phone-lang' ? -1 : 0 })
     try {
       await installOption(option, (what, pct) => setProgress({ what, pct }), { keepPhone: request.requireModel })
       await useServices.getState().refresh()
@@ -115,6 +123,116 @@ export function SetupSheet(): JSX.Element | null {
     } finally {
       setBusy(false)
     }
+  }
+
+  const runPhoneDownload = async (): Promise<void> => {
+    const idioma = request.phoneLang
+    if (!idioma) return
+    if (useApp.getState().settings.strictOffline) {
+      setPhonePhase('error')
+      setError('Modo offline estricto: no se puede descargar el idioma.')
+      return
+    }
+    const peticion = request
+    phoneCancel.current = false
+    setBusy(true)
+    setError('')
+    setPhonePhase('busy')
+    setPhonePct(null)
+    try {
+      const resultado = await downloadPhoneLanguage(
+        idioma,
+        (pct) => { if (!phoneCancel.current) setPhonePct(pct) },
+        () => phoneCancel.current
+      )
+      // Si el usuario cerró la ventana mientras tanto, no se toca la petición nueva.
+      if (useSetup.getState().request !== peticion) return
+      if (resultado === 'done') {
+        await useServices.getState().refresh()
+        finish(true)
+      } else if (resultado === 'scheduled') {
+        setPhonePhase('scheduled')
+        setBusy(false)
+      } else {
+        setPhonePhase('error')
+        setError('Android no completó la descarga. Puedes usar Whisper mientras tanto.')
+        setBusy(false)
+      }
+    } catch (e) {
+      if (useSetup.getState().request !== peticion) return
+      setPhonePhase('error')
+      setError((e as Error).message || 'Android no pudo descargar el idioma.')
+      setBusy(false)
+    }
+  }
+
+  const cancelPhoneDownload = (): void => {
+    phoneCancel.current = true
+    setBusy(false)
+    finish(false)
+  }
+
+  if (request.phoneLang) {
+    const nombre = request.phoneLang === 'en' ? 'inglés' : 'español'
+    return (
+      <Sheet title="Preparar la voz del teléfono" onClose={() => { if (!busy) finish(false) }}>
+        <p className="muted setup-lead">
+          Tu teléfono puede reconocer lo que dices sin conexión, pero le falta el idioma {nombre}.
+          Android lo descargará una vez y después DictaFlow lo usará al instante, sin internet.
+        </p>
+
+        {phonePhase === 'offer' && (
+          <>
+            <p className="muted">
+              La descarga la gestiona Android y puede pedirte confirmación. No se envía tu voz a internet.
+              Si prefieres no descargarla ahora, DictaFlow usará Whisper.
+            </p>
+            <div className="row setup-actions">
+              <button className="primary" onClick={() => void runPhoneDownload()}>Descargar y continuar</button>
+              <button className="link" onClick={() => finish(false)}>Usar Whisper</button>
+              <button className="link" onClick={() => finish(false)}>Ahora no</button>
+            </div>
+          </>
+        )}
+
+        {phonePhase === 'busy' && (
+          <div className="setup-progress" role="status" aria-live="polite">
+            <p>{phonePct == null ? `Android está descargando el idioma ${nombre}…` : `Descargando ${nombre}… ${phonePct}%`}</p>
+            {phonePct == null ? <progress /> : <progress max={100} value={phonePct} />}
+            <div className="row setup-actions">
+              <button onClick={cancelPhoneDownload}>Seguir con Whisper</button>
+            </div>
+          </div>
+        )}
+
+        {phonePhase === 'scheduled' && (
+          <>
+            <p className="warn">
+              Android descargará el idioma en segundo plano. Esta vez seguiremos con Whisper para que
+              puedas usar la herramienta sin esperar.
+            </p>
+            <div className="row setup-actions">
+              <button className="primary" onClick={() => finish(false)}>Continuar con Whisper</button>
+            </div>
+          </>
+        )}
+
+        {phonePhase === 'error' && (
+          <>
+            <p className="warn" role="alert">{error}</p>
+            <div className="row setup-actions">
+              <button className="primary" onClick={() => void runPhoneDownload()}>Reintentar</button>
+              <button className="link" onClick={() => finish(false)}>Usar Whisper</button>
+              <button className="link" onClick={() => finish(false)}>Ahora no</button>
+            </div>
+          </>
+        )}
+
+        {ANDROID && phonePhase !== 'error' && (
+          <p className="muted">La descarga se guarda en el teléfono y no vuelve a pedirse.</p>
+        )}
+      </Sheet>
+    )
   }
 
   const aiDesktop = request.service === 'ai' && !ANDROID
@@ -159,8 +277,8 @@ export function SetupSheet(): JSX.Element | null {
 
           {busy && (
             <div className="setup-progress" role="status" aria-live="polite">
-              <p>{progress.what || 'Descargando'}… {progress.pct}%</p>
-              <progress max={100} value={progress.pct} />
+              <p>{progress.what || 'Descargando'}… {progress.pct >= 0 ? `${progress.pct}%` : 'un momento…'}</p>
+              <progress max={100} value={progress.pct >= 0 ? progress.pct : undefined} />
             </div>
           )}
 
@@ -170,11 +288,13 @@ export function SetupSheet(): JSX.Element | null {
                 ? 'Descargando…'
                 : option?.installed
                   ? 'Usar esta opción'
-                  : option?.action.kind === 'stt-prepare'
-                    ? 'Preparar Whisper'
-                    : option && option.sizeBytes > 0
-                      ? `Descargar y activar (${formatBytes(option.sizeBytes)})`
-                      : 'Activar'}
+                  : option?.action.kind === 'phone-lang'
+                    ? 'Descargar idioma y activar'
+                    : option?.action.kind === 'stt-prepare'
+                      ? 'Preparar Whisper'
+                      : option && option.sizeBytes > 0
+                        ? `Descargar y activar (${formatBytes(option.sizeBytes)})`
+                        : 'Activar'}
             </button>
             {busy && option?.action.kind === 'model' && (
               <button onClick={() => cancelInstall(option)}>Cancelar descarga</button>

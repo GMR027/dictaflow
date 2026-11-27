@@ -43,7 +43,9 @@ export function createApi(invoke: Invoke, on: On, platform: Platform) {
       start: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
       stop: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
       cancel: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
-      on: async () => () => undefined
+      on: async () => () => undefined,
+      languageStatus: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.')),
+      downloadLanguage: () => Promise.reject(new Error('El motor de voz del teléfono solo existe en Android.'))
     } as PhoneSttApi,
 
     // Solo Android: modelos de IA locales del teléfono

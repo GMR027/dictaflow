@@ -26,6 +26,11 @@ class ReconocerArgs {
   var bias: List<String> = emptyList()
 }
 
+@InvokeArg
+class IdiomaArgs {
+  lateinit var lang: String
+}
+
 /**
  * Voz → texto con el motor del propio teléfono.
  *
@@ -65,6 +70,84 @@ class ReconocimientoPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  /**
+   * ¿Está instalado el paquete de idioma del motor on-device? (Android 13+)
+   * En versiones anteriores `checkable` es false y la interfaz intenta usarlo igual.
+   */
+  @Command
+  fun idioma(invoke: Invoke) {
+    val args = invoke.parseArgs(IdiomaArgs::class.java)
+    activity.runOnUiThread {
+      val r = JSObject()
+      r.put("checkable", false)
+      r.put("installed", false)
+      r.put("pending", false)
+      r.put("supported", false)
+      r.put("downloadable", false)
+      val onDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
+      if (!onDevice || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        invoke.resolve(r)
+        return@runOnUiThread
+      }
+      val locale = localeDe(args.lang)
+      ConsultaIdioma.estado(activity, intento(locale), baseDe(locale)) { estado ->
+        if (estado != null) {
+          r.put("checkable", true)
+          r.put("installed", estado.installed)
+          r.put("pending", estado.pending)
+          r.put("supported", estado.supported)
+          r.put("downloadable", true)
+        }
+        invoke.resolve(r)
+      }
+    }
+  }
+
+  /** Pide a Android que descargue el paquete de idioma (Android 13+). */
+  @Command
+  fun descargarIdioma(invoke: Invoke) {
+    val args = invoke.parseArgs(IdiomaArgs::class.java)
+    activity.runOnUiThread {
+      val onDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
+      if (!onDevice || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        invoke.reject("Este Android no permite descargar el idioma desde la app.")
+        return@runOnUiThread
+      }
+      val locale = localeDe(args.lang)
+      val intentoIdioma = intento(locale)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        DescargaIdioma.iniciar(
+          activity,
+          intentoIdioma,
+          { pct -> eventoDescarga("progress", pct, null) }
+        ) { estado, mensaje ->
+          if (estado == "error") {
+            eventoDescarga("error", null, mensaje)
+            invoke.reject(mensaje ?: "Android no pudo descargar el idioma.")
+          } else {
+            eventoDescarga(estado, null, null)
+            val r = JSObject()
+            r.put("state", estado)
+            invoke.resolve(r)
+          }
+        }
+      } else {
+        ConsultaIdioma.pedirDescarga(activity, intentoIdioma) { ok ->
+          if (ok) {
+            eventoDescarga("dialog", null, null)
+            val r = JSObject()
+            r.put("state", "dialog")
+            invoke.resolve(r)
+          } else {
+            invoke.reject("Android no pudo iniciar la descarga del idioma.")
+          }
+        }
+      }
+    }
+  }
+
   @Command
   fun iniciar(invoke: Invoke) {
     val args = invoke.parseArgs(ReconocerArgs::class.java)
@@ -75,10 +158,7 @@ class ReconocimientoPlugin(private val activity: Activity) : Plugin(activity) {
       continuo = args.continuo
       offline = args.offline
       bias = args.bias
-      idioma = when (args.lang.lowercase(Locale.ROOT)) {
-        "en" -> "en-US"
-        else -> "es-ES"
-      }
+      idioma = localeDe(args.lang)
 
       val onDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
         SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
@@ -154,9 +234,9 @@ class ReconocimientoPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  private fun intento(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+  private fun intento(locale: String = idioma): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-    putExtra(RecognizerIntent.EXTRA_LANGUAGE, idioma)
+    putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, activity.packageName)
@@ -224,6 +304,7 @@ class ReconocimientoPlugin(private val activity: Activity) : Plugin(activity) {
         o.put("codigo", error)
         o.put("mensaje", mensajeError(error))
         o.put("fatal", true)
+        o.put("idioma", idiomaNoDisponible)
         trigger("error", o)
         detenerReconocedor()
         resolverDetener()
@@ -292,6 +373,21 @@ class ReconocimientoPlugin(private val activity: Activity) : Plugin(activity) {
     trigger("estado", o)
   }
 
+  private fun eventoDescarga(estado: String, pct: Int?, mensaje: String?) {
+    val o = JSObject()
+    o.put("state", estado)
+    if (pct != null) o.put("pct", pct)
+    if (mensaje != null) o.put("message", mensaje)
+    trigger("descarga", o)
+  }
+
+  private fun localeDe(lang: String): String = when (lang.lowercase(Locale.ROOT)) {
+    "en" -> "en-US"
+    else -> "es-ES"
+  }
+
+  private fun baseDe(locale: String): String = locale.substringBefore('-').lowercase(Locale.ROOT)
+
   private fun mensajeError(error: Int): String = when (error) {
     SpeechRecognizer.ERROR_AUDIO -> "No se pudo leer el micrófono."
     SpeechRecognizer.ERROR_CLIENT -> "El motor de voz del teléfono se detuvo."
@@ -305,11 +401,11 @@ class ReconocimientoPlugin(private val activity: Activity) : Plugin(activity) {
     SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> "Demasiadas peticiones al motor de voz."
     else -> when {
       Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && error == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ->
-        "El idioma no está disponible en el motor on-device."
+        "El idioma no está disponible en este teléfono."
       Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && error == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
-        "Falta descargar el idioma del motor on-device."
+        "El idioma del teléfono no está preparado."
       Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && error == SpeechRecognizer.ERROR_CANNOT_CHECK_SUPPORT ->
-        "No se pudo comprobar el motor on-device."
+        "No se pudo comprobar el idioma del teléfono."
       else -> "Error del motor de voz ($error)."
     }
   }
